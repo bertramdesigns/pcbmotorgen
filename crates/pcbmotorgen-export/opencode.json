@@ -1,0 +1,19 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "references": {
+        "kicad_stable_repo": {
+            "repository": "https://gitlab.com/kicad/code/kicad-python.git",
+            "branch": "stable",
+            "description": "Official Python bindings repository for KiCad 10 IPC API."
+        },
+        "pcbmotorgen-routing-docs": {
+            "path": "../crates/pcbmotorgen-routing/docs/API.md",
+            "description": "API documentation for consuming the pcbmotorgen routing crate handling routing patterns and DFM constraints."
+        },
+        "pcbmotorgen-simulation-docs": {
+            "path": "../crates/pcbmotorgen-simulation/docs/API.md",
+            "description": "API documentation for consuming the pcbmotorgen simulation crate handling physics and simulation."
+        },
+    },
+    "mcp": {}
+}

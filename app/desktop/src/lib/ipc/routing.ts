@@ -1,0 +1,107 @@
+/**
+ * Routing-pattern plugin IPC calls.
+ *
+ * Most use the standard mock gate (plain `vite dev` returns a small
+ * deterministic set). `registerRoutingPlugin` is a user-actionable,
+ * state-changing load — it has NO mock fallback and surfaces real
+ * backend errors verbatim.
+ */
+
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  LinearMotorConfig,
+  RoutingPatternInfo,
+  RoutingParamDef,
+  InstalledPlugin,
+  InterferenceViolation,
+} from "../types";
+import { isTauriAvailable } from "./core";
+
+/**
+ * List the coil routing patterns the backend can generate (id + display
+ * name). The config's `routing_pattern` field holds one of these `id`s.
+ */
+export async function listRoutingPatterns(): Promise<RoutingPatternInfo[]> {
+  if (!isTauriAvailable()) {
+    return [{ id: "infinity-braid", display_name: "Infinity Braid (pcbBraid)" }];
+  }
+  return await invoke<RoutingPatternInfo[]>("list_routing_patterns");
+}
+
+/**
+ * Query the user-editable parameters a routing pattern exposes. Returns
+ * the declared `RoutingParamDef`s so the UI can render one editable
+ * control per parameter (e.g. `num_strands`, `n_periods`).
+ */
+export async function routingPatternParameters(
+  patternId: string,
+): Promise<RoutingParamDef[]> {
+  if (!isTauriAvailable()) return [];
+  return await invoke<RoutingParamDef[]>("routing_pattern_parameters", {
+    patternId,
+  });
+}
+
+/**
+ * Load and register a routing-pattern plugin (a native `cdylib`/`.dylib`
+ * crate or a Python runner script) into the backend registry, probing it
+ * against `config`. Returns the new pattern id.
+ *
+ * `name` is an optional user-chosen registry id; when `null` the plugin's
+ * own id (file stem) is used.
+ *
+ * **No mock fallback.** A missing Tauri backend rejects explicitly
+ * ("Tauri backend unavailable") and any real backend rejection is surfaced
+ * verbatim to the UI.
+ */
+export async function registerRoutingPlugin(
+  kind: "native" | "python",
+  path: string,
+  name: string | null,
+  config: LinearMotorConfig,
+): Promise<string> {
+  if (!isTauriAvailable()) {
+    throw new Error("Tauri backend unavailable");
+  }
+  return await invoke<string>("register_routing_plugin", {
+    kind,
+    path,
+    name,
+    probeConfig: config,
+  });
+}
+
+/**
+ * Re-register every installed plugin from the app's persistent store. Called
+ * once at startup. Resolves with per-plugin load errors (empty = all ok).
+ */
+export async function loadInstalledPlugins(): Promise<string[]> {
+  if (!isTauriAvailable()) return [];
+  return await invoke<string[]>("load_installed_plugins");
+}
+
+/** List installed plugins (persistent store) with their metadata. */
+export async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
+  if (!isTauriAvailable()) return [];
+  return await invoke<InstalledPlugin[]>("list_installed_plugins");
+}
+
+/** Remove an installed plugin from the persistent store + runtime registry. */
+export async function removeRoutingPlugin(id: string): Promise<void> {
+  if (!isTauriAvailable()) return;
+  await invoke<void>("remove_routing_plugin", { id });
+}
+
+/**
+ * Run the core's DRC interference checks (clearance + via-pad) on the
+ * coils the current pattern produces, using the configured trace / via
+ * sizes. Returns the violations (empty = clear).
+ */
+export async function checkCoilInterference(
+  config: LinearMotorConfig,
+): Promise<InterferenceViolation[]> {
+  if (!isTauriAvailable()) return [];
+  return await invoke<InterferenceViolation[]>("check_coil_interference", {
+    config,
+  });
+}

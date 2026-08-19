@@ -1,0 +1,423 @@
+<script lang="ts">
+  import { config } from "./lib/stores/config.svelte";
+  import {
+    evaluateForceSweep,
+    generateCoils,
+    computeFriction,
+    computePowerBudget,
+    computeHeightStack,
+    computeStackup,
+    debounce,
+  } from "./lib/ipc";
+  import type {
+    ForceSweepResult,
+    CoilPathDto,
+    FrictionBudgetDto,
+    PowerBudgetDto,
+    HeightStackResultDto,
+    StackupResultDto,
+  } from "./lib/types";
+  import { TABS, type TabId } from "./lib/ui";
+  import { DrcController } from "./lib/stores/drc.svelte";
+
+  import TabNav from "./lib/components/layout/TabNav.svelte";
+  import StatusIndicator from "./lib/components/layout/StatusIndicator.svelte";
+  import TravelDiagram from "./lib/components/design/TravelDiagram.svelte";
+  import CoilPreview from "./lib/components/design/CoilPreview.svelte";
+  import DesignDimensions from "./lib/components/design/DesignDimensions.svelte";
+  import DesignTab from "./lib/components/layout/DesignTab.svelte";
+  import SimulateTab from "./lib/components/layout/SimulateTab.svelte";
+  import ExportTab from "./lib/components/layout/ExportTab.svelte";
+
+  // Session-only navigation state; none of these values enter IPC.
+  let activeTab = $state<TabId>("design");
+
+  // App init: populate the routing-pattern selector from the backend.
+  // Fire-and-forget — failures are swallowed inside the store.
+  config.loadRoutingPatterns();
+
+  // Async result state.
+  let sweep = $state<ForceSweepResult | null>(null);
+  let coils = $state<CoilPathDto | null>(null);
+  let friction = $state<FrictionBudgetDto | null>(null);
+  let power = $state<PowerBudgetDto | null>(null);
+  let height = $state<HeightStackResultDto | null>(null);
+  let stackup = $state<StackupResultDto | null>(null);
+  let loading = $state(false);
+  let error = $state<string | null>(null);
+
+  // Whether the current config produces a valid travel range.
+  let valid = $derived(config.travel_mm > 0);
+
+  // -----------------------------------------------------------------------
+  // Design preview generation
+  // -----------------------------------------------------------------------
+  // Coil geometry is useful outside the Simulation tab, so it has its own
+  // request stream. A generation id prevents a slow response for an older
+  // config from replacing a newer preview. The preview keeps its last good
+  // result while a new request is pending or fails.
+  let previewGeneration = 0;
+  const scheduleCoilPreview = debounce((generation: number) => {
+    if (generation !== previewGeneration) return;
+    if (!valid) {
+      coils = null;
+      return;
+    }
+    void updateCoilPreview(generation, config.toIpc());
+  }, 150);
+
+  async function updateCoilPreview(
+    generation: number,
+    ipc: ReturnType<typeof config.toIpc>,
+  ): Promise<void> {
+    try {
+      const result = await generateCoils(ipc);
+      if (generation === previewGeneration) coils = result;
+    } catch {
+      // Keep the previous preview visible. A transient generation failure
+      // must not make the design reflection depend on simulation state.
+    }
+  }
+
+  // Generate the Design-tab reflection when geometry or routing inputs change.
+  // This effect intentionally runs regardless of the active workflow tab.
+  $effect(() => {
+    void [
+      config.desired_travel_mm,
+      config.active_area_length_mm,
+      config.active_area_width_mm,
+      config.magnet_count,
+      config.magnet_width_mm,
+      config.magnet_gap_mm,
+      config.routing_pattern,
+      config.routing_params_version,
+      config.phases,
+      config.spacing_ratio_label,
+      config.num_layers,
+      config.padding_mm,
+      config.windings_per_phase,
+      config.min_trace_mm,
+      config.min_space_mm,
+      config.min_via_drill_mm,
+      config.min_via_annular_ring_mm,
+    ];
+    void valid;
+
+    const generation = ++previewGeneration;
+    scheduleCoilPreview(generation);
+  });
+
+  // -----------------------------------------------------------------------
+  // Simulation-tab scheduling
+  // -----------------------------------------------------------------------
+  // Simulation is demand-driven: entering the Simulation tab or changing a
+  // watched input while it is active schedules one run. The generation id
+  // gates both the debounce callback and all result writes, including work
+  // that was already in flight when the user changed tabs.
+  let simulationGeneration = 0;
+  const scheduleSimulation = debounce((generation: number) => {
+    if (!isCurrentSimulation(generation)) return;
+    void runSimulation(generation);
+  }, 150);
+
+  function isCurrentSimulation(generation: number): boolean {
+    return activeTab === "simulate" && generation === simulationGeneration;
+  }
+
+  function clearSimulationResults(): void {
+    sweep = null;
+    friction = null;
+    power = null;
+    height = null;
+    stackup = null;
+  }
+
+  async function runSimulation(generation: number): Promise<void> {
+    if (!isCurrentSimulation(generation)) return;
+
+    // Invalid geometry is a deliberate reset, not a backend failure. Keep
+    // valid results while editing, but do not run any simulation IPC call.
+    if (!valid) {
+      clearSimulationResults();
+      error = null;
+      loading = false;
+      return;
+    }
+
+    loading = true;
+    error = null;
+    const ipc = config.toIpc();
+
+    try {
+      const results = await Promise.allSettled([
+        evaluateForceSweep(ipc),
+        computeFriction(ipc),
+        computePowerBudget(ipc),
+        computeHeightStack(ipc),
+        computeStackup(ipc),
+      ]);
+
+      if (!isCurrentSimulation(generation)) return;
+
+      const [s, f, p, h, st] = results;
+      // Apply each successful result independently. A failed calculation does
+      // not erase the last good value from the other simulation panels.
+      if (s.status === "fulfilled") sweep = s.value;
+      if (f.status === "fulfilled") friction = f.value;
+      if (p.status === "fulfilled") power = p.value;
+      if (h.status === "fulfilled") height = h.value;
+      if (st.status === "fulfilled") stackup = st.value;
+
+      const reasons = results
+        .filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        )
+        .map((result) =>
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason),
+        );
+      error = reasons.length ? reasons.join("  ·  ") : null;
+    } catch (e) {
+      if (!isCurrentSimulation(generation)) return;
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (isCurrentSimulation(generation)) loading = false;
+    }
+  }
+
+  // Touch every input used by the simulation calls. The active-tab check is
+  // intentionally inside the effect so config changes in Design or Export
+  // only invalidate/cancel a pending run; they never invoke simulation IPC.
+  $effect(() => {
+    void [
+      config.desired_travel_mm,
+      config.active_area_length_mm,
+      config.active_area_width_mm,
+      config.magnet_count,
+      config.magnet_width_mm,
+      config.magnet_gap_mm,
+      config.magnet_height_mm,
+      config.magnet_cross_width_mm,
+      config.magnet_remanence_t,
+      config.magnet_grade,
+      config.magnet_arrangement,
+      config.back_iron_thickness_mm,
+      config.air_gap_mm,
+      config.routing_pattern,
+      config.routing_params_version,
+      config.phases,
+      config.spacing_ratio_label,
+      config.num_layers,
+      config.padding_mm,
+      config.windings_per_phase,
+      config.max_current_a,
+      config.supply_voltage_v,
+      config.pcb_thickness_mm,
+      config.min_trace_mm,
+      config.min_space_mm,
+      config.min_via_drill_mm,
+      config.min_via_annular_ring_mm,
+      config.max_layers,
+      config.drive_frequency_hz,
+      config.max_temperature_rise_c,
+      config.target_force_n,
+      config.peak_force_n,
+      config.friction_n,
+      config.carriage_mass_kg,
+      config.max_accel_m_s2,
+      config.capacitor_bank_uf,
+      config.commutation,
+      config.n_positions,
+      config.meshing,
+    ];
+    void valid;
+
+    const generation = ++simulationGeneration;
+    if (activeTab !== "simulate") {
+      scheduleSimulation.cancel();
+      // Invalidate an in-flight run. Tab selection releases the app-wide
+      // indicator immediately; the eventual response is ignored by
+      // isCurrentSimulation().
+      return;
+    }
+    scheduleSimulation(generation);
+  });
+
+  // -----------------------------------------------------------------------
+  // App-owned DRC controller
+  // -----------------------------------------------------------------------
+  // Layout fingerprint: the inputs that determine where the generated
+  // traces can be placed (preserved verbatim from the inline controller).
+  function getDrcLayoutKey(): string {
+    return JSON.stringify([
+      config.routing_pattern,
+      config.routing_params_version,
+      config.num_layers,
+      config.min_trace_mm,
+      config.min_space_mm,
+      config.min_via_drill_mm,
+      config.min_via_annular_ring_mm,
+      config.padding_mm,
+      config.windings_per_phase,
+      config.magnet_count,
+      config.magnet_width_mm,
+      config.magnet_gap_mm,
+      config.phases,
+      config.active_area_length_mm,
+      config.active_area_width_mm,
+    ]);
+  }
+
+  const drc = new DrcController({ config, getLayoutKey: getDrcLayoutKey });
+
+  // A layout change invalidates the previous DRC result immediately. The
+  // request id and layout key together prevent stale responses from opening
+  // the export gate for a newer config.
+  $effect(() => {
+    void drc.currentLayoutKey;
+    drc.request();
+  });
+
+  let drcReady = $derived(drc.ready);
+
+  function tabStatus(tab: TabId): { label: string; className: string } {
+    if (tab === "design") {
+      return valid
+        ? { label: "ready", className: "text-emerald-300" }
+        : { label: "needs attention", className: "text-rose-300" };
+    }
+    if (tab === "simulate") {
+      if (!valid) return { label: "blocked", className: "text-rose-300" };
+      return loading
+        ? { label: "updating", className: "text-amber-300" }
+        : { label: "ready", className: "text-emerald-300" };
+    }
+    if (drc.loading) return { label: "checking", className: "text-amber-300" };
+    if (drcReady && drc.violations.length === 0) {
+      return { label: "ready", className: "text-emerald-300" };
+    }
+    return { label: "blocked", className: "text-rose-300" };
+  }
+
+  function selectTab(tab: TabId): void {
+    activeTab = tab;
+    if (tab !== "simulate") loading = false;
+  }
+</script>
+
+<main
+  class="flex min-h-screen flex-col bg-slate-900 text-slate-100 lg:h-screen lg:overflow-hidden"
+>
+  <header
+    class="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 px-6 py-4 backdrop-blur"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">pcbmotorgen</h1>
+        <p class="text-xs text-slate-400">PCB stator motor generator</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-4">
+        <TabNav
+          tabs={TABS}
+          {activeTab}
+          statusFor={tabStatus}
+          onSelect={selectTab}
+        />
+        <StatusIndicator {loading} />
+      </div>
+    </div>
+  </header>
+
+  <!-- The reflection stays mounted beside every workflow panel. On desktop
+       only the settings/content column scrolls; on small screens the columns
+       stack so the reflection remains available above the active panel. -->
+  <div
+    class="grid min-h-0 flex-1 items-start gap-4 px-4 pb-4 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch lg:pb-0 lg:pr-0"
+  >
+    <!-- The desktop layout locks the page height: both columns stretch to the
+         row (viewport minus header/footer) and scroll independently inside
+         themselves, so the footer is always visible and the page never
+         scrolls. Below lg the columns stack and the page scrolls normally. -->
+    <aside
+      class="relative min-w-0 min-h-0 lg:overflow-y-auto lg:pt-4 lg:pb-4 lg:pr-2"
+      aria-label="Persistent design reflection"
+    >
+      <TravelDiagram {config} />
+      <!-- Traces view lives here in the Design tab so layout and geometry can
+           be inspected side by side; the Simulation tab keeps its own copy. -->
+      <div class="mt-3 space-y-3">
+        <CoilPreview {config} {coils} />
+        <DesignDimensions {config} />
+      </div>
+    </aside>
+
+    <div class="min-w-0 min-h-0">
+      <!-- All three panels stay mounted so component-local controls retain
+           their state. Hidden Simulation content is still lifecycle-gated:
+           its IPC effects only run while this tab is active. Each panel fills
+           the column and scrolls internally; the page height is locked so the
+           footer always stays visible. -->
+      <div
+        id="panel-design"
+        role="tabpanel"
+        aria-labelledby="tab-design"
+        tabindex="0"
+        hidden={activeTab !== "design"}
+        aria-hidden={activeTab !== "design"}
+        class="h-full p-4 lg:pr-0"
+      >
+        <DesignTab {config} />
+      </div>
+
+      <div
+        id="panel-simulate"
+        role="tabpanel"
+        aria-labelledby="tab-simulate"
+        tabindex="0"
+        hidden={activeTab !== "simulate"}
+        aria-hidden={activeTab !== "simulate"}
+        class="h-full overflow-y-auto p-4 lg:pr-0"
+      >
+        <SimulateTab
+          {config}
+          active={activeTab === "simulate"}
+          {sweep}
+          {friction}
+          {power}
+          {height}
+          {stackup}
+          {error}
+        />
+      </div>
+
+      <div
+        id="panel-export"
+        role="tabpanel"
+        aria-labelledby="tab-export"
+        tabindex="0"
+        hidden={activeTab !== "export"}
+        aria-hidden={activeTab !== "export"}
+        class="h-full overflow-y-auto p-4 lg:pr-0"
+      >
+        <ExportTab
+          {config}
+          drcViolations={drc.violations}
+          drcLoading={drc.loading}
+          drcError={drc.error}
+          {drcReady}
+          drcLayoutKey={drc.currentLayoutKey}
+          onCheckDrc={() => drc.request()}
+        />
+      </div>
+    </div>
+  </div>
+
+  <footer
+    class="shrink-0 border-t border-slate-800 px-6 py-3 text-xs text-slate-500"
+  >
+    Linear mode only · radial/axial-flux disabled (TODO). Physics via Tauri IPC
+    with mock fallback.
+  </footer>
+</main>

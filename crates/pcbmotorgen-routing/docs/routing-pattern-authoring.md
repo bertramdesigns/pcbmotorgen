@@ -1,0 +1,298 @@
+# Routing-Pattern Plugin Authoring Guide
+
+This document explains how to author a **coil routing generator** for pcbmotorgen
+and load it into the app. Generators are _plugins_: they produce raw line
+geometry and expose metadata + parameters through a strict, documented
+interface. They are written either as a **Rust `cdylib` crate plugin** or a
+**Python runner** script, and are validated on upload with helpful errors.
+
+See `docs/adr/0009-routing-pattern-plugin-interface.md` for the architecture
+decision; this is the practical authoring guide.
+
+---
+
+## 1. The contract in one paragraph
+
+A routing pattern turns a **flat board context** (active-area length/width,
+layer count, phase count, DFM trace/space limits, plus user parameters) into a
+**`RoutingResult`** — a list of _segments_ (straight lines), _curves_ (arcs), and
+_vias_, each carrying its own `layer` and `net`.
+
+- The plugin supplies **only raw geometry**. It does **NOT** set trace width,
+  via drill size, or annular ring — those are owned by the **`pcbmotorgen-routing`
+  crate** (`DesignRules`) and applied to the geometry there, before the KiCad
+  adapter (`pcbmotorgen-export`) converts the generic model to board items.
+- The plugin does **NOT** do interference checking. The `pcbmotorgen-routing`
+  crate runs all clearance / via-pad DRC (`check_interference`) after the plugin
+  returns.
+- Any malformed shape (NaN, out-of-bounds, bad layer, degenerate segment/arc,
+  bad net, empty result) is **rejected** at upload with a field-level error. It
+  is never silently patched.
+
+The host may wrap the validated result in a `RoutingReport`. That report adds
+pole-pitch and slot-width dimensions for the application and magnet-pattern
+calculator; it does **not** change the strict plugin output shape.
+
+---
+
+## 2. The `RoutingResult` shape (millimetres; x = travel axis, y = across width)
+
+```
+RoutingResult {
+  segments: [ RouteSegment { start: {x,y}, end: {x,y}, layer, net, is_active } ],
+  curves:   [ RouteCurve    { start: {x,y}, mid: {x,y}, end: {x,y}, layer, net, is_active } ],
+  vias:     [ Via          { position: {x,y}, from_layer, to_layer, net } ],
+}
+```
+
+- `layer` / `from_layer` / `to_layer` are indexes into the board copper stack
+  (`0 .. num_layers-1`). **The pattern owns layer semantics** — a 2-layer braid
+  emits segments on layers `0` and `1` and vias routing `0 → 1`.
+- `net` is a phase label (`"A"`, `"B"`, `"C"` …). The writer prefixes `/`.
+- `is_active` marks force-producing conductors vs end-turns (always allowed).
+- `curves` are optional (arcs), matching KiCad's `(arc start mid end)`.
+
+---
+
+## 3. Exposing metadata (name, author, version, description)
+
+### Rust crate plugin
+
+Implement the accessors on `RoutingPattern`:
+
+```rust
+impl RoutingPattern for MyGenerator {
+    fn id(&self) -> &str { "my-generator" }          // registry key
+    fn display_name(&self) -> &str { "My Generator" }
+    fn author(&self) -> &str { "You <you@example.com>" }
+    fn version(&self) -> &str { "1.2.0" }
+    fn description(&self) -> &str { "A nifty winding." }
+    // ...
+}
+```
+
+### Python runner
+
+The runner prints a JSON **metadata block** when invoked with `--metadata`, and
+exits 0:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+
+PLUGIN = {
+    "id": "my-generator",
+    "display_name": "My Generator",
+    "author": "You <you@example.com>",
+    "version": "1.2.0",
+    "description": "A nifty winding.",
+    "parameters": [                      # optional
+        {"key": "num_strands", "label": "Strands", "description": "Braided paths per period",
+         "param_type": "int", "default": 5, "min": 2, "max": 99, "step": 1},
+    ],
+}
+
+if "--metadata" in sys.argv:
+    json.dump(PLUGIN, sys.stdout)
+    sys.exit(0)
+```
+
+The metadata block is **optional** — if the runner doesn't support `--metadata`,
+the app falls back to the file stem as the id and leaves author/version blank.
+
+---
+
+## 4. Exposing parameters to the app
+
+Patterns declare their **user-editable knobs** with `PatternParameter`:
+
+| field         | type                 | meaning                                        |
+| ------------- | -------------------- | ---------------------------------------------- |
+| `key`         | String               | lookup key (goes into `RoutingContext.params`) |
+| `label`       | String               | UI label                                       |
+| `description` | String               | tooltip                                        |
+| `param_type`  | `"int"` \| `"float"` | renders an integer or float control            |
+| `default`     | f64                  | default value when unset                       |
+| `min` / `max` | f64? (any type)      | inclusive range clamp (validated in routing) |
+| `step`        | f64?                 | spinner step                                   |
+
+### Rust
+
+```rust
+fn parameters(&self) -> Vec<PatternParameter> {
+    vec![
+        PatternParameter::int("num_strands", "Strands per period", 5.0, 2.0, 99.0)
+            .with_description("Number of braided paths in each period."),
+    ]
+}
+```
+
+At generate time the user's values arrive in `ctx.params.get("num_strands")`;
+the pattern calls `ctx.param("num_strands", 5.0)` to read it with a fallback.
+Any parameter representing a routing length or width is also in millimetres;
+angles remain radians or degrees only where the parameter explicitly says so.
+
+### Python
+
+Declare `parameters` inside the `--metadata` block (shown above). Each dict maps
+1:1 onto `PatternParameter`.
+
+### Deriving vs declaring
+
+Parameters that are **derived from the board** must be computed **inside** the
+pattern and must **NOT** be exposed as parameters. Example: the infinity braid's
+amplitude `A = board_width / 2` and total length `D = active_area + 2·padding`
+come from the context. Only genuinely independent user knobs (strand count,
+period count, angles…) should be declared. Out-of-range user values are rejected
+by the routing crate: `float` below `min` gives _"…is below the minimum … for
+pattern "…""_.
+
+### Slot-width and pole-pitch handoff
+
+Do not add `slot_width_mm` or `pole_pitch_mm` as duplicated user parameters. The
+host computes these dimensions from the board context and returned active
+geometry so they cannot drift away from the active area or magnet layout.
+
+The two equations used by the sidecar are:
+
+```text
+w_s = (N * w_t + (N - 1) * s) / sin(theta)
+max(w_s) = tau_p / phases - g_phase
+```
+
+`theta` is measured from the x/travel axis, `tau_p` is centre-to-centre
+North/South pole pitch, and `g_phase` is the core's minimum spacing rule. A
+`SlotWidth` record includes the exact `N`, `w_t`, `s`, `theta`, calculated
+`slot_width_mm`, maximum, and margin. A negative margin is returned as a DFM
+diagnostic; the host never modifies plugin coordinates.
+
+Patterns own pole-region semantics as well as trace geometry. Return one
+`pole_regions` record per phase and pole pitch when the pattern has a pole
+layout. Each record contains `phase`, zero-based `pole_index`, and millimetre
+`start`/`end` points. The host must not reconstruct these boundaries from
+segments. For the infinity braid, each shared boundary is the midpoint between
+the rightmost point-3 of one diamond period and the leftmost point-1 of the
+next period. Point 0 (the top vertex) is not used as the pole boundary.
+The infinity pattern extrapolates the first and last boundaries from the
+interior median spacing so edge regions remain equal in width for visualization.
+
+For the bundled infinity braid, `period_pitch_mm` is exactly the context's
+`magnet_pitch_mm` whenever magnet data is supplied. Its phase/strand via grid
+uses `magnet_pitch_mm / (phases × strands)` for both the final within-phase
+step and the boundary from one phase to the next. A custom pattern can expose
+a `num_strands`, `trace_count`, `turns`, or `windings_per_phase` parameter so
+the generic report can use that value as `N`; otherwise it reports one trace.
+
+---
+
+## 5. The strict-shape validator (what gets rejected)
+
+`Validator::validate` rejects (on upload, before anything is written) results
+containing:
+
+- **Non-finite** coordinates (NaN/Inf).
+- **Out-of-bounds** x/y outside `active_area + 2·padding` × `board_width`.
+- **Bad layer** index `≥ num_layers`; a via with `from_layer == to_layer`.
+- **Degenerate** zero-length segments or collapsed arcs.
+- **Bad net** (empty or non-ASCII label).
+- **Empty** result (no segments/curves/vias).
+- **Continuity** break when `expects_continuous()` is `true`.
+
+Useful error messages are returned to the UI, e.g.
+`segments[3].end.y: y = -10.000 mm outside the board width [0, 20.000 mm]`.
+
+---
+
+## 6. Authoring a Rust `cdylib` plugin
+
+A native plugin is a `cdylib` compiled against the **same** `pcbmotorgen-routing`
+crate version. See `crates/routing-plugin-example` for a complete, working
+reference. The C-ABI surface is:
+
+```rust
+#[no_mangle]
+pub static pcbmotorgen_ROUTING_PLUGIN_API: u32 = 2;  // millimetre contract
+
+#[no_mangle]
+pub unsafe extern "C" fn pcbmotorgen_routing_plugin_create() -> *mut std::ffi::c_void {
+    let inner: Box<dyn RoutingPattern> = Box::new(MyGenerator);
+    let outer: Box<Box<dyn RoutingPattern>> = Box::new(inner); // double-box preserves the vtable
+    Box::into_raw(outer) as *mut std::ffi::c_void
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn pcbmotorgen_routing_plugin_destroy(v: *mut std::ffi::c_void) {
+    if !v.is_null() { drop(Box::from_raw(v as *mut Box<dyn RoutingPattern>)); }
+}
+```
+
+Both host and plugin must link the same `pcbmotorgen-routing` crate so the
+trait-object vtable layout matches. Build with `crate-type = ["cdylib"]`
+(`librouting_plugin_example.dylib` on macOS, `.so` on Linux, `.dll` on Windows).
+
+> **Warning:** loading a native library executes its code. Only load plugins you
+> trust. The app loads the file the user explicitly picked via **Browse…**.
+
+---
+
+## 7. Authoring a Python runner
+
+A Python runner is a standalone `.py` script with two modes:
+
+1. **Default mode** — reads the `RoutingContext` JSON on **stdin**, prints one
+   strict `RoutingResult` JSON to **stdout**, and prints _nothing else_ to
+   stdout. Non-zero exit or extra stdout text is treated as a malformed output.
+2. **`--metadata` mode** — prints a `PluginMetadata` (name/author/version +
+   parameters) and exits 0. Optional.
+
+See `scripts/pattern_runners/example_runner.py` (a fully valid minimal runner)
+and `docs/reference/pcbBraid` (the reference braid algorithm to port).
+
+The Rust loader executes `python3 <script>`, feeds the context on stdin, parses
+stdout as `RoutingResult`, then runs the result through the **same** strict
+validator as native plugins — a Python pattern cannot bypass any shape rule.
+The loader does not accept a `RoutingReport` envelope from Python; dimension
+metadata is calculated by the host after validation.
+
+---
+
+## 8. Loading into the app
+
+In the **Routing pattern** panel:
+
+1. Choose **Native crate plugin** or **Python runner**.
+2. Click **Browse…** to pick the `.dylib`/`.so`/`.dll`/`.py` file.
+3. Optionally set a **Pattern name** (registry id).
+4. Click **Load generator**. The plugin is probed against the current config;
+   if it passes, it is **persisted** into the app's data directory
+   (`app_data/plugins/`) and added to the installed list. If it fails, the
+   rejection error is shown.
+
+Installed generators are re-loaded automatically on the next app start
+(`load_installed_plugins`), and can be removed from the **Installed generators**
+list.
+
+### Directory layout (macOS example)
+
+```
+~/Library/Application Support/<app-identifier>/plugins/
+    plugins.json            # installed-plugin manifest
+    my-generator.py         # stored python runner
+    my_braid.dylib          # stored native plugin
+```
+
+---
+
+## 9. Quick checklist
+
+- [ ] Return valid geometry within the board bounds, layers `< num_layers`.
+- [ ] No NaN / zero-length segments / self-looped vias.
+- [ ] Net labels are non-empty ASCII phase names.
+- [ ] Derive board-sized quantities from the context; expose only true knobs
+      as `parameters`.
+- [ ] Implement metadata (author, version, description) — Rust accessors or the
+      Python `--metadata` block.
+- [ ] Keep output to raw geometry only — never set widths / via sizes / DRC
+      (the routing crate applies `DesignRules` and runs interference checks).
+- [ ] Keep Python output to strict `RoutingResult` JSON — do not emit the
+      host-side `RoutingReport` envelope.

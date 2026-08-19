@@ -1,0 +1,80 @@
+# pcbmotorgen
+
+A tool for generating multi-layer PCB stator layouts for linear coreless
+motors.
+
+Rather than drawing copper traces by hand, `pcbmotorgen` computes coil
+geometry via extensible **routing patterns**, validates the motor force and
+DFM (design-rule) constraints, and writes the complete track/arc/via layout to
+an open KiCad 10 PCB file over the KiCad 10 IPC (protobuf over NNG) interface.
+
+The user interface is a **Tauri + Svelte desktop app** (`pcbmotorgen` parent
+crate) backed by three independently-buildable Rust sub-crates:
+`pcbmotorgen-routing` (traces & generation), `pcbmotorgen-simulation` (all
+physics), and `pcbmotorgen-export` (KiCad adapter + DXF exporter). There is no
+Python runtime dependency.
+
+---
+
+## What it generates
+
+Given mechanical and electrical parameters the tool produces:
+
+- **Extensible coil geometry** — a selected _routing pattern_ (bundled
+  `infinity-braid` by default, or a user-authored Rust `cdylib` / Python runner
+  plugin) produces segments, arcs, and vias, each owning its `layer` and `net`.
+- **DFM-aware routing** — the routing crate applies trace width, via size, and
+  runs overlap / via-pad DRC (`check_interference`) on the generated geometry.
+- **Multiphysics feedback** — magnetic B-field grid, Lorentz force sweep with
+  ripple %, stackup, power budget, friction, and height stack, all computed in
+  the simulation crate.
+- **KiCad export** — the KiCad adapter consumes the generic geometry model and
+  writes tracks/arcs/vias atomically (single undo step).
+
+The result is sent directly to KiCad as one undoable commit via the IPC API.
+
+---
+
+## Requirements
+
+- **KiCad 10.0+** — PCB editor open, IPC API enabled
+- **Rust (stable, 1.80+)** — sub-crates + Tauri backend
+- **Node.js 18+** — Svelte frontend
+- macOS 12+ or Linux (Windows untested)
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/<your-handle>/pcbmotorgen.git
+cd pcbmotorgen
+
+# Desktop app (primary UI)
+cd app
+pnpm install
+pnpm run tauri dev
+```
+
+---
+
+## Quick start
+
+### 1. Enable the KiCad IPC API (one-time)
+
+1. Open KiCad 10
+2. **Preferences → Plugins → Enable IPC API**
+3. Restart KiCad
+
+### 2. Launch the desktop app
+
+```bash
+cd app
+pnpm run tauri dev
+```
+
+Configure your motor in the UI, preview the magnetic field and force plots,
+then click **Write to KiCad** when ready.
+
+All generated tracks and vias appear as **one undo step** — `Ctrl+Z` rolls
+back the entire layout cleanly.

@@ -1,0 +1,17 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "references": {
+        "pcbmotorgen-routing-docs": {
+            "path": "../crates/pcbmotorgen-routing/docs/API.md",
+            "description": "API documentation for consuming the pcbmotorgen routing crate handling routing patterns and DFM constraints."
+        },
+        "pcbmotorgen-export-docs": {
+            "path": "../crates/pcbmotorgen-export/docs/API.md",
+            "description": "API documentation for consuming the pcbmotorgen export crate handling KiCad IPC adapter + DXF."
+        },
+        "pcbmotorgen-simulation-docs": {
+            "path": "../crates/pcbmotorgen-simulation/docs/API.md",
+            "description": "API documentation for consuming the pcbmotorgen simulation crate handling physics and simulation."
+        },
+    }
+}

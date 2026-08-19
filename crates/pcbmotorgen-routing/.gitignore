@@ -1,0 +1,22 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / Tauri
+node_modules/
+app/dist/
+app/src-tauri/gen/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# temp files
+/test
+.ref
+*pcbBraid/

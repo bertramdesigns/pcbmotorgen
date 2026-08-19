@@ -1,0 +1,24 @@
+[package]
+name = "pcbmotorgen-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Exporters for the routing crate's coil geometry: the KiCad 10 IPC adapter (board items, atomic commits, diagnostics, preview) and the pure DXF R12 ASCII exporter (LINE/ARC/CIRCLE)."
+
+[dependencies]
+pcbmotorgen-routing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+prost = "0.14"
+prost-types = "0.14"
+nng = "1.0"
+rand = "0.8"
+
+[build-dependencies]
+prost-build = "0.14"
+protox = "0.9"
+
+[lib]
+name = "pcbmotorgen_export"
+path = "src/lib.rs"

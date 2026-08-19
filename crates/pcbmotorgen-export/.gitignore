@@ -1,0 +1,19 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# temp files
+/test
+.ref

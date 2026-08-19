@@ -1,0 +1,25 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / Tauri
+node_modules/
+app/dist/
+app/src-tauri/gen/
+
+# opencode tooling inside crates (not part of the product)
+crates/**/.opencode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# temp files
+/test
+.ref
+*pcbBraid/

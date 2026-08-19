@@ -1,0 +1,14 @@
+[package]
+name = "pcbmotorgen-routing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Extensible routing-pattern plugin contract for PCB stator coil generation (segments / curves / vias) with strict-shape validation and dynamic loading (Rust crate plugins + Python runners)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+libloading = "0.8"
+
+[dev-dependencies]

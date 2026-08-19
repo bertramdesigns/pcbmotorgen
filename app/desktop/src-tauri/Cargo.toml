@@ -1,0 +1,20 @@
+[package]
+name = "pcbmotorgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Tauri desktop host + parent orchestrator for pcbmotorgen; consumes the routing/simulation/export sub-crates to compile a functional PCB motor design with UI feedback."
+
+[dependencies]
+pcbmotorgen-routing = { workspace = true }
+pcbmotorgen-simulation = { workspace = true }
+pcbmotorgen-export = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

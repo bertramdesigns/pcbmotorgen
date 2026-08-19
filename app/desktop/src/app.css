@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Desktop app shell: lock the root scroller at `lg` so the page height is
+ * fixed (header + flex columns + footer always fill the viewport). Only the
+ * per-column scroll containers move; the window itself never scrolls. Below
+ * lg the columns stack and the page scrolls normally.
+ */
+@media (min-width: 1024px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+}

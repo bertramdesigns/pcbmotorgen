@@ -1,0 +1,62 @@
+import { expect, type Locator, type Page } from "@playwright/test";
+
+/** The Design tab's scrollable settings container. */
+export const DESIGN_SCROLL = "#design-settings-scroll";
+
+/** The persistent left column (aside) of the main grid. */
+export const ASIDE = "aside[aria-label='Persistent design reflection']";
+
+export function boundingBox(locator: Locator) {
+  return locator.boundingBox();
+}
+
+/**
+ * Geometry of an element relative to the viewport, as integers.
+ * Returns null when the element is hidden/not attached.
+ */
+export async function box(page: Page, locator: Locator) {
+  const b = await locator.boundingBox();
+  if (!b) return null;
+  return { x: b.x, y: b.y, w: b.width, h: b.height };
+}
+
+/** The Design panel's outer box (includes its p-4 padding). */
+export function designPanel(page: Page) {
+  return page.locator("#panel-design");
+}
+
+/** The first card of the left column (TravelDiagram). */
+export function leftColumnFirstCard(page: Page) {
+  return page.locator(
+    `${ASIDE} > :first-child`,
+  );
+}
+
+/** Active-area length readout in the Design-dimensions box. */
+export function activeLengthReadout(page: Page) {
+  return page.locator(
+    `section[aria-labelledby="design-dimensions-heading"] dt[title="Active area length"] + dd`,
+  );
+}
+
+/** The Design constraints box (right column, top of the Design settings). */
+export function designConstraintsPanel(page: Page) {
+  return page.locator(
+    `section[aria-labelledby="design-constraints-heading"]`,
+  );
+}
+
+/** NumberField wrapper by aria-label. */
+export function numberField(page: Page, ariaLabel: string) {
+  return page.locator(`input[aria-label="${ariaLabel}"]`);
+}
+
+/** Traffic-light: helper that retries an async expectation until it passes. */
+export function eventually(
+  assertion: () => Promise<void>,
+  timeoutMs = 4000,
+): Promise<void> {
+  return expect(async () => {
+    await assertion();
+  }).toPass({ timeout: timeoutMs });
+}

@@ -1,0 +1,17 @@
+[package]
+name = "pcbmotorgen-simulation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Analytical magnetic field, Lorentz force, and multiphysics simulation for coreless linear PCB motors (physics/stackup/power/friction)."
+
+[dependencies]
+pcbmotorgen-routing = { workspace = true }
+magba = { workspace = true }
+nalgebra = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
