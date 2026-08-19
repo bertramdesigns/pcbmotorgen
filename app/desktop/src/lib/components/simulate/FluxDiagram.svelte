@@ -11,6 +11,7 @@
   import type { ConfigStore } from "../../stores/config.svelte";
   import { sampleBField, debounce, mm } from "../../ipc";
   import { hasBackIron } from "../../geometry";
+  import { computeMagnets } from "../../previewGeometry";
   import type { BFieldGridDto } from "../../types";
 
   let { config, active }: { config: ConfigStore; active: boolean } = $props();
@@ -238,18 +239,8 @@
     };
   });
 
-  /** Magnet bar descriptors (alternating N/S, like TravelDiagram). */
-  let magnetBars = $derived.by(() => {
-    const arr: { x: number; w: number; pole: number }[] = [];
-    for (let i = 0; i < geom.magnet_count; i++) {
-      arr.push({
-        x: i * geom.magnet_pitch_m,
-        w: geom.magnet_width_m,
-        pole: i % 2 === 0 ? 1 : -1,
-      });
-    }
-    return arr;
-  });
+  /** Magnet bars use the shared centered pitch-cell fallback. */
+  let magnetBars = $derived(computeMagnets(config));
 </script>
 
 <div class="rounded-lg bg-slate-800/40 border border-slate-700 p-4">

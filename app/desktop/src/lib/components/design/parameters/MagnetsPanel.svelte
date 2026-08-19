@@ -55,48 +55,48 @@
         </select>
       </label>
 
-      <label class="min-w-0" title="Magnet span along the travel axis (X); sets pole pitch with the gap.">
+      <label class="min-w-0" title="X Length (mm): magnet span along the travel axis; sets pole pitch with the gap.">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Travel-axis length (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">X Length (mm)</span>
           <NumberField
             id="magnet-length"
             value={config.magnet_width_mm}
             min={0.1}
             max={40}
             step={0.1}
-            ariaLabel="Magnet travel-axis length (mm)"
+            ariaLabel="X Length (mm), magnet span along the travel axis"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_width_mm = value)}
           />
         </span>
       </label>
 
-      <label class="min-w-0" title="Magnet width across the stator (Y); defines active conductor length.">
+      <label class="min-w-0" title="Y Width (mm): magnet width across the stator; defines active conductor length.">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Cross-width (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">Y Width (mm)</span>
           <NumberField
             id="magnet-width"
             value={config.magnet_cross_width_mm}
             min={0.1}
             max={40}
             step={0.1}
-            ariaLabel="Magnet cross-width (mm)"
+            ariaLabel="Y Width (mm), magnet width across the stator"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_cross_width_mm = value)}
           />
         </span>
       </label>
 
-      <label class="min-w-0" title="Magnetisation-axis thickness (Z); affects field strength at the PCB.">
+      <label class="min-w-0" title="Z Thickness (mm): magnetisation-axis thickness; affects field strength at the PCB.">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Thickness (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">Z Thickness (mm)</span>
           <NumberField
             id="magnet-height"
             value={config.magnet_height_mm}
             min={0.1}
             max={20}
             step={0.1}
-            ariaLabel="Magnet thickness (mm)"
+            ariaLabel="Z Thickness (mm), magnetisation-axis thickness"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_height_mm = value)}
           />

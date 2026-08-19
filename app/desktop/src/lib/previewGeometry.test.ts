@@ -26,6 +26,7 @@ import {
   isValidPoleRegion,
   poleRegionPolarity,
   firstMagnetCenterX,
+  computeMagnetStartX,
   medianActiveX,
   formatMetresMm,
   formatMarginMm,
@@ -120,7 +121,10 @@ describe("computePreviewGeometry", () => {
     expect(g.magnetTop).toBeCloseTo(g.contentBox.maxY + 0.001);
     expect(g.magnetSpan).toBeCloseTo(10 * 0.012);
     expect(g.fitBounds.maxY).toBeCloseTo(g.magnetTop + 0.003);
-    // fit x must cover both the winding and the magnet span origin
+    // The camera fit follows the painted solids, not the unused half-gap at
+    // the right end of the configured pitch span.
+    expect(g.fitBounds.maxX).toBeCloseTo(0.001 + 9 * 0.012 + 0.01);
+    // fit x must cover both the winding and the painted magnet bars
     expect(g.fitBounds.minX).toBeLessThanOrEqual(g.contentBox.minX);
     expect(g.fitBounds.maxX).toBeGreaterThanOrEqual(g.contentBox.maxX);
   });
@@ -142,12 +146,58 @@ describe("computePreviewGeometry", () => {
 });
 
 describe("computeMagnets", () => {
-  it("produces count pitch-spaced segments with alternating polarity", () => {
+  it("centres solid bars inside their pitch cells when no sidecar is present", () => {
     const mags = computeMagnets(CONFIG);
     expect(mags).toHaveLength(10);
-    expect(mags[0]).toEqual({ x: 0, w: 0.01, pole: 1 });
-    expect(mags[1]).toEqual({ x: 0.012, w: 0.01, pole: -1 });
-    expect(mags[9].x).toBeCloseTo(9 * 0.012);
+    expect(mags[0].x).toBeCloseTo(0.001);
+    expect(mags[0].w).toBeCloseTo(0.01);
+    expect(mags[0].pole).toBe(1);
+    expect(mags[1].x).toBeCloseTo(0.013);
+    expect(mags[1].w).toBeCloseTo(0.01);
+    expect(mags[1].pole).toBe(-1);
+    expect(mags[9].x).toBeCloseTo(0.001 + 9 * 0.012);
+  });
+
+  it("aligns each pitch cell's right edge (magnet + gap) on a B-phase centre", () => {
+    const dimensions: { pole_regions: PoleRegionDto[] } = {
+      pole_regions: [
+        // Phase bands mirror the infinity braid: one region per phase per
+        // pole pitch, each phase interleaved by pole_pitch / phases.
+        // Centres: A1=6, B1=10, C1=14, A2=18, B2=22 mm.
+        { phase: "A", pole_index: 0, start: [0, 0], end: [0.012, 0] },
+        { phase: "B", pole_index: 0, start: [0.004, 0], end: [0.016, 0] },
+        { phase: "C", pole_index: 0, start: [0.008, 0], end: [0.02, 0] },
+        { phase: "A", pole_index: 1, start: [0.012, 0], end: [0.024, 0] },
+        { phase: "B", pole_index: 1, start: [0.016, 0], end: [0.028, 0] },
+      ],
+    };
+    const mags = computeMagnets(CONFIG, dimensions);
+    const gapM = CONFIG.magnet_gap_mm / 1000;
+
+    // First bar starts one full pitch before the B1 centre so that the first
+    // pitch cell's right edge (bar + trailing gap) lands on the B1 centre.
+    expect(mags[0].x).toBeCloseTo(0.010 - 0.012); // -2 mm
+    expect(mags[0].x + mags[0].w + gapM).toBeCloseTo(0.010); // → B1 centre
+    expect(computeMagnetStartX(CONFIG, dimensions)).toBeCloseTo(-0.002);
+
+    // The negative bar spans the C1→A2 boundary zone (covering the C1 and A2
+    // bands, i.e. "C1 negative, A2 negative"). Only the leading gap before
+    // the bar sits over the head of the C1 band.
+    expect(mags[1].x).toBeCloseTo(0.010);
+    expect(mags[1].x + mags[1].w).toBeCloseTo(0.020);
+    expect(mags[1].x).toBeLessThan(0.02); // overlaps C1 [8,20]
+    expect(mags[1].x + mags[1].w).toBeGreaterThan(0.012); // overlaps A2 [12,24]
+
+    // Every later cell's right edge (including its gap) falls on the next
+    // B-phase centre (B2 centre = 22 mm).
+    expect(mags[1].x + mags[1].w + gapM).toBeCloseTo(0.022);
+
+    // Without A2/B2, the available B1 neutral zone is still the anchor rather
+    // than treating A1 as a substitute for the missing second-period zone.
+    const onePeriod = {
+      pole_regions: dimensions.pole_regions.filter((region) => region.pole_index === 0),
+    };
+    expect(computeMagnetStartX(CONFIG, onePeriod)).toBeCloseTo(-0.002);
   });
 });
 

@@ -74,7 +74,7 @@ export function validateDesign(config: DesignConfigInput): Finding[] {
       id: "magnet-cross-width",
       level: "warning",
       message:
-        `Magnet width across the stator (${config.magnet_cross_width_mm.toFixed(1)} mm) ` +
+        `Magnet Y Width (across the stator) (${config.magnet_cross_width_mm.toFixed(1)} mm) ` +
         `exceeds the active trace width (${config.active_area_width_mm.toFixed(1)} mm). ` +
         "The force-producing area will not be fully coupled.",
     });

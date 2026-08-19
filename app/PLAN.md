@@ -20,6 +20,7 @@ tracked in the round sections below**
 | --- | ------------------------------------------------------- | -------- | ----- |
 | 1   | `validate_write_preconditions` always reports 12 layers | RESOLVED | —     |
 | 2   | Back iron graphics don't clear when toggling off        | RESOLVED | —     |
+| 3   | Magnet preview bars are offset from the three-phase slot zones | RESOLVED | Anchor each pitch cell's right edge (solid magnet + trailing gap) on the pattern's B-phase slot centres (A1 +, B1 neutral, C1/A2 −, ...) using `routing_dimensions.pole_regions`. |
 
 ---
 

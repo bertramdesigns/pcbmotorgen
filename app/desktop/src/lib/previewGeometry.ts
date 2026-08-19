@@ -107,15 +107,24 @@ export function computePreviewGeometry(
 
   // Magnet strip sits 1 mm above the tallest drawn content.
   const magnetTop = contentBox.maxY + MAGNET_STRIP_CLEARANCE_M;
+  const magnets = computeMagnets(config, coils?.routing_dimensions);
+  const magnetWidth = config.magnet_width_mm / 1000;
+  const magnetGap = Math.max(config.magnet_gap_mm, 0) / 1000;
   const magnetSpan = Math.max(
-    config.magnet_count * ((config.magnet_width_mm + config.magnet_gap_mm) / 1000),
+    config.magnet_count * (magnetWidth + magnetGap),
     0.001,
   );
+  // Fit the painted solids themselves. Do not include synthetic half-gap
+  // padding at either end: that shifts the apparent first-magnet position
+  // when the camera is reset, especially for a sidecar-aligned array.
+  const magnetStartX = magnets[0]?.x ?? 0;
+  const lastMagnet = magnets[magnets.length - 1];
+  const magnetEndX = lastMagnet ? lastMagnet.x + lastMagnet.w : magnetStartX + magnetSpan;
 
   const fitBounds = unionBounds(contentBox, {
-    minX: 0,
+    minX: magnetStartX,
     minY: magnetTop,
-    maxX: magnetSpan,
+    maxX: magnetEndX,
     maxY: magnetTop + MAGNET_STRIP_HEIGHT_M,
   });
 
@@ -156,13 +165,98 @@ export function computeUniqueLayers(
     .map((idx) => ({ idx }));
 }
 
+/**
+ * First solid-magnet x position for the preview.
+ *
+ * The three-phase phase sequence is A1 → B1 (neutral) → C1 → A2.  Each
+ * N/S magnet pitch cell (solid bar + its trailing gap) must land with its
+ * RIGHT edge exactly on the centre of a B-phase slot: that is how the poles
+ * stay locked to the slot zones while the neutral B phase sits symmetrically
+ * between the two magnets that flank it.  Concretely, the first cell's right
+ * edge (magnet0.x + width + gap) equals the B1 zone centre, the second cell's
+ * right edge the B2 zone centre, and so on.  Pattern-owned pole regions are
+ * the authoritative source for those zone centres.  When a legacy payload has
+ * no regions, the fallback places each bar in the centre of its configured
+ * pitch cell, splitting the configured gap at each cell boundary rather than
+ * leaving it all on one side of a bar.
+ */
+export function computeMagnetStartX(
+  config: PreviewConfigLike,
+  dimensions:
+    | Partial<Pick<RoutingDimensionsDto, "pole_regions">>
+    | null
+    | undefined = undefined,
+): number {
+  const widthM = config.magnet_width_mm / 1000;
+  const gapM = Math.max(config.magnet_gap_mm, 0) / 1000;
+  const pitchM = widthM + gapM;
+  if (!Number.isFinite(widthM) || widthM <= 0 || !Number.isFinite(pitchM) || pitchM <= 0) {
+    return 0;
+  }
+
+  const zones = computePoleRegionZones(dimensions);
+  const phaseOrder: string[] = [];
+  for (const zone of zones) {
+    if (!phaseOrder.includes(zone.phase)) phaseOrder.push(zone.phase);
+  }
+
+  const zoneAt = (phase: string, poleIndex: number): PoleRegionZone | null =>
+    zones.find((zone) => zone.phase === phase && zone.poleIndex === poleIndex) ?? null;
+  const firstZone = (phase: string, poleIndex: number): PoleRegionZone | null =>
+    zoneAt(phase, poleIndex) ?? zones.find((zone) => zone.phase === phase) ?? null;
+  const centreX = (zone: PoleRegionZone): number => (zone.x0 + zone.x1) / 2;
+
+  // Anchor the array so the FIRST pitch cell's right edge (solid bar + its
+  // trailing gap) lands exactly on the neutral B1 zone centre. The neutral
+  // phase is then flanked symmetrically by the N and S bars while every later
+  // cell's right edge falls on the next B-zone centre automatically (B zones
+  // repeat every pitch). Neither the configured gap nor any edge padding can
+  // move the first solid bar away from the pattern-owned coordinate.
+  if (phaseOrder.length >= 2) {
+    const neutral = zoneAt(phaseOrder[1], 0) ?? firstZone(phaseOrder[1], 0);
+    if (neutral) {
+      const neutralCentre = centreX(neutral);
+      if (Number.isFinite(neutralCentre)) {
+        return neutralCentre - pitchM;
+      }
+    }
+  }
+
+  // If B1 is absent from a three-phase sidecar, fall back to the equivalent
+  // C1/A2 midpoint rather than guessing from a phase-band or board border.
+  // B1's centre sits half a pitch before that midpoint, so the same
+  // cell-right-edge rule gives `negativeMagnetCentre - 3/2 * pitch`.
+  if (phaseOrder.length === 3) {
+    const c1 = zoneAt(phaseOrder[2], 0);
+    const a2 = zoneAt(phaseOrder[0], 1);
+    if (c1 && a2) {
+      const negativeMagnetCentre = (centreX(c1) + centreX(a2)) / 2;
+      if (Number.isFinite(negativeMagnetCentre)) {
+        return negativeMagnetCentre - pitchM * 1.5;
+      }
+    }
+  }
+
+  // No pattern-owned zones: centre each solid bar in its pitch cell.  This
+  // preserves the old origin while splitting the configured gap at the array
+  // boundaries for legacy/mock payloads.
+  return gapM / 2;
+}
+
 /** Magnet array overlay: count × pitch segments, alternating polarity. */
-export function computeMagnets(config: PreviewConfigLike): MagnetStrip[] {
+export function computeMagnets(
+  config: PreviewConfigLike,
+  dimensions:
+    | Partial<Pick<RoutingDimensionsDto, "pole_regions">>
+    | null
+    | undefined = undefined,
+): MagnetStrip[] {
   const arr: MagnetStrip[] = [];
-  const pitch = (config.magnet_width_mm + config.magnet_gap_mm) / 1000;
+  const pitch = (config.magnet_width_mm + Math.max(config.magnet_gap_mm, 0)) / 1000;
   const mw = config.magnet_width_mm / 1000;
+  const firstX = computeMagnetStartX(config, dimensions);
   for (let i = 0; i < config.magnet_count; i++) {
-    arr.push({ x: i * pitch, w: mw, pole: i % 2 === 0 ? 1 : -1 });
+    arr.push({ x: firstX + i * pitch, w: mw, pole: i % 2 === 0 ? 1 : -1 });
   }
   return arr;
 }

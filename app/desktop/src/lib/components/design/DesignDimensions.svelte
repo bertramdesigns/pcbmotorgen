@@ -57,7 +57,7 @@
       <dd class="font-mono text-xs text-sky-200">{config.magnet_count}</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Magnet travel-axis x cross-width">Magnet size</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="X Length × Y Width">Magnet size</dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_width_mm.toFixed(1)} &times; {config.magnet_cross_width_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">

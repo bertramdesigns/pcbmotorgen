@@ -100,7 +100,11 @@
   // Geometry + view — ALL math comes from lib/previewGeometry + lib/chart.
   // `config` (ConfigStore) satisfies PreviewConfigLike structurally (it has
   // magnet_count / magnet_width_mm / magnet_gap_mm plus extras, which is
-  // fine for structural typing).
+  // fine for structural typing). Magnet placement also consumes the generated
+  // routing_dimensions sidecar when available: each pitch cell's right edge
+  // (solid bar + trailing gap) is anchored to the pattern's B-phase slot
+  // centres so the poles stay locked to the slot zones. Legacy or missing
+  // sidecars use computeMagnets' centered pitch-cell fallback.
   // -------------------------------------------------------------------
   let g = $derived(computePreviewGeometry(coils, config as PreviewConfigLike));
 
@@ -126,7 +130,7 @@
   });
 
   let worldTransform = $derived(worldTransformFor(gestures.zoom));
-  let magnets = $derived(computeMagnets(config));
+  let magnets = $derived(computeMagnets(config, coils?.routing_dimensions));
   let uniquePhases = $derived(computeUniquePhases(coils));
   let uniqueLayers = $derived(computeUniqueLayers(coils));
   let visibleSegments = $derived(
@@ -490,7 +494,10 @@
     for (const mag of magnets) {
       ctx.globalAlpha = 0.7;
       ctx.fillStyle = mag.pole > 0 ? "#f97316" : "#3b82f6";
-      ctx.fillRect(mag.x, g.magnetTop, Math.max(mag.w - 0.0005, 0.0005), 0.003);
+      // Paint the configured solid width exactly. A fixed 0.5 mm inset here
+      // adds an unmodelled gap and moves the visible pole centre away from the
+      // slot-zone anchor.
+      ctx.fillRect(mag.x, g.magnetTop, Math.max(mag.w, 0.0005), 0.003);
     }
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
