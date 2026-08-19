@@ -1,5 +1,7 @@
 # pcbmotorgen
 
+![Heavily In Progress](./imgs/in-progress-banner.svg)
+
 A tool for generating multi-layer PCB stator layouts for linear coreless
 motors.
 

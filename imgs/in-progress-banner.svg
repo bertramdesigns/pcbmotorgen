@@ -1,0 +1,111 @@
+<svg
+  width="850"
+  height="240"
+  viewBox="0 0 850 240"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <style>
+    .title {
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+      font-size: 40px;
+      font-weight: 900;
+      fill: #ffffff;
+      letter-spacing: 2px;
+    }
+    .subtitle {
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+      font-size: 16px;
+      font-weight: 400;
+      fill: #8b949e;
+    }
+    .glow {
+      filter: drop-shadow(0px 0px 8px rgba(227, 179, 65, 0.6));
+    }
+  </style>
+  <defs>
+    <!-- Hazard Stripes -->
+    <pattern
+      id="stripes"
+      width="40"
+      height="40"
+      patternTransform="rotate(45)"
+      patternUnits="userSpaceOnUse"
+    >
+      <rect width="20" height="40" fill="#e3b341" />
+      <rect x="20" width="20" height="40" fill="#161b22" />
+    </pattern>
+    <!-- Animated Progress Pattern -->
+    <pattern
+      id="progress"
+      width="20"
+      height="20"
+      patternTransform="rotate(45)"
+      patternUnits="userSpaceOnUse"
+    >
+      <rect width="10" height="20" fill="#e3b341" />
+      <rect x="10" width="10" height="20" fill="#d29922" />
+    </pattern>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1117" />
+      <stop offset="100%" stop-color="#161b22" />
+    </linearGradient>
+  </defs>
+
+  <!-- Base Background -->
+  <rect
+    width="850"
+    height="200"
+    rx="16"
+    fill="url(#bg-grad)"
+    stroke="#30363d"
+    stroke-width="2"
+  />
+
+  <!-- Top and Bottom Hazard Borders -->
+  <path
+    d="M0,16 Q0,0 16,0 L834,0 Q850,0 850,16 L850,24 L0,24 Z"
+    fill="url(#stripes)"
+  />
+
+  <!-- Left Warning Triangle -->
+  <g
+    transform="translate(130, 60) scale(1.4)"
+    stroke-width="2.5"
+    stroke="#e3b341"
+    fill="none"
+    class="glow"
+  >
+    <path d="M24 4 L4 38 L44 38 Z" stroke-linejoin="round" />
+    <path d="M24 16 L24 28" stroke-linecap="round" />
+    <circle cx="24" cy="34" r="1.5" fill="#e3b341" stroke="none" />
+  </g>
+
+  <!-- Right Warning Triangle -->
+  <g
+    transform="translate(650, 60) scale(1.4)"
+    stroke-width="2.5"
+    stroke="#e3b341"
+    fill="none"
+    class="glow"
+  >
+    <path d="M24 4 L4 38 L44 38 Z" stroke-linejoin="round" />
+    <path d="M24 16 L24 28" stroke-linecap="round" />
+    <circle cx="24" cy="34" r="1.5" fill="#e3b341" stroke="none" />
+  </g>
+
+  <!-- Main Title -->
+  <text x="425" y="100" text-anchor="middle" class="title">IN PROGRESS</text>
+
+  <!-- Subtitles -->
+  <text x="425" y="145" class="subtitle" text-anchor="middle">
+    This repository is currently undergoing active development.
+  </text>
+  <text x="425" y="168" class="subtitle" text-anchor="middle">
+    Expect breaking changes, experimental code, and incomplete features.
+  </text>
+</svg>
