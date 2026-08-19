@@ -1,10 +1,11 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "references": {
-        "motor_papers": {
-            "path": "docs/papers/",
-            "description": "Technical literature, equations, and design constraints for BOTH axial flux (rotary) and linear (translational) PCB motors, covering pole pitch, track width, and multi-layer winding topologies."
+    "permission": {
+        "external_directory": {
+            "*": "deny"
         },
+    },
+    "references": {
         "tauri-docs": {
             "repository": "https://github.com/tauri-apps/tauri-docs.git",
             "branch": "v2",

@@ -4,7 +4,7 @@ mode: primary
 color: "#1f77b4"
 permissions:
   edit:
-    "*": "deny"
+    "/*": "deny"
     "/tmp/": "allow"
   external_directory:
     "/tmp": "allow"
@@ -49,4 +49,4 @@ When a feature implementation plan is initialized:
 
 ## 4. Branching
 
-- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `simulation/feat/ui-overhaul`, `simulation/chore/docs-cleanup`) and lands via a separate PR. Squash-merge on approval.
+- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `simulation/feat/ui-overhaul`, `simulation/chore/docs-cleanup`) and lands via a separate PR. Ensure the PR is properly documented. Squash-merge on approval.

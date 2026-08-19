@@ -4,7 +4,7 @@ mode: primary
 color: "#1f77b4"
 permissions:
   edit:
-    "*": "deny"
+    "/*": "deny"
     "/tmp/": "allow"
   external_directory:
     "/tmp": "allow"
@@ -41,4 +41,4 @@ You coordinate execution tasks by delegating to the appropriate specialized suba
   correct `index/field/kind`; infinity braid produces a validated, bounded,
   continuous 2-layer result for a reference config; Python runner path parses +
   validates sample JSON.
-- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `routing/feat/ui-overhaul`, `routing/chore/docs-cleanup`) and lands via a separate PR. Squash-merge on approval.
+- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `routing/feat/ui-overhaul`, `routing/chore/docs-cleanup`) and lands via a separate PR. Ensure the PR is properly documented. Squash-merge on approval.
