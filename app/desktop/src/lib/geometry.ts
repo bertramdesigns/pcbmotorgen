@@ -88,6 +88,14 @@ export function magnetPoles(
 // ---------------------------------------------------------------------------
 
 /**
+ * Vertical exaggeration factor of the 3/4 iso view: the PCB stackup
+ * (1.6 mm board, 0.5 mm gap…) is invisible at true scale next to a
+ * ~200 mm travel axis, so Z is drawn ×10. Single-sourced here — the iso
+ * view projects with it and the reflection's hint text quotes it.
+ */
+export const ISO_Z_EXAG = 10;
+
+/**
  * Axonometric projection shared by the iso view's wireframes:
  *     sx = cx + (x + 0.45·y) · sxy
  *     sy = cy + (−z·sz + 0.45·y·sxy)

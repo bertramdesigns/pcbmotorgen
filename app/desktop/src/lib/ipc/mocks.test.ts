@@ -16,8 +16,10 @@ import {
   mockPreviewCoils,
   mockDxfExportResult,
   mockBFieldGrid,
+  mockTravelEnvelope,
 } from "./mocks";
 import type { LinearMotorConfig } from "../types";
+import { computePreviewGeometry, computeMagnets } from "../previewGeometry";
 
 function makeConfig(overrides: Partial<LinearMotorConfig> = {}): LinearMotorConfig {
   return {
@@ -102,8 +104,10 @@ describe("mockCoils", () => {
     const c = makeConfig(); // active_area 0.195, padding 0.03, pitch 0.012
     const regions = mockCoils(c).routing_dimensions!.pole_regions;
     expect(regions.length).toBeGreaterThan(0);
+    // Mirrors the infinity braid: regions tile the FULL routing domain
+    // (active area + 2 × padding), one per phase per pole pitch.
     const regionsPerPhase = Math.floor(
-      (c.magnet_count * c.magnet_pitch_m) / c.magnet_pitch_m,
+      (c.active_area_length_m + 2 * c.padding_m) / c.magnet_pitch_m,
     );
     expect(regionsPerPhase).toBeGreaterThan(0);
     expect(regions).toHaveLength(regionsPerPhase * c.phases);
@@ -118,6 +122,41 @@ describe("mockCoils", () => {
       // metre coordinates with a strictly positive width
       expect(r.end[0] - r.start[0]).toBeGreaterThan(0);
     }
+  });
+
+  it("routes mock coils across the FULL domain so the mover stays over conductors for its whole travel", () => {
+    // Default-style mover: P_e 12 mm → pole pitch 6 mm, 12 poles, k 0.75.
+    const c = makeConfig({
+      magnet_count: 12,
+      magnet_pitch_m: 0.006,
+      magnet_width_m: 0.0045,
+      magnet_gap_m: 0.0015,
+      active_area_length_m: 0.147,
+      padding_m: 0.03,
+    });
+    const coils = mockCoils(c);
+    const g = computePreviewGeometry(coils, {
+      magnet_count: 12,
+      magnet_width_mm: 4.5,
+      magnet_gap_mm: 1.5,
+    });
+    // Traces (and the board panel) span the full routing domain: the active
+    // area plus BOTH end paddings — the mover must have coils beneath it at
+    // every travel position, exactly like the real infinity braid.
+    expect(g.contentBox.maxX).toBeCloseTo(0.147 + 2 * 0.03);
+
+    const magnets = computeMagnets(
+      { magnet_count: 12, magnet_width_mm: 4.5, magnet_gap_mm: 1.5 },
+      coils.routing_dimensions,
+    );
+    const travelM = 0.075;
+    const restMin = magnets[0].x;
+    const restMax = magnets[magnets.length - 1].x + 4.5 / 1000;
+    // At rest AND at the far end of travel the strip stays on the board.
+    expect(restMin).toBeGreaterThanOrEqual(0);
+    expect(restMax + travelM).toBeLessThanOrEqual(g.contentBox.maxX);
+    // The strip covers exactly one travel length of movement.
+    expect(restMax - restMin).toBeCloseTo(0.072);
   });
 });
 
@@ -216,5 +255,48 @@ describe("mockBFieldGrid", () => {
     for (const s of g.samples) {
       expect(s.mag_t).toBeCloseTo(Math.hypot(s.bx_t, s.by_t, s.bz_t), 10);
     }
+  });
+});
+
+describe("mockTravelEnvelope", () => {
+  // PRODUCT REFERENCE PINS — if min or max move, these tests fail.
+  //
+  // Coil-capture convention: min = padding + (2/3)·P_e, max =
+  // (padding + active) − (3/4)·P_e — endpoints scale with P_e, not N.
+  // rest_phase_m is the track-frame phase (padding + φ) mod P_e.
+  it("defaults (P_e=12 mm, slots [30,177]) spans 38 → 168 mm", () => {
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
+    );
+    expect(env.electrical_period_m).toBeCloseTo(0.012, 12);
+    expect(env.min_position_m).toBeCloseTo(0.038, 12);
+    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
+  });
+
+  it("N=4 shares the capture endpoints (phase marker differs only if φ does)", () => {
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
+    );
+    expect(env.min_position_m).toBeCloseTo(0.038, 12);
+    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
+  });
+
+  it("N=6 shares the endpoints; track-frame phase (30+4) mod 12 = 10 mm", () => {
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
+    );
+    expect(env.min_position_m).toBeCloseTo(0.038, 12);
+    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
+  });
+
+  it("clamps max to min when the slot region cannot host the envelope", () => {
+    // Slot [30, 40] mm: min 38, max = max(40−9, 38) = 38 → clamped.
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
+    );
+    expect(env.max_position_m).toBeCloseTo(env.min_position_m, 12);
   });
 });

@@ -24,6 +24,7 @@ fn main() {
             commands::physics::generate_coils,
             commands::physics::evaluate_force_sweep,
             commands::physics::sample_b_field,
+            commands::physics::travel_envelope,
             commands::physics::compute_stackup,
             commands::physics::compute_power_budget,
             commands::physics::compute_friction,

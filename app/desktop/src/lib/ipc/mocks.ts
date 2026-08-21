@@ -26,6 +26,7 @@ import type {
   CoilPreview,
   BFieldGridDto,
   DxfExportResult,
+  TravelEnvelopeDto,
 } from "../types";
 
 export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
@@ -46,6 +47,38 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
   };
 }
 
+/**
+ * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`.
+ *
+ * Product reference convention: endpoints are COIL-CAPTURE positions that
+ * scale with the electrical period P_e = 2·pitch (independent of magnet
+ * count):
+ *   min = padding + (2/3)·P_e    (defaults slot_start 30: 30 + 8 = 38 mm)
+ *   max = (padding + active) − (3/4)·P_e   (defaults 177 − 9 = 168 mm)
+ * These are the first/last spots where the first/last coil carries enough
+ * charge to capture the first/last pole (leading 240°, trailing 270°).
+ * `rest_phase_m` is the TRACK-FRAME phase `(padding + φ) mod P_e` so the
+ * holding-force chart zeros align to the stable rests; it still depends on
+ * N. A slot region narrower than the envelope clamps max to min.
+ */
+export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
+  const P_e = 2 * c.magnet_pitch_m; // electrical period
+  const tau_p = P_e / 2; // pole pitch
+  let phi =
+    (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
+  phi %= P_e;
+  if (phi < 0) phi += P_e;
+  const slotStart = c.padding_m;
+  const slotEnd = c.padding_m + c.active_area_length_m;
+  const min = slotStart + (2 / 3) * P_e;
+  return {
+    min_position_m: min,
+    max_position_m: Math.max(slotEnd - (3 / 4) * P_e, min),
+    rest_phase_m: ((slotStart + phi) % P_e + P_e) % P_e,
+    electrical_period_m: P_e,
+  };
+}
+
 export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   // Build a serpentine per (phase × layer) pair so the dev-mode preview
   // mirrors the real backend's multi-layer output (the real infinity-braid
@@ -53,11 +86,17 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   // the preview in browser dev mode only ever rendered layer 0 while the
   // header advertised `num_layers` — i.e. "missing layer segments".
   const phases: PhaseCoilDto[] = [];
-  const span = c.magnet_count * c.magnet_pitch_m;
+  // The mock mirrors the real infinity braid: traces (and their pattern-made
+  // pole regions) are routed across the FULL domain (active area + both end
+  // paddings), NOT just the coil span. The mover must have conductors
+  // beneath it for every position along its travel, exactly like the real
+  // backend.
+  const coilSpan = c.magnet_count * c.magnet_pitch_m;
+  const domain = c.active_area_length_m + 2 * c.padding_m;
   const width = c.board_width_m;
   const nLayers = Math.max(1, c.num_layers);
   const nConductors = Math.max(2, c.magnet_count * 2);
-  const pitchX = span / (nConductors - 1);
+  const pitchX = domain / (nConductors - 1);
   const pole_pitch_m = c.magnet_pitch_m;
   const slot_pitch_m = pole_pitch_m / Math.max(1, c.phases);
   const phase_clearance_m = c.min_space_m;
@@ -78,14 +117,14 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   {
     const regionsPerPhase = Math.max(
       1,
-      Math.floor(span / Math.max(pole_pitch_m, 1e-6)),
+      Math.floor(domain / Math.max(pole_pitch_m, 1e-6)),
     );
     for (let p = 0; p < c.phases; p++) {
       const net = "ABC"[p] ?? String(p);
       const offset = (p * pole_pitch_m) / Math.max(1, c.phases);
       for (let i = 0; i < regionsPerPhase; i++) {
         const startX = offset + i * pole_pitch_m;
-        const endX = Math.min(span, offset + (i + 1) * pole_pitch_m);
+        const endX = Math.min(domain, offset + (i + 1) * pole_pitch_m);
         if (endX <= startX) continue;
         pole_regions.push({
           phase: net,
@@ -104,9 +143,9 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     // to exercise the arc/via render path in the preview (not connected).
     corner_arcs.push(
       { start: [pitchX * 0.5, width], mid: [pitchX, width + 0.0008], end: [pitchX * 1.5, width], is_active: false },
-      { start: [span - pitchX * 1.5, width], mid: [span - pitchX, width + 0.0008], end: [span - pitchX * 0.5, width], is_active: false },
+      { start: [domain - pitchX * 1.5, width], mid: [domain - pitchX, width + 0.0008], end: [domain - pitchX * 0.5, width], is_active: false },
     );
-    via_positions.push([pitchX, width / 2], [span - pitchX, width / 2]);
+    via_positions.push([pitchX, width / 2], [domain - pitchX, width / 2]);
   }
 
   for (let layer = 0; layer < nLayers; layer++) {
@@ -150,9 +189,9 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
         active_length_m: segs.filter((s) => s.is_active).reduce((s, sg) => s + Math.hypot(sg.end[0] - sg.start[0], sg.end[1] - sg.start[1]), 0),
         end_turn_length_m: segs.filter((s) => !s.is_active).reduce((s, sg) => s + Math.hypot(sg.end[0] - sg.start[0], sg.end[1] - sg.start[1]), 0),
         active_conductor_count: segs.filter((s) => s.is_active).length,
-        bounding_box: [0, 0, span, width] as [number, number, number, number],
+        bounding_box: [0, 0, domain, width] as [number, number, number, number],
         terminal_start: [0, 0] as [number, number],
-        terminal_end: [span, width] as [number, number],
+        terminal_end: [domain, width] as [number, number],
       });
     }
   }
@@ -161,7 +200,7 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     total_routing_length_m: c.active_area_length_m + 2 * c.padding_m,
     board_width_m: c.board_width_m,
     phases: Math.max(1, c.phases),
-    magnet_array_span_m: span,
+    magnet_array_span_m: coilSpan,
     pole_pitch_m,
     period_pitch_m: c.routing_pattern === "infinity-braid" ? pole_pitch_m : null,
     period_count:

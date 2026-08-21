@@ -90,3 +90,22 @@ export interface CoilPathDto {
   /** Additive design-dimension sidecar for magnet-pattern calculations. */
   routing_dimensions?: RoutingDimensionsDto;
 }
+
+/**
+ * Stable rest positions of the mover magnet array (travel_envelope).
+ *
+ * With the baseline excitation (IA = +I, IB = 0, IC = −I) the array centre
+ * rests at discrete stable equilibria: every stable rest position of the
+ * ARRAY CENTRE satisfies `rest_phase_m ≡ x (mod electrical_period_m)`.
+ * All fields are metres in the active-area frame.
+ */
+export interface TravelEnvelopeDto {
+  /** First stable rest position of the array centre (m). */
+  min_position_m: number;
+  /** Last stable rest position of the array centre (m). */
+  max_position_m: number;
+  /** Rest phase φ: every stable rest centre ≡ φ (mod electrical_period_m). */
+  rest_phase_m: number;
+  /** Electrical period P_e (slot/electrical pitch, m). */
+  electrical_period_m: number;
+}

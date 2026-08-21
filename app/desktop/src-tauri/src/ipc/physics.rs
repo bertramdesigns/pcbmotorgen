@@ -157,6 +157,34 @@ pub struct FrictionBudgetIpc {
     pub minimum_drive_force_n: f64,
 }
 
+/// Stable-equilibrium travel envelope of the mover array centre under the
+/// baseline excitation (I_A = +I, I_B = 0, I_C = −I). Every stable rest
+/// centre satisfies `rest_phase_m ≡ x (mod electrical_period_m)`; the
+/// slider range endpoints are the first/last rest positions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct TravelEnvelopeIpc {
+    /// First stable rest position of the array centre [m].
+    pub min_position_m: f64,
+    /// Last stable rest position of the array centre [m] (≥ min).
+    pub max_position_m: f64,
+    /// Rest phase φ [m].
+    pub rest_phase_m: f64,
+    /// Electrical period P_e (slot/electrical pitch) [m].
+    pub electrical_period_m: f64,
+}
+
+impl From<pcbmotorgen_simulation::equilibrium::TravelEnvelope> for TravelEnvelopeIpc {
+    fn from(env: pcbmotorgen_simulation::equilibrium::TravelEnvelope) -> Self {
+        Self {
+            min_position_m: env.min_position_m,
+            max_position_m: env.max_position_m,
+            rest_phase_m: env.rest_phase_m,
+            electrical_period_m: env.electrical_period_m,
+        }
+    }
+}
+
 /// Continuous and burst power / thermal analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -9,8 +9,8 @@ A local-first tool for generating multi-layer PCB stator layouts for both linear
 The objective is to provide an intuitive, mathematically rigorous, and local-first toolchain for designing, simulating, and layout-drafting PCB stator motors. The toolchain is decoupled into three primary pillars:
 
 1. **PCB Geometry Generation**: Analytical coil layout path generation.
-2. **Magnetic & Multiphysics Simulation**: Force, torque, thermal, and friction modeling using Magpylib.
-3. **Drafting Integration**: Automating layout routing directly into KiCad 10 via the live IPC Python API.
+2. **Magnetic & Multiphysics Simulation**: Force, torque, thermal, and friction modelling
+3. **Drafting Integration**: Automating layout routing directly into KiCad 10 via IPC.
 
 ### Desired user outcomes
 

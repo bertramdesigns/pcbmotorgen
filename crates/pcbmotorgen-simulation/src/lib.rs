@@ -23,6 +23,7 @@
 pub mod magnet_grades;
 pub mod magnetic;
 pub mod params;
+pub mod equilibrium;
 pub mod physics;
 pub mod stackup;
 pub mod units;

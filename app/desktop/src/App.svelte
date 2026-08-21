@@ -3,6 +3,7 @@
   import {
     evaluateForceSweep,
     generateCoils,
+    fetchTravelEnvelope,
     computeFriction,
     computePowerBudget,
     computeHeightStack,
@@ -19,6 +20,8 @@
   } from "./lib/types";
   import { TABS, type TabId } from "./lib/ui";
   import { DrcController } from "./lib/stores/drc.svelte";
+  import { MotionStore } from "./lib/stores/motion.svelte";
+  import { measureTrace } from "./lib/previewGeometry";
 
   import TabNav from "./lib/components/layout/TabNav.svelte";
   import StatusIndicator from "./lib/components/layout/StatusIndicator.svelte";
@@ -39,6 +42,20 @@
   // Async result state.
   let sweep = $state<ForceSweepResult | null>(null);
   let coils = $state<CoilPathDto | null>(null);
+  /**
+   * Geometry MEASURED from the returned coil payload (trace X extent +
+   * canvas-consistent magnet-strip rest bounds). The routing braid floors
+   * whole periods, so the measured trace span is intentionally shorter than
+   * the configured routing domain — every preview and readout consumes THIS,
+   * never the configured numbers. Null until the first payload arrives.
+   */
+  let measuredTrace = $derived.by(() => measureTrace(coils, config));
+  /** Configured-vs-measured drift (mm); null while consistent/unknown. */
+  let traceMismatchMm = $derived.by(() => {
+    if (!measuredTrace) return null;
+    const drift = measuredTrace.traceLengthMm - config.trace_total_length_mm;
+    return Math.abs(drift) > 0.5 ? drift : null;
+  });
   let friction = $state<FrictionBudgetDto | null>(null);
   let power = $state<PowerBudgetDto | null>(null);
   let height = $state<HeightStackResultDto | null>(null);
@@ -48,6 +65,10 @@
 
   // Whether the current config produces a valid travel range.
   let valid = $derived(config.travel_mm > 0);
+
+  // Shared mover position for the design reflection: the TravelDiagram slider
+  // and the CoilPreview magnet strip both read from this store.
+  const motion = new MotionStore(config);
 
   // -----------------------------------------------------------------------
   // Design preview generation
@@ -77,6 +98,15 @@
       // Keep the previous preview visible. A transient generation failure
       // must not make the design reflection depend on simulation state.
     }
+    // Equilibrium travel envelope (stable rest positions of the mover
+    // centre). Fetched on the same debounced/generation-guarded stream; a
+    // failure keeps the previous envelope (or the geometric fallback).
+    try {
+      const env = await fetchTravelEnvelope(ipc);
+      if (generation === previewGeneration) motion.setEnvelope(env);
+    } catch {
+      // Keep the previous envelope — bounds stay at their last good values.
+    }
   }
 
   // Generate the Design-tab reflection when geometry or routing inputs change.
@@ -89,6 +119,7 @@
       config.magnet_count,
       config.magnet_width_mm,
       config.magnet_gap_mm,
+      config.slot_width_mm,
       config.routing_pattern,
       config.routing_params_version,
       config.phases,
@@ -198,6 +229,7 @@
       config.magnet_count,
       config.magnet_width_mm,
       config.magnet_gap_mm,
+      config.slot_width_mm,
       config.magnet_height_mm,
       config.magnet_cross_width_mm,
       config.magnet_remanence_t,
@@ -344,12 +376,12 @@
       class="relative min-w-0 min-h-0 lg:overflow-y-auto lg:pt-4 lg:pb-4 lg:pr-2"
       aria-label="Persistent design reflection"
     >
-      <TravelDiagram {config} />
+      <TravelDiagram {config} {motion} {measuredTrace} {traceMismatchMm} />
       <!-- Traces view lives here in the Design tab so layout and geometry can
            be inspected side by side; the Simulation tab keeps its own copy. -->
       <div class="mt-3 space-y-3">
-        <CoilPreview {config} {coils} />
-        <DesignDimensions {config} />
+        <CoilPreview {config} {coils} {motion} />
+        <DesignDimensions {config} measuredTraceLengthMm={measuredTrace?.traceLengthMm ?? null} />
       </div>
     </aside>
 

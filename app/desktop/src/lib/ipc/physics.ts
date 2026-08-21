@@ -18,6 +18,7 @@ import type {
   FrictionBudgetDto,
   PowerBudgetDto,
   BFieldGridDto,
+  TravelEnvelopeDto,
 } from "../types";
 import { isTauriAvailable } from "./core";
 import {
@@ -29,6 +30,7 @@ import {
   mockFriction,
   mockStackup,
   mockBFieldGrid,
+  mockTravelEnvelope,
 } from "./mocks";
 
 export async function computeConfigDerived(
@@ -43,6 +45,14 @@ export async function generateCoils(
 ): Promise<CoilPathDto> {
   if (!isTauriAvailable()) return mockCoils(config);
   return await invoke<CoilPathDto>("generate_coils", { config });
+}
+
+/** Stable rest positions of the mover array centre (see TravelEnvelopeDto). */
+export async function fetchTravelEnvelope(
+  config: LinearMotorConfig,
+): Promise<TravelEnvelopeDto> {
+  if (!isTauriAvailable()) return mockTravelEnvelope(config);
+  return await invoke<TravelEnvelopeDto>("travel_envelope", { config });
 }
 
 export async function evaluateForceSweep(

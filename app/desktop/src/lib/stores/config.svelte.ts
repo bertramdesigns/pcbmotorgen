@@ -64,16 +64,34 @@ export class ConfigStore {
   windings_per_phase = $state(2);
 
   // --- Magnet array (mm) -------------------------------------------------
-  magnet_count = $state(10);
-  magnet_width_mm = $state(10);
+  /** Number of magnetic poles on the mover (`N_poles`). Even counts are
+   *  strongly recommended so the mover has no net unbalanced normal force. */
+  magnet_count = $state(12);
+  /** X length of one magnet along the travel axis (`W_m`, mm). This is the
+   *  SOURCE OF TRUTH for the travel-axis magnet geometry; the pole fill
+   *  factor `k_fill = W_m / τ_p` is DERIVED from it (see the derived
+   *  section below). 4.5 mm at the 6 mm pole-pitch default gives
+   *  k_fill = 0.75 (135° electrical), the classic optimum; the value may
+   *  reach the full pole pitch (k = 1.0, end-to-end magnets, no gap). */
+  magnet_width_mm = $state(4.5);
+  /** Y width across the stator (mm) — independent of the travel-axis X length. */
   magnet_cross_width_mm = $state(10);
-  magnet_gap_mm = $state(2);
-  magnet_height_mm = $state(4);
+  /** Z thickness default = T_m = 0.5 × pole pitch (3.0 mm at the 12 mm
+   *  electrical-pitch default). User-adjustable afterwards. */
+  magnet_height_mm = $state(3.0);
   magnet_grade = $state("N44");
   magnet_remanence_t = $state(1.34);
   magnet_arrangement = $state<MagnetArrangement>("Alternating");
   back_iron_thickness_mm = $state(0);
   air_gap_mm = $state(0.5);
+
+  // --- Phase-band constraint (mm) ---------------------------------------
+  /** Stator slot/electrical pitch (`P_e`): the length of one full electrical
+   *  cycle (360°). A full cycle contains TWO alternating poles (180° each),
+   *  so the magnetic pole pitch is `pole_pitch = P_e / 2`. The slot
+   *  start/end boundaries themselves come from the routing crate's pole
+   *  regions. */
+  slot_width_mm = $state(12.0);
 
   // --- Coil --------------------------------------------------------------
   /** Routing-pattern id sent to the backend (one of `routing_patterns`). */
@@ -128,10 +146,34 @@ export class ConfigStore {
   // Derived geometry (mm, for the UI)
   // ---------------------------------------------------------------------
 
-  pole_pitch_mm = $derived(this.magnet_width_mm + this.magnet_gap_mm);
+  pole_pitch_mm = $derived(this.slot_width_mm / 2);
+  /** Full electrical cycle length (`P_e`) — one cycle spans 2 pole pitches. */
+  electrical_pitch_mm = $derived(this.slot_width_mm);
+  /** Upper limit on the magnet X length: a fully-filled pole pitch
+   *  (k_fill = 1.0) leaves no inter-pole gap. */
+  max_magnet_width_mm = $derived(Math.max(0, this.pole_pitch_mm));
+  /** Magnet pole fill factor, now DERIVED from the width input:
+   *  k_fill = W_m / τ_p. Kept exported under its historical name because
+   *  validation.ts and MagnetsPanel.svelte consume it. */
+  magnet_fill_k = $derived(
+    this.pole_pitch_mm > 0 ? this.magnet_width_mm / this.pole_pitch_mm : 0,
+  );
+  /** Inter-pole gap is automatic: W_gap = τ_p − W_m (zero at k_fill = 1.0). */
+  magnet_gap_mm = $derived(
+    Math.max(0, this.pole_pitch_mm - this.magnet_width_mm),
+  );
   coil_span_mm = $derived(this.magnet_count * this.pole_pitch_mm);
   /** Active-area length along the travel axis: mover span + desired travel. */
   active_area_length_mm = $derived(this.coil_span_mm + this.desired_travel_mm);
+  /**
+   * Total X extent of the routed PCB traces: the first-to-last segment-point
+   * span returned by the routing backend. The braid routes across the active
+   * area PLUS both end paddings (end-turn room), so this is the dimension
+   * the coil preview actually draws — keep every preview sized by THIS.
+   */
+  trace_total_length_mm = $derived(
+    this.active_area_length_mm + 2 * this.padding_mm,
+  );
   travel_mm = $derived(this.active_area_length_mm - this.coil_span_mm);
   spacing_ratio = $derived(SPACING_RATIO_MAP[this.spacing_ratio_label]);
 

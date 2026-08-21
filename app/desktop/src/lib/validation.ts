@@ -24,7 +24,13 @@ export interface DesignConfigInput {
   travel_mm: number;
   coil_span_mm: number;
   magnet_count: number;
+  /** X length of one magnet (mm) — the user-facing input. The pole fill
+   *  factor is DERIVED from this and the pole pitch inside the rule below. */
+  magnet_width_mm: number;
   magnet_gap_mm: number;
+  /** Slot/electrical pitch P_e (mm); the pole pitch is τ_p = P_e / 2. */
+  slot_width_mm: number;
+  min_space_mm: number;
   magnet_cross_width_mm: number;
   active_area_width_mm: number;
   num_layers: number;
@@ -32,7 +38,6 @@ export interface DesignConfigInput {
   routing_pattern: string;
   windings_per_phase: number;
   min_trace_mm: number;
-  min_space_mm: number;
   peak_force_n: number;
   target_force_n: number;
 }
@@ -61,11 +66,34 @@ export function validateDesign(config: DesignConfigInput): Finding[] {
     });
   }
 
-  if (config.magnet_gap_mm < 0) {
+  if (config.slot_width_mm <= 0 || !Number.isFinite(config.slot_width_mm)) {
     next.push({
-      id: "magnet-gap",
+      id: "slot-width",
       level: "error",
-      message: `Magnet gap must be ≥ 0 mm (got ${config.magnet_gap_mm}).`,
+      message: `Slot width must be positive (got ${config.slot_width_mm}).`,
+    });
+  }
+
+  // Pole fill factor derived from the width input: k = W_m / τ_p with
+  // τ_p = P_e / 2 (the slot width IS the electrical pitch).
+  const polePitchMm = config.slot_width_mm / 2;
+  const k = polePitchMm > 0 ? config.magnet_width_mm / polePitchMm : Number.NaN;
+  if (!Number.isFinite(k) || k < 0.5 || k > 1.0) {
+    next.push({
+      id: "magnet-fill",
+      level: "error",
+      message:
+        `Magnet X Length (${config.magnet_width_mm.toFixed(2)} mm vs ${(polePitchMm > 0 ? polePitchMm : Number.NaN).toFixed(2)} mm pole pitch) gives a fill factor outside [0.50, 1.00] ` +
+        `(k = ${Number.isFinite(k) ? k.toFixed(2) : "invalid"}).`,
+    });
+  } else if (k > 0.85) {
+    next.push({
+      id: "magnet-fill-leakage",
+      level: "warning",
+      message:
+        `Fill factor ${k.toFixed(2)} exceeds 0.85 — flux can leak between adjacent ` +
+        "magnets instead of passing through the coil plane. End-to-end magnets (k = 1.00) are " +
+        "allowed but expect higher spatial harmonics.",
     });
   }
 
