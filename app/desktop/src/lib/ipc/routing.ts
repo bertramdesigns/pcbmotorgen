@@ -12,7 +12,6 @@ import type {
   LinearMotorConfig,
   RoutingPatternInfo,
   RoutingParamDef,
-  InstalledPlugin,
   InterferenceViolation,
 } from "../types";
 import { isTauriAvailable } from "./core";
@@ -78,18 +77,6 @@ export async function registerRoutingPlugin(
 export async function loadInstalledPlugins(): Promise<string[]> {
   if (!isTauriAvailable()) return [];
   return await invoke<string[]>("load_installed_plugins");
-}
-
-/** List installed plugins (persistent store) with their metadata. */
-export async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
-  if (!isTauriAvailable()) return [];
-  return await invoke<InstalledPlugin[]>("list_installed_plugins");
-}
-
-/** Remove an installed plugin from the persistent store + runtime registry. */
-export async function removeRoutingPlugin(id: string): Promise<void> {
-  if (!isTauriAvailable()) return;
-  await invoke<void>("remove_routing_plugin", { id });
 }
 
 /**

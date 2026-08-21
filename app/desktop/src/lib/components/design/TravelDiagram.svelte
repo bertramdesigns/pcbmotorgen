@@ -32,15 +32,12 @@
     config,
     motion,
     measuredTrace = null,
-    traceMismatchMm = null,
   }: {
     config: ConfigStore;
     motion: MotionStore;
     /** Geometry MEASURED from the returned coil payload — the same numbers
      *  the coil canvas draws. Null until the first payload arrives. */
     measuredTrace?: TraceMeasure | null;
-    /** Configured-vs-measured trace-span drift (mm); null when consistent. */
-    traceMismatchMm?: number | null;
   } = $props();
 
   /** Vertical exaggeration of the iso view — single-sourced in lib/geometry. */
@@ -81,14 +78,6 @@
       >
     </span>
   </div>
-
-  {#if traceMismatchMm !== null}
-    <p class="mb-3 rounded-md border border-amber-600/60 bg-amber-950/40 px-2.5 py-1.5 text-[11px] text-amber-300" role="alert">
-      Trace-span note: routed traces measure {(config.trace_total_length_mm + traceMismatchMm).toFixed(1)} mm in X but the
-      configured routing domain is {config.trace_total_length_mm.toFixed(1)} mm (drift {traceMismatchMm > 0 ? "+" : ""}{traceMismatchMm.toFixed(1)} mm).
-      The braid routes whole periods, leaving sub-period slack at the end — previews use the MEASURED span.
-    </p>
-  {/if}
 
   <div class="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3 items-start">
     <!-- ===== 1. 3/4 isometric view ===== -->

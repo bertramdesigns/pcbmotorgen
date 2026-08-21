@@ -81,37 +81,6 @@ export interface ViewportBBox {
 }
 
 /**
- * Defensive bbox: take the min/max of the two x-components and the two
- * y-components separately, so the result is correct regardless of whether
- * the bbox is stored as `[min_x, min_y, max_x, max_y]` or
- * `[max_x, max_y, min_x, min_y]`. The naïve "minX = min(bx0), maxX =
- * max(bx1)" form collapses to bboxW ≈ 1e-6 in the inverted case, which
- * then blows the fit-scale up to ~2e8 and squashes the whole winding into
- * a hairline off-screen — i.e. the "blank SVG" symptom.
- */
-export function computeBBox(bboxes: [number, number, number, number][]): ViewportBBox {
-  if (bboxes.length === 0) {
-    return { minX: 0, minY: 0, maxX: 0.001, maxY: 0.001 };
-  }
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const [b0, b1, b2, b3] of bboxes) {
-    minX = Math.min(minX, b0, b2);
-    minY = Math.min(minY, b1, b3);
-    maxX = Math.max(maxX, b0, b2);
-    maxY = Math.max(maxY, b1, b3);
-  }
-  return {
-    minX,
-    minY,
-    maxX: Math.max(maxX, minX + 1e-6),
-    maxY: Math.max(maxY, minY + 1e-6),
-  };
-}
-
-/**
  * Union of several world-space boxes into one.
  */
 export function unionBounds(...boxes: ViewportBBox[]): ViewportBBox {
@@ -122,13 +91,6 @@ export function unionBounds(...boxes: ViewportBBox[]): ViewportBBox {
     maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
   }
   return { minX, minY, maxX: Math.max(maxX, minX + 1e-6), maxY: Math.max(maxY, minY + 1e-6) };
-}
-
-/**
- * Expand a box by `margin` on all sides (in the box's own units).
- */
-export function expandBounds(box: ViewportBBox, margin: number): ViewportBBox {
-  return { minX: box.minX - margin, minY: box.minY - margin, maxX: box.maxX + margin, maxY: box.maxY + margin };
 }
 
 export interface WorldTransform {

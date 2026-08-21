@@ -17,6 +17,7 @@ import {
   mockDxfExportResult,
   mockBFieldGrid,
   mockTravelEnvelope,
+  mockMagnetGrades,
 } from "./mocks";
 import type { LinearMotorConfig } from "../types";
 import { computePreviewGeometry, computeMagnets } from "../previewGeometry";
@@ -76,6 +77,19 @@ describe("mockConfigDerived", () => {
     expect(d.travel_m).toBeCloseTo(c.active_area_length_m - c.magnet_count * c.magnet_pitch_m);
     expect(d.min_via_pad_m).toBe(c.min_via_drill_m + 2 * c.min_via_annular_ring_m);
     expect(d.minimum_drive_force_n).toBe(c.friction_n * 1.3);
+  });
+});
+
+describe("mockMagnetGrades", () => {
+  it("mirrors the static TS grade catalog in wire shape", () => {
+    const grades = mockMagnetGrades();
+    expect(grades.length).toBeGreaterThanOrEqual(6);
+    for (const g of grades) {
+      expect(typeof g.name).toBe("string");
+      expect(g.br_min_t).toBeLessThanOrEqual(g.br_typ_t);
+      expect(g.br_typ_t).toBeLessThanOrEqual(g.br_max_t);
+      expect(Object.keys(g.max_temp_c).length).toBeGreaterThan(0);
+    }
   });
 });
 

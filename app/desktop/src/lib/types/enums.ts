@@ -14,11 +14,5 @@ export type MagnetArrangement =
   | "Halbach"
   | "HalbachBackIron";
 
-/** Coil slot pitch expressed as a vernier ratio of the pole pitch. */
-export type SpacingRatio = "1:1" | "4:5" | "5:6";
-
 /** Comutation strategy used by the force sweep. */
 export type CommutationMode = "max_torque" | "phase_a_only";
-
-/** Mover bearing type (drives the friction budget). */
-export type BearingType = "ball" | "ptfe" | "plastic";

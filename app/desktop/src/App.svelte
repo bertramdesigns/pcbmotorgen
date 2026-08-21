@@ -35,9 +35,11 @@
   // Session-only navigation state; none of these values enter IPC.
   let activeTab = $state<TabId>("design");
 
-  // App init: populate the routing-pattern selector from the backend.
-  // Fire-and-forget — failures are swallowed inside the store.
+  // App init: populate the routing-pattern selector + magnet-grade reference
+  // from the backend. Fire-and-forget — failures are swallowed inside the
+  // stores (the static TS tables remain as offline fallbacks).
   config.loadRoutingPatterns();
+  config.loadMagnetGrades();
 
   // Async result state.
   let sweep = $state<ForceSweepResult | null>(null);
@@ -50,12 +52,6 @@
    * never the configured numbers. Null until the first payload arrives.
    */
   let measuredTrace = $derived.by(() => measureTrace(coils, config));
-  /** Configured-vs-measured drift (mm); null while consistent/unknown. */
-  let traceMismatchMm = $derived.by(() => {
-    if (!measuredTrace) return null;
-    const drift = measuredTrace.traceLengthMm - config.trace_total_length_mm;
-    return Math.abs(drift) > 0.5 ? drift : null;
-  });
   let friction = $state<FrictionBudgetDto | null>(null);
   let power = $state<PowerBudgetDto | null>(null);
   let height = $state<HeightStackResultDto | null>(null);
@@ -123,7 +119,6 @@
       config.routing_pattern,
       config.routing_params_version,
       config.phases,
-      config.spacing_ratio_label,
       config.num_layers,
       config.padding_mm,
       config.windings_per_phase,
@@ -240,7 +235,6 @@
       config.routing_pattern,
       config.routing_params_version,
       config.phases,
-      config.spacing_ratio_label,
       config.num_layers,
       config.padding_mm,
       config.windings_per_phase,
@@ -376,7 +370,7 @@
       class="relative min-w-0 min-h-0 lg:overflow-y-auto lg:pt-4 lg:pb-4 lg:pr-2"
       aria-label="Persistent design reflection"
     >
-      <TravelDiagram {config} {motion} {measuredTrace} {traceMismatchMm} />
+      <TravelDiagram {config} {motion} {measuredTrace} />
       <!-- Traces view lives here in the Design tab so layout and geometry can
            be inspected side by side; the Simulation tab keeps its own copy. -->
       <div class="mt-3 space-y-3">

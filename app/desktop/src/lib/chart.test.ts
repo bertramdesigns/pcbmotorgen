@@ -4,10 +4,8 @@ import {
   paddedRange,
   ticks,
   polyline,
-  computeBBox,
   fitWorldToView,
   unionBounds,
-  expandBounds,
   type ViewportBBox,
 } from "./chart";
 
@@ -60,20 +58,6 @@ describe("polyline", () => {
   });
 });
 
-describe("computeBBox", () => {
-  it("returns a degenerate bbox for no boxes", () => {
-    const b = computeBBox([]);
-    expect(b.maxX - b.minX).toBeGreaterThan(0);
-  });
-
-  it("handles both ordered and inverted bbox tuples defensively", () => {
-    const ordered: [number, number, number, number][] = [[0, 0, 10, 4]];
-    const inverted: [number, number, number, number][] = [[10, 4, 0, 0]];
-    expect(computeBBox(ordered)).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 4 });
-    expect(computeBBox(inverted)).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 4 });
-  });
-});
-
 describe("unionBounds", () => {
   it("unions two overlapping boxes to their extremes", () => {
     const a: ViewportBBox = { minX: 0, minY: 0, maxX: 10, maxY: 4 };
@@ -90,18 +74,6 @@ describe("unionBounds", () => {
 
   it("falls back to a tiny box for no inputs", () => {
     expect(unionBounds()).toEqual({ minX: 0, minY: 0, maxX: 0.001, maxY: 0.001 });
-  });
-});
-
-describe("expandBounds", () => {
-  it("expands by a positive margin on all sides", () => {
-    const box: ViewportBBox = { minX: 0, minY: 0, maxX: 10, maxY: 4 };
-    expect(expandBounds(box, 1)).toEqual({ minX: -1, minY: -1, maxX: 11, maxY: 5 });
-  });
-
-  it("is a no-op for a zero margin", () => {
-    const box: ViewportBBox = { minX: 0, minY: 0, maxX: 10, maxY: 4 };
-    expect(expandBounds(box, 0)).toEqual(box);
   });
 });
 

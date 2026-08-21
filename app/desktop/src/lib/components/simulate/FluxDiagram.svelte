@@ -3,7 +3,7 @@
 
   Implements ADR-0002 (flux viz via Rust `sample_b_field`) and ADR-0003
   (auto-refresh on arrangement / dimension change). The grid of vectors
-  comes from `sampleBField` in `app/src/lib/tauri.ts`; the Rust
+  comes from `sampleBField` in `lib/ipc`; the Rust
   `pcbmotorgen_simulation::physics` adapter is the sole authoritative source
   for the B-field math — `magpylib` is never imported.
 -->

@@ -441,10 +441,12 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 /// Stable-equilibrium travel envelope of the mover array centre under the
 /// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
 ///
-/// Product reference convention: the equilibrium lattice anchors to the
-/// SLOT/COPPER region — min = padding + φ, max = (padding + active area) − φ
-/// with φ = (P_e/12 + ((N−1)/2)·τ_p) mod P_e. Defaults (P_e = 12 mm,
-/// N = 12, 30 mm padding, 147 mm active): **40 → 167 mm**. The UI clamps
+/// Product reference convention: the endpoints are COIL-CAPTURE positions
+/// anchored to the SLOT/COPPER region — min = slot_start + (2/3)·P_e,
+/// max = slot_end − (3/4)·P_e, with P_e = 2 × pole pitch. Defaults
+/// (P_e = 12 mm, slots [30, 177] mm in track coords): **38 → 168 mm**.
+/// The track-frame lattice phase is `(slot_start + φ) mod P_e`, φ the
+/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`. The UI clamps
 /// its position slider to [min_position_m, max_position_m].
 #[tauri::command]
 pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {

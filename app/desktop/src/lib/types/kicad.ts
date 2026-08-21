@@ -2,9 +2,9 @@
  * KiCad IPC contracts: connection state, write results, live board
  * diagnostics, write preconditions, and dry-run coil previews.
  *
- * Mirrors the Rust `BoardDiagnosticsIpc` / `CoilPreviewIpc` wire formats
- * (snake_case); Tauri's IPC layer converts to/from camelCase on the JS
- * side automatically, so the field names here match the wire format.
+ * Mirrors the Rust `BoardDiagnosticsIpc` / `CoilPreviewIpc` wire formats.
+ * Field names stay snake_case here — exactly matching the Rust serde
+ * `rename_all = "snake_case"` wire format — with no camelCase conversion.
  */
 
 export interface KicadConnection {

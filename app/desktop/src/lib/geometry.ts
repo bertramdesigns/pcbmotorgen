@@ -6,16 +6,6 @@
  * DesignDimensions to remove duplicated derived math.
  */
 
-/** Magnet pole descriptor used by the SVG overlays. */
-export interface MagnetBar {
-  /** Pole offset along the travel axis [same unit as `pitchM`]. */
-  x: number;
-  /** Magnet width [same unit as `widthM`]. */
-  w: number;
-  /** +1 for N, −1 for S (alternating, starting N). */
-  pole: number;
-}
-
 /**
  * Back-iron visibility predicate. `magnet_arrangement` ends in
  * "BackIron" and the thickness is positive.
@@ -27,11 +17,6 @@ export function hasBackIron(
   backIronThicknessMm: number,
 ): boolean {
   return magnetArrangement.endsWith("BackIron") && backIronThicknessMm > 0;
-}
-
-/** Travel span of the mover: magnet_count × pole pitch. */
-export function coilSpanMm(magnetCount: number, polePitchMm: number): number {
-  return magnetCount * polePitchMm;
 }
 
 /** Slot pitch: vernier fraction of the pole pitch per phase. */
@@ -50,37 +35,6 @@ export function restOffsetMm(
   spacingRatio: number,
 ): number {
   return Math.max(0, (polePitchMm / phases) * (1 - spacingRatio));
-}
-
-/**
- * Clamp the mover position so the magnet array (span `coilSpanMm`) stays
- * fully inside the active area: center ∈ [span/2, length − span/2].
- */
-export function clampMoverCenter(
-  raw: number,
-  coilSpanMm: number,
-  activeAreaLengthMm: number,
-): number {
-  const min = coilSpanMm / 2;
-  const max = activeAreaLengthMm - coilSpanMm / 2;
-  return Math.max(min, Math.min(raw, max));
-}
-
-/**
- * Alternating N/S magnet bar overlay (starting N, pole +1).
- * Used by FluxDiagram and CoilPreview — units are caller-chosen and must
- * be consistent between `pitchM`, `widthM`, and the returned `x`/`w`.
- */
-export function magnetPoles(
-  magnetCount: number,
-  pitchM: number,
-  widthM: number,
-): MagnetBar[] {
-  const bars: MagnetBar[] = [];
-  for (let i = 0; i < magnetCount; i++) {
-    bars.push({ x: i * pitchM, w: widthM, pole: i % 2 === 0 ? 1 : -1 });
-  }
-  return bars;
 }
 
 // ---------------------------------------------------------------------------

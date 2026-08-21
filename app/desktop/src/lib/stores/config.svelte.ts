@@ -9,20 +9,14 @@
 
 import type {
   LinearMotorConfig,
-  SpacingRatio,
   MagnetArrangement,
   CommutationMode,
   RoutingPatternInfo,
   RoutingParamDef,
+  MagnetGrade,
 } from "../types";
-import { getRemanence } from "../types";
-import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins } from "../ipc";
-
-const SPACING_RATIO_MAP: Record<SpacingRatio, number> = {
-  "1:1": 1.0,
-  "4:5": 4 / 5,
-  "5:6": 5 / 6,
-};
+import { getRemanence, MAGNET_GRADES, extractBaseGrade } from "../types";
+import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins, fetchMagnetGrades } from "../ipc";
 
 /** Default back-iron thickness applied when the user enables a BackIron
  *  magnet arrangement for the first time. Only used when the user has
@@ -112,7 +106,6 @@ export class ConfigStore {
    *  simulation effects a stable signal to react to. */
   routing_params_version = $state(0);
   phases = $state(3);
-  spacing_ratio_label = $state<SpacingRatio>("1:1");
   num_layers = $state(4);
 
   // --- Drive / electrical ------------------------------------------------
@@ -175,16 +168,61 @@ export class ConfigStore {
     this.active_area_length_mm + 2 * this.padding_mm,
   );
   travel_mm = $derived(this.active_area_length_mm - this.coil_span_mm);
-  spacing_ratio = $derived(SPACING_RATIO_MAP[this.spacing_ratio_label]);
+  /** Vernier slot-pitch ratio. No longer user-adjustable in the UI — pinned
+   *  to the standard 1:1 and passed to the backend untouched. */
+  spacing_ratio = $derived(1.0);
 
   /** True when the active area is too short to cover the mover coil span. */
-  is_active_area_invalid = $derived(this.active_area_length_mm <= this.coil_span_mm);
+  is_active_area_invalid = $derived(this.active_area_length_m <= this.coil_span_m);
+
+  // --- Magnet-grade reference (loaded from backend at startup) -----------
+  /**
+   * The runtime-loaded magnet-grade table from the backend
+   * (`get_magnet_grades`). The backend reads the Rust simulation crate's
+   * table — the single source of truth. Empty until loaded; the static TS
+   * table in `types/magnets.ts` is the offline/mock fallback.
+   */
+  magnet_grades = $state<MagnetGrade[]>([]);
+
+  /** Magnet-grade names offered to the user (runtime table, else TS fallback). */
+  magnetGradeNames = $derived(
+    this.magnet_grades.length > 0
+      ? this.magnet_grades.map((g) => g.name)
+      : Object.keys(MAGNET_GRADES),
+  );
+
+  /** Look up a grade by name from the runtime table (falling back to TS). */
+  getMagnetGrade(name: string): MagnetGrade | null {
+    const base = extractBaseGrade(name);
+    if (this.magnet_grades.length > 0) {
+      return this.magnet_grades.find((g) => g.name === base) ?? null;
+    }
+    return MAGNET_GRADES[base] ?? null;
+  }
+
+  /** Look up a grade by name from the runtime table (falling back to TS). */
+  getMagnetGradeRemanence(name: string): number {
+    const grade = this.getMagnetGrade(name);
+    return grade ? grade.br_typ_t : getRemanence(name);
+  }
+
+  /**
+   * Load the magnet-grade table from the backend. Called during app init.
+   * Failures are swallowed so a missing backend keeps the TS fallback table.
+   */
+  async loadMagnetGrades(): Promise<void> {
+    try {
+      this.magnet_grades = await fetchMagnetGrades();
+    } catch {
+      // backend unavailable — keep the static TS fallback table
+    }
+  }
 
   /** Sync remanence from the selected grade unless "Custom". */
   syncGrade(): void {
     if (this.magnet_grade === "Custom") return;
     try {
-      this.magnet_remanence_t = getRemanence(this.magnet_grade);
+      this.magnet_remanence_t = this.getMagnetGradeRemanence(this.magnet_grade);
     } catch {
       // unknown grade — leave remanence untouched
     }

@@ -227,15 +227,6 @@ impl PhaseCoilIpc {
 
 #[allow(dead_code)]
 impl CoilPathIpc {
-    /// Build the IPC coil path from a list of core `PhaseCoil`s.
-    pub fn from_core(coils: &[CorePhaseCoil], layer_count: u32) -> Self {
-        Self::from_core_with_dimensions(
-            coils,
-            layer_count,
-            &CoreRoutingDimensions::default(),
-        )
-    }
-
     /// Build the IPC coil path and include the dimensions produced by the
     /// routing report.
     pub fn from_core_with_dimensions(
