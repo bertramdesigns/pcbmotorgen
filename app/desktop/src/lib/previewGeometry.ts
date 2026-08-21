@@ -11,7 +11,7 @@
  * 1 mm above the tallest drawn content.
  */
 
-import { unionBounds, type ViewportBBox } from "./chart";
+import { unionBounds, type ViewportBBox, type WorldTransform } from "./chart";
 import type {
   CoilPathDto,
   CoilSegmentDto,
@@ -94,6 +94,64 @@ export function computeFootprintBox(coils: CoilPathDto | null): ViewportBBox {
   return unionBounds(...boxes);
 }
 
+/**
+ * X extent of the routed traces in metres, `[firstX, lastX]`, computed from
+ * the actual segment/arc points the backend returned — or `null` when no
+ * coil payload exists yet. Compare against `config.trace_total_length_mm`
+ * to detect preview/reflection dimension drift.
+ */
+export function traceSpanXM(coils: CoilPathDto | null): [number, number] | null {
+  if (!coils || coils.phases.length === 0) return null;
+  const box = computeFootprintBox(coils);
+  if (!Number.isFinite(box.minX) || !Number.isFinite(box.maxX)) return null;
+  return [box.minX, box.maxX];
+}
+
+/** Measured geometry derived from an actual coil payload (all values mm). */
+export interface TraceMeasure {
+  /** First→last X span of the routed traces. */
+  traceLengthMm: number;
+  /** Domain-frame X where the traces begin. */
+  traceStartMm: number;
+}
+
+/**
+ * Measure what the routing backend ACTUALLY returned: the trace X extent.
+ * The braid floors whole periods, so the measured span is intentionally
+ * shorter than the nominal domain (active + 2 × padding) by up to one
+ * period — previews and readouts must use THIS, not the configured numbers.
+ * Null when no payload exists.
+ */
+export function measureTrace(
+  coils: CoilPathDto | null,
+  _config: PreviewConfigLike,
+): TraceMeasure | null {
+  const span = traceSpanXM(coils);
+  if (!span) return null;
+  return {
+    traceLengthMm: (span[1] - span[0]) * 1000,
+    traceStartMm: span[0] * 1000,
+  };
+}
+
+/**
+ * Mover-strip bounds in the DOMAIN (routing) frame — THE single anchor
+ * shared by the canvas overlay, the iso view, the design reflection AND the
+ * position readouts. The strip is centred on the MotionStore's clamped
+ * position (absolute track coordinates), so drawn edges always equal
+ * position ± coil_span/2 and every printed number agrees with every pixel.
+ */
+export function stripBoundsDomainMm(
+  config: PreviewConfigLike,
+  motion: { clampedPositionMm: number },
+): { startMm: number; endMm: number } {
+  const half = config.coil_span_mm / 2;
+  return {
+    startMm: motion.clampedPositionMm - half,
+    endMm: motion.clampedPositionMm + half,
+  };
+}
+
 /** Full geometry derivation for the preview camera + drawing. */
 export function computePreviewGeometry(
   coils: CoilPathDto | null,
@@ -107,15 +165,24 @@ export function computePreviewGeometry(
 
   // Magnet strip sits 1 mm above the tallest drawn content.
   const magnetTop = contentBox.maxY + MAGNET_STRIP_CLEARANCE_M;
+  const magnets = computeMagnets(config, coils?.routing_dimensions);
+  const magnetWidth = config.magnet_width_mm / 1000;
+  const magnetGap = Math.max(config.magnet_gap_mm, 0) / 1000;
   const magnetSpan = Math.max(
-    config.magnet_count * ((config.magnet_width_mm + config.magnet_gap_mm) / 1000),
+    config.magnet_count * (magnetWidth + magnetGap),
     0.001,
   );
+  // Fit the painted solids themselves. Do not include synthetic half-gap
+  // padding at either end: that shifts the apparent first-magnet position
+  // when the camera is reset, especially for a sidecar-aligned array.
+  const magnetStartX = magnets[0]?.x ?? 0;
+  const lastMagnet = magnets[magnets.length - 1];
+  const magnetEndX = lastMagnet ? lastMagnet.x + lastMagnet.w : magnetStartX + magnetSpan;
 
   const fitBounds = unionBounds(contentBox, {
-    minX: 0,
+    minX: magnetStartX,
     minY: magnetTop,
-    maxX: magnetSpan,
+    maxX: magnetEndX,
     maxY: magnetTop + MAGNET_STRIP_HEIGHT_M,
   });
 
@@ -156,13 +223,98 @@ export function computeUniqueLayers(
     .map((idx) => ({ idx }));
 }
 
+/** First solid-magnet x position for the preview.
+ *
+ * The slot start/end boundaries come from the pattern-owned `pole_regions`
+ * sidecar (the routing crate's authoritative phase/pole geometry): each
+ * region spans one pole pitch for one phase, and the phases are interleaved
+ * by `pole_pitch / phases`. At rest the FIRST magnet bar's CENTRE is anchored
+ * to the neutral (second-phase) slot centre, so each pole sits symmetrically
+ * inside its slot band and every later bar centre lands on the next such slot
+ * centre automatically (the regions repeat every pole pitch). The anchor is
+ * kept on the neutral B phase so the poles read A1 positive, B1 neutral and
+ * C1/A2 negative — matching the no-overlap three-phase sequence. Pattern-owned
+ * pole regions are the authoritative source for those zone centres. When a
+ * legacy payload has no regions, the fallback places each bar in the centre
+ * of its configured pitch cell, splitting the configured gap at each cell
+ * boundary rather than leaving it all on one side of a bar.
+ */
+export function computeMagnetStartX(
+  config: PreviewConfigLike,
+  dimensions:
+    | Partial<Pick<RoutingDimensionsDto, "pole_regions">>
+    | null
+    | undefined = undefined,
+): number {
+  const widthM = config.magnet_width_mm / 1000;
+  const gapM = Math.max(config.magnet_gap_mm, 0) / 1000;
+  const pitchM = widthM + gapM;
+  if (!Number.isFinite(widthM) || widthM <= 0 || !Number.isFinite(pitchM) || pitchM <= 0) {
+    return 0;
+  }
+
+  const zones = computePoleRegionZones(dimensions);
+  const phaseOrder: string[] = [];
+  for (const zone of zones) {
+    if (!phaseOrder.includes(zone.phase)) phaseOrder.push(zone.phase);
+  }
+
+  const zoneAt = (phase: string, poleIndex: number): PoleRegionZone | null =>
+    zones.find((zone) => zone.phase === phase && zone.poleIndex === poleIndex) ?? null;
+  const firstZone = (phase: string, poleIndex: number): PoleRegionZone | null =>
+    zoneAt(phase, poleIndex) ?? zones.find((zone) => zone.phase === phase) ?? null;
+  const centreX = (zone: PoleRegionZone): number => (zone.x0 + zone.x1) / 2;
+
+  // Anchor the FIRST magnet bar's CENTRE on the neutral B1 slot centre, so
+  // the pole sits inside its slot band with the neutral phase flanked
+  // symmetrically by the magnets that surround it. Every later bar centre
+  // falls on the next B-slot centre automatically (B zones repeat every
+  // pole pitch). Neither the configured gap nor any edge padding can move
+  // the first solid bar away from the pattern-owned coordinate.
+  if (phaseOrder.length >= 2) {
+    const neutral = zoneAt(phaseOrder[1], 0) ?? firstZone(phaseOrder[1], 0);
+    if (neutral) {
+      const neutralCentre = centreX(neutral);
+      if (Number.isFinite(neutralCentre)) {
+        return neutralCentre - widthM / 2;
+      }
+    }
+  }
+
+  // Neutral phase absent from a three-phase sidecar: fall back to the
+  // equivalent C1/A2 midpoint (the negative-pole slot centre). The first N
+  // bar centre sits one full pitch before that midpoint.
+  if (phaseOrder.length === 3) {
+    const c1 = zoneAt(phaseOrder[2], 0);
+    const a2 = zoneAt(phaseOrder[0], 1);
+    if (c1 && a2) {
+      const negativeMagnetCentre = (centreX(c1) + centreX(a2)) / 2;
+      if (Number.isFinite(negativeMagnetCentre)) {
+        return negativeMagnetCentre - pitchM - widthM / 2;
+      }
+    }
+  }
+
+  // No pattern-owned zones: centre each solid bar in its pitch cell.  This
+  // preserves the old origin while splitting the configured gap at the array
+  // boundaries for legacy/mock payloads.
+  return gapM / 2;
+}
+
 /** Magnet array overlay: count × pitch segments, alternating polarity. */
-export function computeMagnets(config: PreviewConfigLike): MagnetStrip[] {
+export function computeMagnets(
+  config: PreviewConfigLike,
+  dimensions:
+    | Partial<Pick<RoutingDimensionsDto, "pole_regions">>
+    | null
+    | undefined = undefined,
+): MagnetStrip[] {
   const arr: MagnetStrip[] = [];
-  const pitch = (config.magnet_width_mm + config.magnet_gap_mm) / 1000;
+  const pitch = (config.magnet_width_mm + Math.max(config.magnet_gap_mm, 0)) / 1000;
   const mw = config.magnet_width_mm / 1000;
+  const firstX = computeMagnetStartX(config, dimensions);
   for (let i = 0; i < config.magnet_count; i++) {
-    arr.push({ x: i * pitch, w: mw, pole: i % 2 === 0 ? 1 : -1 });
+    arr.push({ x: firstX + i * pitch, w: mw, pole: i % 2 === 0 ? 1 : -1 });
   }
   return arr;
 }
@@ -705,6 +857,37 @@ export function computeOverlayFitBounds(
   return unionBounds(...boxes);
 }
 
+/**
+ * Expand the schematic fit box to cover the magnet strip when the mover is
+ * translated by `offsetM` metres. The strip translates monolithically, so
+ * its two extremes are the resting position (0) and the far end of travel
+ * (`offsetM`); unioning both with the base box keeps the reset-view camera
+ * from clipping the moved strip. Returns the base box when there are no
+ * magnets or the offset is not usable.
+ */
+export function computeMoverStripBounds(
+  base: ViewportBBox,
+  magnets: readonly MagnetStrip[],
+  offsetM: number,
+  yTop: number,
+  stripHeightM: number,
+): ViewportBBox {
+  if (magnets.length === 0 || !Number.isFinite(offsetM) || offsetM < 0) return base;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const m of magnets) {
+    minX = Math.min(minX, m.x + offsetM);
+    maxX = Math.max(maxX, m.x + m.w + offsetM);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return base;
+  return unionBounds(base, {
+    minX,
+    minY: yTop,
+    maxX,
+    maxY: yTop + stripHeightM,
+  });
+}
+
 /** Format a metre length as a compact mm string, e.g. "12 mm" / "1.78 mm". */
 export function formatMetresMm(v: number): string {
   if (!Number.isFinite(v)) return "—";
@@ -717,4 +900,101 @@ export function formatMetresMm(v: number): string {
 export function formatMarginMm(v: number): string {
   const magnitude = formatMetresMm(Math.abs(v));
   return v < 0 ? `-${magnitude}` : `+${magnitude}`;
+}
+
+// ---------------------------------------------------------------------------
+// Measure ruler (lightbox interaction). Pure coordinate conversions and the
+// dimension geometry for the two-click measure tool — the component only
+// wires DOM events to these helpers and paints the returned ruler.
+// ---------------------------------------------------------------------------
+
+/** 2D point in a coordinate space (virtual px or world metres). */
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+/**
+ * Convert a client-viewport position over a canvas frame into the virtual
+ * drawing space (760×260 for the coil preview). Pure inverse of the CSS
+ * scaling the draw code applies (`k = frame.clientWidth / virtualW`).
+ */
+export function clientToVirtual(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number; width: number; height: number },
+  virtualW: number,
+  virtualH: number,
+): Point2D {
+  return {
+    x: rect.width > 0 ? ((clientX - rect.left) / rect.width) * virtualW : 0,
+    y: rect.height > 0 ? ((clientY - rect.top) / rect.height) * virtualH : 0,
+  };
+}
+
+/**
+ * Convert a virtual-space point into world metres under the current view
+ * transform and pan. Inverse of the world→virtual mapping used while
+ * drawing: `vx = t.tx + panX + s·wx`, `vy = t.ty + panY − s·wy`.
+ */
+export function virtualToWorld(
+  vx: number,
+  vy: number,
+  t: WorldTransform,
+  panX: number,
+  panY: number,
+): Point2D {
+  if (t.s <= 0) return { x: 0, y: 0 };
+  return { x: (vx - (t.tx + panX)) / t.s, y: (t.ty + panY - vy) / t.s };
+}
+
+/** Euclidean distance between two world points, in millimetres. */
+export function distanceMm(a: Point2D, b: Point2D): number {
+  return Math.hypot(b.x - a.x, b.y - a.y) * 1000;
+}
+
+/** World-space geometry for the lightbox measure ruler. */
+export interface MeasureRuler {
+  /** Start point (world, m). */
+  p1: Point2D;
+  /** End point (world, m). */
+  p2: Point2D;
+  /** Endpoint distance, in millimetres. */
+  mm: number;
+  /** Caption anchor: midpoint nudged perpendicular to the line. */
+  label: Point2D;
+  /** World-space box the ruler occupies (camera-fit input). */
+  bounds: ViewportBBox;
+}
+
+/**
+ * Build the measure-ruler geometry between two world points (the live
+ * preview uses the cursor as `p2`; the locked dimension uses the second
+ * click). The caption anchor sits at the midpoint, offset along the line's
+ * perpendicular so diagonal and vertical measurements stay readable.
+ */
+export function computeMeasureRuler(p1: Point2D, p2: Point2D): MeasureRuler {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy);
+  // Perpendicular unit vector (arbitrary for a zero-length line).
+  const nx = len > 0 ? -dy / len : 1;
+  const ny = len > 0 ? dx / len : 0;
+  const labelRaiseM = 0.0012; // matches the pole-pitch ruler caption rise
+  const padXM = Math.max(len * 0.05, 0.001);
+  return {
+    p1,
+    p2,
+    mm: len * 1000,
+    label: {
+      x: (p1.x + p2.x) / 2 + nx * labelRaiseM,
+      y: (p1.y + p2.y) / 2 + ny * labelRaiseM,
+    },
+    bounds: {
+      minX: Math.min(p1.x, p2.x) - padXM,
+      minY: Math.min(p1.y, p2.y) - 0.004,
+      maxX: Math.max(p1.x, p2.x) + padXM,
+      maxY: Math.max(p1.y, p2.y) + 0.004,
+    },
+  };
 }

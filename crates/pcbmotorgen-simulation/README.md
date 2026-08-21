@@ -125,8 +125,7 @@ cargo build --workspace
 ## Cross-validation against the Python oracle
 
 `tests/test_vectors.rs` loads `scripts/fixtures/test_vectors.json` (the Python
-oracle output from `scripts/export_test_vectors.py`) and asserts the Rust core
-matches within tolerance:
+oracle output) and asserts the Rust core matches within tolerance:
 
 - Config derived values: exact;
 - B-field (`Bx`, `By`, `Bz`): ±1% relative or ±1e-6 T absolute;

@@ -9,20 +9,14 @@
 
 import type {
   LinearMotorConfig,
-  SpacingRatio,
   MagnetArrangement,
   CommutationMode,
   RoutingPatternInfo,
   RoutingParamDef,
+  MagnetGrade,
 } from "../types";
-import { getRemanence } from "../types";
-import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins } from "../ipc";
-
-const SPACING_RATIO_MAP: Record<SpacingRatio, number> = {
-  "1:1": 1.0,
-  "4:5": 4 / 5,
-  "5:6": 5 / 6,
-};
+import { getRemanence, MAGNET_GRADES, extractBaseGrade } from "../types";
+import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins, fetchMagnetGrades } from "../ipc";
 
 /** Default back-iron thickness applied when the user enables a BackIron
  *  magnet arrangement for the first time. Only used when the user has
@@ -64,16 +58,34 @@ export class ConfigStore {
   windings_per_phase = $state(2);
 
   // --- Magnet array (mm) -------------------------------------------------
-  magnet_count = $state(10);
-  magnet_width_mm = $state(10);
+  /** Number of magnetic poles on the mover (`N_poles`). Even counts are
+   *  strongly recommended so the mover has no net unbalanced normal force. */
+  magnet_count = $state(12);
+  /** X length of one magnet along the travel axis (`W_m`, mm). This is the
+   *  SOURCE OF TRUTH for the travel-axis magnet geometry; the pole fill
+   *  factor `k_fill = W_m / τ_p` is DERIVED from it (see the derived
+   *  section below). 4.5 mm at the 6 mm pole-pitch default gives
+   *  k_fill = 0.75 (135° electrical), the classic optimum; the value may
+   *  reach the full pole pitch (k = 1.0, end-to-end magnets, no gap). */
+  magnet_width_mm = $state(4.5);
+  /** Y width across the stator (mm) — independent of the travel-axis X length. */
   magnet_cross_width_mm = $state(10);
-  magnet_gap_mm = $state(2);
-  magnet_height_mm = $state(4);
+  /** Z thickness default = T_m = 0.5 × pole pitch (3.0 mm at the 12 mm
+   *  electrical-pitch default). User-adjustable afterwards. */
+  magnet_height_mm = $state(3.0);
   magnet_grade = $state("N44");
   magnet_remanence_t = $state(1.34);
   magnet_arrangement = $state<MagnetArrangement>("Alternating");
   back_iron_thickness_mm = $state(0);
   air_gap_mm = $state(0.5);
+
+  // --- Phase-band constraint (mm) ---------------------------------------
+  /** Stator slot/electrical pitch (`P_e`): the length of one full electrical
+   *  cycle (360°). A full cycle contains TWO alternating poles (180° each),
+   *  so the magnetic pole pitch is `pole_pitch = P_e / 2`. The slot
+   *  start/end boundaries themselves come from the routing crate's pole
+   *  regions. */
+  slot_width_mm = $state(12.0);
 
   // --- Coil --------------------------------------------------------------
   /** Routing-pattern id sent to the backend (one of `routing_patterns`). */
@@ -94,7 +106,6 @@ export class ConfigStore {
    *  simulation effects a stable signal to react to. */
   routing_params_version = $state(0);
   phases = $state(3);
-  spacing_ratio_label = $state<SpacingRatio>("1:1");
   num_layers = $state(4);
 
   // --- Drive / electrical ------------------------------------------------
@@ -128,21 +139,90 @@ export class ConfigStore {
   // Derived geometry (mm, for the UI)
   // ---------------------------------------------------------------------
 
-  pole_pitch_mm = $derived(this.magnet_width_mm + this.magnet_gap_mm);
+  pole_pitch_mm = $derived(this.slot_width_mm / 2);
+  /** Full electrical cycle length (`P_e`) — one cycle spans 2 pole pitches. */
+  electrical_pitch_mm = $derived(this.slot_width_mm);
+  /** Upper limit on the magnet X length: a fully-filled pole pitch
+   *  (k_fill = 1.0) leaves no inter-pole gap. */
+  max_magnet_width_mm = $derived(Math.max(0, this.pole_pitch_mm));
+  /** Magnet pole fill factor, now DERIVED from the width input:
+   *  k_fill = W_m / τ_p. Kept exported under its historical name because
+   *  validation.ts and MagnetsPanel.svelte consume it. */
+  magnet_fill_k = $derived(
+    this.pole_pitch_mm > 0 ? this.magnet_width_mm / this.pole_pitch_mm : 0,
+  );
+  /** Inter-pole gap is automatic: W_gap = τ_p − W_m (zero at k_fill = 1.0). */
+  magnet_gap_mm = $derived(
+    Math.max(0, this.pole_pitch_mm - this.magnet_width_mm),
+  );
   coil_span_mm = $derived(this.magnet_count * this.pole_pitch_mm);
   /** Active-area length along the travel axis: mover span + desired travel. */
   active_area_length_mm = $derived(this.coil_span_mm + this.desired_travel_mm);
+  /**
+   * Total X extent of the routed PCB traces: the first-to-last segment-point
+   * span returned by the routing backend. The braid routes across the active
+   * area PLUS both end paddings (end-turn room), so this is the dimension
+   * the coil preview actually draws — keep every preview sized by THIS.
+   */
+  trace_total_length_mm = $derived(
+    this.active_area_length_mm + 2 * this.padding_mm,
+  );
   travel_mm = $derived(this.active_area_length_mm - this.coil_span_mm);
-  spacing_ratio = $derived(SPACING_RATIO_MAP[this.spacing_ratio_label]);
+  /** Vernier slot-pitch ratio. No longer user-adjustable in the UI — pinned
+   *  to the standard 1:1 and passed to the backend untouched. */
+  spacing_ratio = $derived(1.0);
 
   /** True when the active area is too short to cover the mover coil span. */
-  is_active_area_invalid = $derived(this.active_area_length_mm <= this.coil_span_mm);
+  is_active_area_invalid = $derived(this.active_area_length_m <= this.coil_span_m);
+
+  // --- Magnet-grade reference (loaded from backend at startup) -----------
+  /**
+   * The runtime-loaded magnet-grade table from the backend
+   * (`get_magnet_grades`). The backend reads the Rust simulation crate's
+   * table — the single source of truth. Empty until loaded; the static TS
+   * table in `types/magnets.ts` is the offline/mock fallback.
+   */
+  magnet_grades = $state<MagnetGrade[]>([]);
+
+  /** Magnet-grade names offered to the user (runtime table, else TS fallback). */
+  magnetGradeNames = $derived(
+    this.magnet_grades.length > 0
+      ? this.magnet_grades.map((g) => g.name)
+      : Object.keys(MAGNET_GRADES),
+  );
+
+  /** Look up a grade by name from the runtime table (falling back to TS). */
+  getMagnetGrade(name: string): MagnetGrade | null {
+    const base = extractBaseGrade(name);
+    if (this.magnet_grades.length > 0) {
+      return this.magnet_grades.find((g) => g.name === base) ?? null;
+    }
+    return MAGNET_GRADES[base] ?? null;
+  }
+
+  /** Look up a grade by name from the runtime table (falling back to TS). */
+  getMagnetGradeRemanence(name: string): number {
+    const grade = this.getMagnetGrade(name);
+    return grade ? grade.br_typ_t : getRemanence(name);
+  }
+
+  /**
+   * Load the magnet-grade table from the backend. Called during app init.
+   * Failures are swallowed so a missing backend keeps the TS fallback table.
+   */
+  async loadMagnetGrades(): Promise<void> {
+    try {
+      this.magnet_grades = await fetchMagnetGrades();
+    } catch {
+      // backend unavailable — keep the static TS fallback table
+    }
+  }
 
   /** Sync remanence from the selected grade unless "Custom". */
   syncGrade(): void {
     if (this.magnet_grade === "Custom") return;
     try {
-      this.magnet_remanence_t = getRemanence(this.magnet_grade);
+      this.magnet_remanence_t = this.getMagnetGradeRemanence(this.magnet_grade);
     } catch {
       // unknown grade — leave remanence untouched
     }

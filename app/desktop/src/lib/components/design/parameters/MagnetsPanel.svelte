@@ -55,69 +55,83 @@
         </select>
       </label>
 
-      <label class="min-w-0" title="Magnet span along the travel axis (X); sets pole pitch with the gap.">
+      <label class="min-w-0" title="X Length of one magnet along the travel axis (W_m). The pole fill factor k = W_m / τ_p is derived from it; 0.75 (135° electrical) is the default optimum and 1.00 gives end-to-end magnets with no inter-pole gap.">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Travel-axis length (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">X Length (mm)</span>
           <NumberField
-            id="magnet-length"
+            id="magnet-width"
             value={config.magnet_width_mm}
-            min={0.1}
-            max={40}
+            min={0.5 * config.pole_pitch_mm}
+            max={1.0 * config.pole_pitch_mm}
             step={0.1}
-            ariaLabel="Magnet travel-axis length (mm)"
+            ariaLabel="X Length (mm), magnet length along the travel axis"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_width_mm = value)}
           />
         </span>
+        <span class="mt-1 block text-[10px] text-slate-500">
+          k = W_m/τ_p = {(config.magnet_width_mm / config.pole_pitch_mm).toFixed(2)} ·
+          width is the input, k is derived · k = 1.00 → magnets end-to-end.
+        </span>
+        {#if config.magnet_width_mm / config.pole_pitch_mm > 0.85}
+          <span
+            class="mt-1 block text-[10px] text-amber-400"
+            role="status"
+            aria-live="polite"
+          >
+            Flux leakage between adjacent magnets.
+          </span>
+        {/if}
       </label>
 
-      <label class="min-w-0" title="Magnet width across the stator (Y); defines active conductor length.">
+      <label class="min-w-0" title="Y Width (mm): magnet width across the stator; defines active conductor length.">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Cross-width (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">Y Width (mm)</span>
           <NumberField
             id="magnet-width"
             value={config.magnet_cross_width_mm}
             min={0.1}
             max={40}
             step={0.1}
-            ariaLabel="Magnet cross-width (mm)"
+            ariaLabel="Y Width (mm), magnet width across the stator"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_cross_width_mm = value)}
           />
         </span>
       </label>
 
-      <label class="min-w-0" title="Magnetisation-axis thickness (Z); affects field strength at the PCB.">
+      <label class="min-w-0" title="Z Thickness (mm): magnetisation-axis thickness. Coreless motors have no iron core, so the recommended minimum is T_m = 0.5 × pole pitch (3.0 mm at the default pitch).">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Thickness (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300">Z Thickness (mm)</span>
           <NumberField
             id="magnet-height"
             value={config.magnet_height_mm}
             min={0.1}
             max={20}
             step={0.1}
-            ariaLabel="Magnet thickness (mm)"
+            ariaLabel="Z Thickness (mm), magnetisation-axis thickness"
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_height_mm = value)}
           />
         </span>
-      </label>
-
-      <label class="min-w-0" title="Gap between adjacent magnets along the travel axis.">
-        <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Gap (mm)</span>
-          <NumberField
-            id="magnet-gap"
-            value={config.magnet_gap_mm}
-            min={0}
-            max={20}
-            step={0.1}
-            ariaLabel="Magnet gap (mm)"
-            class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
-            onCommit={(value) => (config.magnet_gap_mm = value)}
-          />
+        <span class="mt-1 block text-[10px] text-slate-500">
+          Recommended: {(config.pole_pitch_mm * 0.5).toFixed(1)} mm (0.5 × pole pitch).
         </span>
       </label>
+
+      <div class="sm:col-span-2">
+        <div class="rounded-md border border-slate-700/80 bg-slate-900/40 px-2.5 py-2 text-[10px] leading-relaxed text-slate-400">
+          <span class="font-semibold text-slate-300">Auto geometry</span>
+          — pole pitch {config.pole_pitch_mm.toFixed(1)} mm (electrical pitch {config.electrical_pitch_mm.toFixed(
+            1,
+          )} mm) · X Length {config.magnet_width_mm.toFixed(1)} mm · gap {config.magnet_gap_mm.toFixed(
+            1,
+          )} mm · coil span {config.coil_span_mm.toFixed(1)} mm.
+          The X Length IS the input; the fill factor is derived from it
+          (k = W_m / τ_p), and the inter-magnet gap follows as
+          W_gap = τ_p − W_m (zero at k = 1.00).
+        </div>
+      </div>
 
       <label class="min-w-0" title="Steel keeper thickness; set to zero for none.">
         <span class="flex items-center justify-between gap-2">

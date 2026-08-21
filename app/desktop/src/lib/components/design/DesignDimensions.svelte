@@ -5,7 +5,12 @@
     restOffsetMm as restOffsetMmFor,
   } from "../../geometry";
 
-  let { config }: { config: ConfigStore } = $props();
+  let { config, measuredTraceLengthMm = null }: {
+    config: ConfigStore;
+    /** Trace X-span MEASURED from the returned coil payload (mm); falls back
+     *  to the configured routing domain until a payload arrives. */
+    measuredTraceLengthMm?: number | null;
+  } = $props();
 
   // Vernier slot-pitch / rest-offset formulas live in lib/geometry.
   let slotPitchMm = $derived(
@@ -29,7 +34,16 @@
 
   <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Active area length">Active area length</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Total X extent of the routed PCB traces (first to last segment point), measured from the returned payload. The braid floors whole periods, so this can sit up to one period below the configured domain (active area + 2 × end padding).">PCB trace total (X)</dt>
+      <dd class="font-mono text-xs text-emerald-300">
+        {(measuredTraceLengthMm ?? config.trace_total_length_mm).toFixed(1)} mm
+        {#if measuredTraceLengthMm !== null}
+          <span class="text-[9px] text-slate-500">meas.</span>
+        {/if}
+      </dd>
+    </div>
+    <div class="min-w-0">
+      <dt class="truncate text-[10px] text-slate-500" title="Copper active region inside the end paddings (coil span + travel)">Active copper region</dt>
       <dd class="font-mono text-xs text-sky-200">{config.active_area_length_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
@@ -45,7 +59,7 @@
       <dd class="font-mono text-xs text-sky-200">{config.pole_pitch_mm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Slot pitch">Slot pitch</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Vernier-adjusted phase-band pitch (spacing ratio applied)">Vernier slot pitch</dt>
       <dd class="font-mono text-xs text-sky-200">{slotPitchMm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
@@ -57,11 +71,11 @@
       <dd class="font-mono text-xs text-sky-200">{config.magnet_count}</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Magnet travel-axis x cross-width">Magnet size</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="X Length × Y Width">Magnet size</dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_width_mm.toFixed(1)} &times; {config.magnet_cross_width_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Gap between adjacent magnets">Magnet gap</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Automatic inter-magnet gap = pole pitch − magnet X Length">Magnet gap (auto)</dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_gap_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">

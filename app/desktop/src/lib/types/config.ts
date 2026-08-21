@@ -2,7 +2,7 @@
  * Config (IPC wire format — SI units) and the derived-value contract.
  */
 
-import type { CommutationMode, MagnetArrangement, SpacingRatio } from "./enums";
+import type { CommutationMode, MagnetArrangement } from "./enums";
 
 /** The full design configuration sent to the Tauri backend on every call. */
 export interface LinearMotorConfig {

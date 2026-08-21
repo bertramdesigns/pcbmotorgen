@@ -35,13 +35,13 @@ test.describe("magnet pattern -> trace regeneration", () => {
     });
 
     const before = await segments();
-    // Default config: 10 magnets -> 20 active conductors per phase
+    // Default config: 12 poles -> 24 active conductors per phase
     // (minus end-turns) on every layer.
     expect(before).toBeGreaterThan(100);
 
-    // 4 magnets -> 8 active conductors per phase.
+    // 6 poles -> 12 active conductors per phase.
     const magnetInput = page.locator("input#magnet-count");
-    await magnetInput.fill("4");
+    await magnetInput.fill("6");
 
     await eventually(async () => {
       expect(await segments()).not.toBe(before);

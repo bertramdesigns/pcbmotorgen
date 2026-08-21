@@ -1,18 +1,10 @@
 <!--
   ═══════════════════════════════════════════════════════════════════════
-  Canvas coil viewer — replaces the retired SVG viewer. The legacy
-  `CoilPreviewSVG.svelte` backup has been deleted; this canvas component is
-  the sole preview renderer.
-
-  Why canvas? The SVG viewer had to create ~2,600 DOM nodes (1,542 trace
-  lines + 1,101 via circles for the default infinity-braid) which rendered
-  slowly and was hard to keep bug-free. The canvas version renders the SAME
-  schematic with the SAME controls, but painting ~2,600 primitives a frame
-  is sub-millisecond.
+  Canvas coil viewer.
 
   Layers are drawn OVERLAID at their TRUE coordinates (a top-down view
-  matching the DXF export) — there is no schematic exploded-layer offset.
-  Per-layer show/hide toggles let you inspect each copper layer alone.
+  matching the DXF export). Per-layer show/hide toggles let you inspect 
+  each copper layer alone.
 
   All geometry math lives in `../../previewGeometry.ts` (pure, tested,
   shared); this component only maps it onto a canvas.
@@ -38,10 +30,13 @@
 -->
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
+  import type { MotionStore } from "../../stores/motion.svelte";
   import type { CoilPathDto } from "../../types";
   import {
+    clientToVirtual,
     computePreviewGeometry,
     computeMagnets,
+    computeMeasureRuler,
     computeUniqueLayers,
     computeUniquePhases,
     computeVisibleSegments,
@@ -49,24 +44,33 @@
     computePolePitchRuler,
     computeSlotWidthRows,
     computeOverlayFitBounds,
+    computeMoverStripBounds,
     computePoleRegionZones,
     computePoleRegionPhases,
     filterPoleRegionsByPhase,
     resolvePoleRegionPhaseSelection,
+    virtualToWorld,
     firstMagnetCenterX as magnetCenterX,
     formatMetresMm,
     formatMarginMm,
+    type Point2D,
     type PreviewConfigLike,
     type PolePitchRuler,
     type PoleRegionZone,
     type SlotWidthRow,
   } from "../../previewGeometry";
   import type { WorldTransform } from "../../chart";
-  import { fitWorldToView } from "../../chart";
+  import { fitWorldToView, unionBounds } from "../../chart";
   import { CoilPreviewGestures } from "../../utils/coilPreviewGestures.svelte";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
+  import MoverPositionControls from "./MoverPositionControls.svelte";
 
-  let { config, coils }: { config: ConfigStore; coils: CoilPathDto | null } = $props();
+  let {
+    config,
+    coils,
+    motion,
+  }: { config: ConfigStore; coils: CoilPathDto | null; motion: MotionStore } =
+    $props();
 
   // Virtual drawing space. The CSS box keeps the same 760:260 aspect ratio as
   // the old SVG viewBox; every overlay (legend, disclaimer) is laid out in
@@ -100,7 +104,11 @@
   // Geometry + view — ALL math comes from lib/previewGeometry + lib/chart.
   // `config` (ConfigStore) satisfies PreviewConfigLike structurally (it has
   // magnet_count / magnet_width_mm / magnet_gap_mm plus extras, which is
-  // fine for structural typing).
+  // fine for structural typing). Magnet placement also consumes the generated
+  // routing_dimensions sidecar when available: each pitch cell's right edge
+  // (solid bar + trailing gap) is anchored to the pattern's B-phase slot
+  // centres so the poles stay locked to the slot zones. Legacy or missing
+  // sidecars use computeMagnets' centered pitch-cell fallback.
   // -------------------------------------------------------------------
   let g = $derived(computePreviewGeometry(coils, config as PreviewConfigLike));
 
@@ -126,7 +134,29 @@
   });
 
   let worldTransform = $derived(worldTransformFor(gestures.zoom));
-  let magnets = $derived(computeMagnets(config));
+  let magnets = $derived(computeMagnets(config, coils?.routing_dimensions));
+  // The mover position from the shared MotionStore places the whole strip in
+  // ABSOLUTE track coordinates: bar 0's left edge lands exactly at
+  // `motion.stripStartMm` (= position − coil_span/2), matching the design
+  // reflection's iso view and readouts. Polarity order and pitch come from
+  // the pattern-anchored `computeMagnets` layout.
+  let visibleMagnets = $derived.by(() => {
+    if (magnets.length === 0) return magnets;
+    const restStartM = Math.min(...magnets.map((m) => m.x));
+    const targetStartM = motion.stripStartMm / 1000;
+    return magnets.map((m) => ({ ...m, x: m.x + targetStartM - restStartM }));
+  });
+  // Camera-fit extreme: the largest leading-edge shift of either travel end
+  // relative to the pattern-anchored rest layout, so reset-view never clips
+  // the moved magnets.
+  let maxMoverOffsetM = $derived.by(() => {
+    const halfSpanM = config.coil_span_mm / 2000;
+    const restStartM =
+      magnets.length > 0 ? Math.min(...magnets.map((m) => m.x)) : 0;
+    const leadAtMin = motion.moverMinMm / 1000 - halfSpanM - restStartM;
+    const leadAtMax = motion.moverMaxMm / 1000 - halfSpanM - restStartM;
+    return Math.max(0, leadAtMin, leadAtMax);
+  });
   let uniquePhases = $derived(computeUniquePhases(coils));
   let uniqueLayers = $derived(computeUniqueLayers(coils));
   let visibleSegments = $derived(
@@ -143,7 +173,7 @@
   // absent/legacy sidecar (null sidecars → no ruler, no rows). The camera
   // fit always includes them so reset-view never clips an annotation.
   // -------------------------------------------------------------------
-  let firstMagnetCentreX = $derived(magnetCenterX(magnets));
+  let firstMagnetCentreX = $derived(magnetCenterX(visibleMagnets));
   let poleRuler = $derived(
     computePolePitchRuler(
       coils?.routing_dimensions,
@@ -151,7 +181,9 @@
       g.fitBounds.maxY + 0.0008, // just above the magnet strip
     ),
   );
-  let slotRows = $derived(computeSlotWidthRows(coils, coils?.routing_dimensions));
+  let slotRows = $derived(
+    computeSlotWidthRows(coils, coils?.routing_dimensions),
+  );
 
   // Independent presentation toggles, expanded-preview controls only. Kept
   // even when no data exists (they simply are not bound then).
@@ -178,19 +210,31 @@
    *  "All phases". Reads + writes `poleRegionPhase`; the write only happens
    *  on the invalid branch so the effect terminates (no update cycle). */
   $effect(() => {
-    const resolved = resolvePoleRegionPhaseSelection(poleRegionPhase, poleRegionPhases);
+    const resolved = resolvePoleRegionPhaseSelection(
+      poleRegionPhase,
+      poleRegionPhases,
+    );
     if (resolved !== poleRegionPhase) poleRegionPhase = resolved;
   });
 
   let overlayFitBounds = $derived(
-    computeOverlayFitBounds(
-      g.fitBounds,
-      showPolePitch ? poleRuler : null,
-      showSlotWidths ? slotRows : [],
-      showPoleRegions ? visiblePoleRegionZones : [],
-      g.boardRect.y,
-      g.boardRect.y + g.boardRect.h,
-    ),
+    (() => {
+      const base = computeOverlayFitBounds(
+        computeMoverStripBounds(
+          g.fitBounds,
+          magnets,
+          maxMoverOffsetM,
+          g.magnetTop,
+          0.003,
+        ),
+        showPolePitch ? poleRuler : null,
+        showSlotWidths ? slotRows : [],
+        showPoleRegions ? visiblePoleRegionZones : [],
+        g.boardRect.y,
+        g.boardRect.y + g.boardRect.h,
+      );
+      return lockedMeasureBounds ? unionBounds(base, lockedMeasureBounds) : base;
+    })(),
   );
   let hasPolePitchData = $derived(poleRuler !== null);
   let hasSlotWidthData = $derived(slotRows.length > 0);
@@ -235,11 +279,156 @@
   }
 
   function toggleLayer(layerIdx: number): void {
-    layerVisibility = { ...layerVisibility, [layerIdx]: !isLayerVisible(layerIdx) };
+    layerVisibility = {
+      ...layerVisibility,
+      [layerIdx]: !isLayerVisible(layerIdx),
+    };
   }
 
   // Inter-layer via visibility. Toggle lives in the expanded lightbox only.
   let showVias = $state(true);
+
+  // -------------------------------------------------------------------
+  // Lightbox measure ruler. Two-click dimension tool: click 1 sets the
+  // start point, click 2 locks the dimension, click 3 clears it. The
+  // reset button (visible while measure mode is on) clears without a
+  // click. Taps are distinguished from pan-drags by a movement threshold,
+  // so pan/pinch/zoom keep working while measuring. Lightbox only — the
+  // overlay draws only while `expanded`.
+  // -------------------------------------------------------------------
+  const MEASURE_TAP_PX = 6;
+  let measureMode = $state(false);
+  let measureP1 = $state<Point2D | null>(null);
+  let measureP2 = $state<Point2D | null>(null);
+  let measureCursor = $state<Point2D | null>(null);
+
+  /** Locked-dimension fit bounds (camera-fit input, lightbox only). */
+  let lockedMeasureBounds = $derived(
+    expanded && measureMode && measureP1 && measureP2
+      ? computeMeasureRuler(measureP1, measureP2).bounds
+      : null,
+  );
+
+  /** Non-reactive tap bookkeeping: pointer/touch start positions. */
+  let measureDowns = new Map<number, { x: number; y: number }>();
+  let measureTouches = new Map<number, { x: number; y: number }>();
+
+  function measureTapAt(clientX: number, clientY: number): void {
+    const frame = modalFrameRef;
+    if (!measureMode || !frame) return;
+    const rect = frame.getBoundingClientRect();
+    const v = clientToVirtual(clientX, clientY, rect, W, H);
+    const w = virtualToWorld(
+      v.x,
+      v.y,
+      worldTransform,
+      gestures.panX,
+      gestures.panY,
+    );
+    if (!measureP1) {
+      measureP1 = w;
+      measureCursor = null;
+    } else if (!measureP2) {
+      measureP2 = w;
+      measureCursor = null;
+    } else {
+      // Third click clears the locked measurement.
+      measureP1 = null;
+      measureP2 = null;
+      measureCursor = null;
+    }
+  }
+
+  function onModalPointerDown(e: PointerEvent) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Touch-compat pointers are ignored on browsers with native touches (the
+    // touch route below handles taps there) — mirrors the gesture utility.
+    if (e.pointerType === "touch" && "ontouchstart" in window) {
+      gestures.handlePointerDown(e);
+      return;
+    }
+    measureDowns.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    gestures.handlePointerDown(e);
+  }
+
+  function onModalPointerMove(e: PointerEvent) {
+    if (measureMode && measureP1 && !measureP2 && e.pointerType !== "touch") {
+      const frame = modalFrameRef;
+      if (frame) {
+        const rect = frame.getBoundingClientRect();
+        const v = clientToVirtual(e.clientX, e.clientY, rect, W, H);
+        measureCursor = virtualToWorld(
+          v.x,
+          v.y,
+          worldTransform,
+          gestures.panX,
+          gestures.panY,
+        );
+      }
+    }
+    gestures.handlePointerMove(e);
+  }
+
+  function onModalPointerUp(e: PointerEvent) {
+    gestures.handlePointerEnd(e);
+    if (e.pointerType === "touch" && "ontouchstart" in window) return;
+    const down = measureDowns.get(e.pointerId);
+    measureDowns.delete(e.pointerId);
+    if (!down) return;
+    if (measureDowns.size > 0) return; // a second pointer was part of a pinch
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) <= MEASURE_TAP_PX) {
+      measureTapAt(e.clientX, e.clientY);
+    }
+  }
+
+  function onModalPointerCancel(e: PointerEvent) {
+    measureDowns.delete(e.pointerId);
+    gestures.handlePointerEnd(e);
+  }
+
+  function onModalTouchStart(e: TouchEvent) {
+    for (const t of e.changedTouches) {
+      measureTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+    gestures.handleTouchStart(e);
+  }
+
+  function onModalTouchMove(e: TouchEvent) {
+    if (measureMode && measureP1 && !measureP2) {
+      const t = e.touches[0];
+      const frame = modalFrameRef;
+      if (t && frame) {
+        const rect = frame.getBoundingClientRect();
+        const v = clientToVirtual(t.clientX, t.clientY, rect, W, H);
+        measureCursor = virtualToWorld(
+          v.x,
+          v.y,
+          worldTransform,
+          gestures.panX,
+          gestures.panY,
+        );
+      }
+    }
+    gestures.handleTouchMove(e);
+  }
+
+  function onModalTouchEnd(e: TouchEvent) {
+    gestures.handleTouchEnd(e);
+    for (const t of e.changedTouches) {
+      const down = measureTouches.get(t.identifier);
+      measureTouches.delete(t.identifier);
+      if (!down) continue;
+      if (e.touches.length > 0) continue; // other fingers still down (pinch)
+      if (Math.hypot(t.clientX - down.x, t.clientY - down.y) <= MEASURE_TAP_PX) {
+        measureTapAt(t.clientX, t.clientY);
+      }
+    }
+  }
+
+  function onModalTouchCancel(e: TouchEvent) {
+    for (const t of e.changedTouches) measureTouches.delete(t.identifier);
+    gestures.handleTouchEnd(e);
+  }
 
   // -------------------------------------------------------------------
   // Frame + backing-store sizing. A ResizeObserver keeps the canvas backing
@@ -395,13 +584,38 @@
     ctx.setLineDash([]);
     ctx.beginPath();
     if (typeof ctx.roundRect === "function") {
-      ctx.roundRect(g.boardRect.x, g.boardRect.y, g.boardRect.w, g.boardRect.h, 0.0015);
+      ctx.roundRect(
+        g.boardRect.x,
+        g.boardRect.y,
+        g.boardRect.w,
+        g.boardRect.h,
+        0.0015,
+      );
     } else {
       // roundRect is not available in every engine — fall back to a plain rect.
       ctx.rect(g.boardRect.x, g.boardRect.y, g.boardRect.w, g.boardRect.h);
     }
     ctx.fill();
     ctx.stroke();
+
+    // Active-copper band (always on): the copper region inside the end
+    // paddings — the span the mover actually travels over. Shows WHY the
+    // magnet strip stops one padding short of the board edge at max travel.
+    {
+      const ax = config.padding_mm / 1000;
+      const aw = config.active_area_length_mm / 1000;
+      if (aw > 0 && ax + aw <= g.boardRect.x + g.boardRect.w) {
+        const ay = g.boardRect.y;
+        const ah = g.boardRect.h;
+        ctx.fillStyle = "rgba(52, 211, 153, 0.07)";
+        ctx.fillRect(ax, ay, aw, ah);
+        ctx.strokeStyle = "rgba(52, 211, 153, 0.55)";
+        ctx.lineWidth = 1 / s;
+        ctx.setLineDash([0.0012, 0.0012]);
+        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.setLineDash([]);
+      }
+    }
 
     // Pole-region zones (pattern-owned phase/pole boundaries). Painted here,
     // BEHIND the traces, so the translucent alternating red/blue bands tint
@@ -411,7 +625,8 @@
       const zoneY = g.boardRect.y;
       const zoneH = g.boardRect.h;
       for (const zone of visiblePoleRegionZones) {
-        ctx.fillStyle = zone.polarity > 0 ? POLE_REGION_EVEN_FILL : POLE_REGION_ODD_FILL;
+        ctx.fillStyle =
+          zone.polarity > 0 ? POLE_REGION_EVEN_FILL : POLE_REGION_ODD_FILL;
         ctx.fillRect(zone.x0, zoneY, zone.x1 - zone.x0, zoneH);
         drawnPoleRegions += 1;
       }
@@ -419,13 +634,16 @@
 
     // Per-phase schematic layers, overlaid at their true coordinates.
     for (const ph of coils.phases) {
-      if (!isPhaseVisible(ph.phase_idx) || !isLayerVisible(ph.layer_idx)) continue;
+      if (!isPhaseVisible(ph.phase_idx) || !isLayerVisible(ph.layer_idx))
+        continue;
       const layerOpacity = Math.max(0.35, 1 - ph.layer_idx * 0.15);
       const color = PHASE_COLORS[ph.phase_idx % PHASE_COLORS.length];
       const segs =
         visibleSegments.get(ph.phase_idx * 1000 + ph.layer_idx) ?? ph.segments;
       const arcs =
-        visibleArcs.get(ph.phase_idx * 1000 + ph.layer_idx) ?? ph.corner_arcs ?? [];
+        visibleArcs.get(ph.phase_idx * 1000 + ph.layer_idx) ??
+        ph.corner_arcs ??
+        [];
 
       // a. Active conductors — thick, solid.
       ctx.strokeStyle = color;
@@ -486,11 +704,16 @@
       }
     }
 
-    // Magnet array overlay along the top edge of the fitted region.
-    for (const mag of magnets) {
+    // Magnet array overlay along the top edge of the fitted region. The bars
+    // track the shared mover position (shifted by `motion.offsetFromRestMm`),
+    // so the strip slides over the fixed stator zones as the slider moves.
+    for (const mag of visibleMagnets) {
       ctx.globalAlpha = 0.7;
       ctx.fillStyle = mag.pole > 0 ? "#f97316" : "#3b82f6";
-      ctx.fillRect(mag.x, g.magnetTop, Math.max(mag.w - 0.0005, 0.0005), 0.003);
+      // Paint the configured solid width exactly. A fixed 0.5 mm inset here
+      // adds an unmodelled gap and moves the visible pole centre away from the
+      // slot-zone anchor.
+      ctx.fillRect(mag.x, g.magnetTop, Math.max(mag.w, 0.0005), 0.003);
     }
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
@@ -544,7 +767,8 @@
       const labelRaise = endTick + 0.0005;
       for (const row of slotRows) {
         // Honor phase/layer visibility and the one-section window.
-        if (!isPhaseVisible(row.phaseIdx) || !isLayerVisible(row.layer)) continue;
+        if (!isPhaseVisible(row.phaseIdx) || !isLayerVisible(row.layer))
+          continue;
         if (!slotRowInOneSection(row)) continue;
         const halfM = Math.max(row.slotM / 2, 0.0004);
         // Negative margin → red over-budget; ok margin → green; no top-down
@@ -587,8 +811,10 @@
 
         // Compact one-line label above the bracket:
         //   L0 A 2.00 mm / max 4.00 mm · Δ +2.00 mm
-        const limitText = row.maxM === null ? "max —" : `max ${formatMetresMm(row.maxM)}`;
-        const marginText = row.marginM === null ? "" : ` · Δ ${formatMarginMm(row.marginM)}`;
+        const limitText =
+          row.maxM === null ? "max —" : `max ${formatMetresMm(row.maxM)}`;
+        const marginText =
+          row.marginM === null ? "" : ` · Δ ${formatMarginMm(row.marginM)}`;
         drawWorldCaption(
           `L${row.layer} ${row.phaseName} ${formatMetresMm(row.slotM)} / ${limitText}${marginText}`,
           row.anchorX,
@@ -598,6 +824,46 @@
         drawnSlotWidths += 1;
       }
       ctx.globalAlpha = 1;
+    }
+
+    // c. Lightbox measure ruler (two-click dimension tool, lightbox only).
+    //    Pink to stay distinct from the indigo pole-pitch ruler. The live
+    //    preview (start point + cursor) is dashed; the locked dimension is
+    //    solid with perpendicular end ticks. Draws only while expanded.
+    if (expanded && measureMode && measureP1) {
+      const end = measureP2 ?? measureCursor;
+      if (end) {
+        const ruler = computeMeasureRuler(measureP1, end);
+        const placing = !measureP2;
+        const tick = 0.0012;
+        const dx = ruler.p2.x - ruler.p1.x;
+        const dy = ruler.p2.y - ruler.p1.y;
+        const len = Math.max(Math.hypot(dx, dy), 1e-9);
+        const nx = -dy / len;
+        const ny = dx / len;
+        ctx.globalAlpha = placing ? 0.75 : 0.95;
+        ctx.setLineDash(placing ? [4 / s, 3 / s] : []);
+        ctx.strokeStyle = "#f472b6"; // pink-400: user measure ruler
+        ctx.fillStyle = "#f9a8d4";
+        ctx.lineWidth = 1.4 / s;
+        ctx.beginPath();
+        ctx.moveTo(ruler.p1.x, ruler.p1.y);
+        ctx.lineTo(ruler.p2.x, ruler.p2.y);
+        // Perpendicular end ticks.
+        ctx.moveTo(ruler.p1.x, ruler.p1.y);
+        ctx.lineTo(ruler.p1.x + nx * tick, ruler.p1.y + ny * tick);
+        ctx.moveTo(ruler.p2.x, ruler.p2.y);
+        ctx.lineTo(ruler.p2.x + nx * tick, ruler.p2.y + ny * tick);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        drawWorldCaption(
+          formatMetresMm(ruler.mm / 1000),
+          ruler.label.x,
+          ruler.label.y,
+          "#f9a8d4",
+        );
+        ctx.globalAlpha = 1;
+      }
     }
 
     // -----------------------------------------------------------------
@@ -672,7 +938,7 @@
     void visiblePoleRegionZones;
     void visibleSegments;
     void visibleArcs;
-    void magnets;
+    void visibleMagnets;
     void poleRuler;
     void slotRows;
     void overlayFitBounds;
@@ -739,8 +1005,8 @@
         class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
         aria-label="Expand coil preview"
         aria-expanded={expanded}
-        onclick={() => (expanded = true)}
-      >⤢</button>
+        onclick={() => (expanded = true)}>⤢</button
+      >
     </div>
   </div>
 
@@ -749,7 +1015,9 @@
        pinch/scroll-zoom handling is delegated to the gesture utility. -->
   <div
     bind:this={frameRef}
-    class="relative w-full touch-none select-none {gestures.isPanning ? 'cursor-grabbing' : 'cursor-grab'}"
+    class="relative w-full touch-none select-none {gestures.isPanning
+      ? 'cursor-grabbing'
+      : 'cursor-grab'}"
     role="img"
     aria-label="Coil preview"
     style="aspect-ratio: {W} / {H};"
@@ -786,8 +1054,10 @@
 
   {#if coils && coils.phases.length > 0}
     <p class="mt-2 text-xs text-slate-500">
-      Solid lines = active conductors (force-generating, ⊥ to travel). Dashed = end-turns. Magnet poles overlay shown along the top edge. Expand (⤢) or double-click the preview to show/hide phases, layers, vias and the pole-pitch / slot-width / pole-region overlays.
-      <span class="text-slate-600">Drag to pan. Pinch, or ctrl+scroll on a trackpad, or use the zoom controls below when zoomed in.</span>
+      <span class="text-slate-600"
+        >Drag to pan. Pinch, or ctrl+scroll on a trackpad, or use the zoom
+        controls below when zoomed in.</span
+      >
     </p>
   {/if}
 
@@ -809,7 +1079,9 @@
       >
         <!-- Header row -->
         <div class="flex items-center justify-between flex-wrap gap-2">
-          <h3 class="text-sm font-semibold text-slate-200">Coil Preview — expanded</h3>
+          <h3 class="text-sm font-semibold text-slate-200">
+            Coil Preview — expanded
+          </h3>
           <div class="flex items-center gap-3 flex-wrap">
             <span class="text-xs text-slate-400">
               {coils
@@ -820,8 +1092,8 @@
               type="button"
               class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
               aria-label="Close coil preview"
-              onclick={() => (expanded = false)}
-            >×</button>
+              onclick={() => (expanded = false)}>×</button
+            >
           </div>
         </div>
 
@@ -831,7 +1103,11 @@
                for each phase, with a checkbox to show/hide that phase's
                traces. The label and dot dim when the phase is hidden. -->
           {#if coils && uniquePhases.length > 0}
-            <div class="flex items-center gap-2 flex-wrap" role="group" aria-label="Phase visibility">
+            <div
+              class="flex items-center gap-2 flex-wrap"
+              role="group"
+              aria-label="Phase visibility"
+            >
               {#each uniquePhases as ph (ph.idx)}
                 <label
                   class="flex items-center gap-1 text-xs select-none cursor-pointer"
@@ -846,7 +1122,9 @@
                   />
                   <span
                     class="inline-block w-2.5 h-2.5 rounded-full"
-                    style="background-color: {PHASE_COLORS[ph.colorIdx % PHASE_COLORS.length]}; opacity: {isPhaseVisible(ph.idx) ? 1 : 0.35}"
+                    style="background-color: {PHASE_COLORS[
+                      ph.colorIdx % PHASE_COLORS.length
+                    ]}; opacity: {isPhaseVisible(ph.idx) ? 1 : 0.35}"
                   ></span>
                   <span>Phase {ph.name}</span>
                 </label>
@@ -858,7 +1136,11 @@
                traces. Layers are overlaid at true coordinates, so toggling is
                how you inspect a single layer in isolation. -->
           {#if coils && uniqueLayers.length > 0}
-            <div class="flex items-center gap-2 flex-wrap" role="group" aria-label="Layer visibility">
+            <div
+              class="flex items-center gap-2 flex-wrap"
+              role="group"
+              aria-label="Layer visibility"
+            >
               {#each uniqueLayers as l (l.idx)}
                 <label
                   class="flex items-center gap-1 text-xs select-none cursor-pointer"
@@ -874,7 +1156,11 @@
                   />
                   <span
                     class="inline-block w-2.5 h-2.5 rounded-full"
-                    style="background-color: #94a3b8; opacity: {isLayerVisible(l.idx) ? 1 : 0.35}"
+                    style="background-color: #94a3b8; opacity: {isLayerVisible(
+                      l.idx,
+                    )
+                      ? 1
+                      : 0.35}"
                   ></span>
                   <span>Layer {l.idx}</span>
                 </label>
@@ -882,7 +1168,9 @@
             </div>
           {/if}
           <!-- Via visibility toggle -->
-          <label class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer">
+          <label
+            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
+          >
             <input
               type="checkbox"
               bind:checked={showVias}
@@ -896,7 +1184,9 @@
             <span>Vias</span>
           </label>
           <!-- One-section toggle -->
-          <label class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer">
+          <label
+            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
+          >
             <input
               type="checkbox"
               bind:checked={oneSection}
@@ -907,7 +1197,9 @@
           </label>
           <!-- Pole-pitch ruler toggle (only when the sidecar ships a pitch). -->
           {#if hasPolePitchData}
-            <label class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer">
+            <label
+              class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
+            >
               <input
                 type="checkbox"
                 bind:checked={showPolePitch}
@@ -916,14 +1208,18 @@
               />
               <span
                 class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background-color: #a5b4fc; opacity: {showPolePitch ? 1 : 0.35}"
+                style="background-color: #a5b4fc; opacity: {showPolePitch
+                  ? 1
+                  : 0.35}"
               ></span>
               <span>Pole pitch</span>
             </label>
           {/if}
           <!-- Slot-width diagnostics toggle (only visible with matched rows). -->
           {#if hasSlotWidthData}
-            <label class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer">
+            <label
+              class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
+            >
               <input
                 type="checkbox"
                 bind:checked={showSlotWidths}
@@ -932,7 +1228,9 @@
               />
               <span
                 class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background-color: #34d399; opacity: {showSlotWidths ? 1 : 0.35}"
+                style="background-color: #34d399; opacity: {showSlotWidths
+                  ? 1
+                  : 0.35}"
               ></span>
               <span>Slot widths</span>
             </label>
@@ -958,7 +1256,9 @@
                 />
                 <span
                   class="inline-block w-2.5 h-2.5 rounded-full"
-                  style="background: linear-gradient(90deg, #f87171 50%, #60a5fa 50%); opacity: {showPoleRegions ? 1 : 0.35}"
+                  style="background: linear-gradient(90deg, #f87171 50%, #60a5fa 50%); opacity: {showPoleRegions
+                    ? 1
+                    : 0.35}"
                 ></span>
                 <span>Pole regions</span>
               </label>
@@ -977,27 +1277,84 @@
           {/if}
         </div>
 
+        <!-- Measure ruler toolbar (lightbox only): mode toggle, reset (shown
+             only while measuring) and a live status prompt. -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="px-2 py-0.5 text-xs rounded border transition-colors {measureMode
+                ? 'bg-pink-500/15 border-pink-500 text-pink-300'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-pink-300 hover:border-pink-600'}"
+              aria-pressed={measureMode}
+              aria-label="Toggle measure tool"
+              onclick={() => {
+                measureMode = !measureMode;
+                if (!measureMode) {
+                  measureP1 = null;
+                  measureP2 = null;
+                  measureCursor = null;
+                }
+              }}
+            >Measure</button>
+            {#if measureMode}
+              <button
+                type="button"
+                class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-600 transition-colors"
+                aria-label="Clear measurement"
+                onclick={() => {
+                  measureP1 = null;
+                  measureP2 = null;
+                  measureCursor = null;
+                }}
+              >Reset</button>
+            {/if}
+          </div>
+          {#if measureMode}
+            <span class="text-xs text-slate-400" role="status" aria-live="polite">
+              {#if measureP1}
+                {#if measureP2}
+                  {formatMetresMm(computeMeasureRuler(measureP1, measureP2).mm / 1000)} — click again to clear
+                {:else}
+                  {#if measureCursor}
+                    {formatMetresMm(computeMeasureRuler(measureP1, measureCursor).mm / 1000)} — click to lock
+                  {:else}
+                    click to lock the dimension
+                  {/if}
+                {/if}
+              {:else}
+                click to set the start point
+              {/if}
+            </span>
+          {/if}
+        </div>
+
         <!-- Modal frame div owns the ARIA label (the canvas is the paint
              target; data-* attributes carry the introspection counters,
              mirroring the inline pair). All gestures delegate to the same
              utility instance. -->
         <div
           bind:this={modalFrameRef}
-          class="relative w-full touch-none select-none {gestures.isPanning ? 'cursor-grabbing' : 'cursor-grab'}"
+          class="relative w-full touch-none select-none {gestures.isPanning
+            ? 'cursor-grabbing'
+            : measureMode
+              ? 'cursor-crosshair'
+              : 'cursor-grab'}"
           role="img"
           aria-label="Coil preview — expanded"
           style="aspect-ratio: {W} / {H};"
-          onpointerdown={gestures.handlePointerDown}
-          onpointermove={gestures.handlePointerMove}
-          onpointerup={gestures.handlePointerEnd}
-          onpointercancel={gestures.handlePointerEnd}
+          onpointerdown={onModalPointerDown}
+          onpointermove={onModalPointerMove}
+          onpointerup={onModalPointerUp}
+          onpointercancel={onModalPointerCancel}
           onlostpointercapture={gestures.handleLostPointerCapture}
-          ontouchstart={gestures.handleTouchStart}
-          ontouchmove={gestures.handleTouchMove}
-          ontouchend={gestures.handleTouchEnd}
-          ontouchcancel={gestures.handleTouchEnd}
+          ontouchstart={onModalTouchStart}
+          ontouchmove={onModalTouchMove}
+          ontouchend={onModalTouchEnd}
+          ontouchcancel={onModalTouchCancel}
         >
-          <canvas bind:this={modalCanvasRef} class="block h-full w-full"></canvas>
+          <canvas bind:this={modalCanvasRef} class="block h-full w-full"
+          ></canvas>
         </div>
 
         <!-- Zoom + reset view below the expanded canvas, same layout as the
@@ -1012,8 +1369,24 @@
           onResetView={gestures.resetView}
         />
 
+        <!-- Mover position: same controls as the Design reflection on the
+             shared MotionStore, so the slider lives next to the strip it
+             moves inside the lightbox. -->
+        <MoverPositionControls {config} {motion} />
+
         <!-- Modal note -->
-        <p class="text-xs text-slate-500">Solid lines = active conductors. Dashed = end-turns. Magnet poles overlay along the top edge. Layers are overlaid at true coordinates; use the layer toggles to inspect each copper layer. Pole-pitch, slot-width and pole-region annotations come from the routing-dimensions sidecar (pole-region x boundaries are pattern-owned).{#if oneSection} <span class="text-amber-300">Showing only the first {oneSectionConductorCount} conductors (one repeating section).</span>{/if} Drag to pan; pinch or use the zoom controls below.</p>
+        <p class="text-xs text-slate-500">
+          Solid lines = active conductors. Dashed = end-turns. Magnet poles
+          overlay along the top edge. Layers are overlaid at true coordinates;
+          use the layer toggles to inspect each copper layer. Pole-pitch,
+          slot-width and pole-region annotations come from the
+          routing-dimensions sidecar (pole-region x boundaries are
+          pattern-owned).{#if oneSection}
+            <span class="text-amber-300"
+              >Showing only the first {oneSectionConductorCount} conductors (one
+              repeating section).</span
+            >{/if} Drag to pan; pinch or use the zoom controls below.
+        </p>
       </div>
     </div>
   {/if}

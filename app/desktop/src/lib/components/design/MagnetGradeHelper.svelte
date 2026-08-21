@@ -1,16 +1,17 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
-  import { GRADE_NAMES, CUSTOM_GRADE, MAGNET_GRADES, extractBaseGrade } from "../../types";
+  import { CUSTOM_GRADE } from "../../types";
   import NumberField from "../ui/NumberField.svelte";
 
   let { config }: { config: ConfigStore } = $props();
 
   let selected = $derived(config.magnet_grade);
 
+  // Grade info comes from the runtime-loaded backend table when available;
+  // the static TS table in types/magnets.ts is the offline fallback.
   let gradeInfo = $derived.by(() => {
     if (selected === CUSTOM_GRADE) return null;
-    const base = extractBaseGrade(selected);
-    return MAGNET_GRADES[base] ?? null;
+    return config.getMagnetGrade(selected);
   });
 
   let tempSuffixes = $derived(
@@ -33,7 +34,7 @@
       value={selected}
       onchange={onGradeChange}
     >
-      {#each GRADE_NAMES as name (name)}
+      {#each config.magnetGradeNames as name (name)}
         <option value={name}>{name}</option>
       {/each}
       <option value={CUSTOM_GRADE}>{CUSTOM_GRADE}</option>

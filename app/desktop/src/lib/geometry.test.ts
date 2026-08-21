@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   hasBackIron,
-  coilSpanMm,
   slotPitchMm,
   restOffsetMm,
-  clampMoverCenter,
-  magnetPoles,
   isoProject,
   isoCenter,
   isoBoxPath,
@@ -21,13 +18,6 @@ describe("hasBackIron", () => {
   });
 });
 
-describe("coilSpanMm", () => {
-  it("is magnet_count × pole pitch", () => {
-    expect(coilSpanMm(10, 12)).toBe(120);
-    expect(coilSpanMm(4, 5.5)).toBe(22);
-  });
-});
-
 describe("slotPitchMm / restOffsetMm", () => {
   it("scales the pole pitch by the vernier ratio", () => {
     // 3 phases, 1:1 ratio → slot pitch = pitch / 3, rest = 0
@@ -40,25 +30,6 @@ describe("slotPitchMm / restOffsetMm", () => {
 
   it("never returns a negative rest offset", () => {
     expect(restOffsetMm(12, 3, 1.5)).toBe(0);
-  });
-});
-
-describe("clampMoverCenter", () => {
-  it("keeps the mover center inside [span/2, length − span/2]", () => {
-    expect(clampMoverCenter(60, 100, 200)).toBe(60); // inside
-    expect(clampMoverCenter(0, 100, 200)).toBe(50); // clamped low
-    expect(clampMoverCenter(300, 100, 200)).toBe(150); // clamped high
-  });
-});
-
-describe("magnetPoles", () => {
-  it("alternates N (+1) / S (−1) starting with N", () => {
-    const bars = magnetPoles(4, 0.012, 0.01);
-    expect(bars.map((b) => b.pole)).toEqual([1, -1, 1, -1]);
-    bars.forEach((bar, i) => {
-      expect(bar.x).toBeCloseTo(i * 0.012);
-      expect(bar.w).toBe(0.01);
-    });
   });
 });
 

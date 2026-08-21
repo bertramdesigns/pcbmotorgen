@@ -23,12 +23,13 @@ import {
   mockBoardDiagnostics,
   mockValidatePreconditions,
   mockPreviewCoils,
+  mockKicadConnection,
+  mockKicadWrite,
+  mockKicadPing,
 } from "./mocks";
 
 export async function connectKicad(): Promise<KicadConnection> {
-  if (!isTauriAvailable()) {
-    return { connected: false, board_name: "(not connected)", copper_layers: 0 };
-  }
+  if (!isTauriAvailable()) return mockKicadConnection();
   return await invoke<KicadConnection>("connect_kicad");
 }
 
@@ -49,15 +50,7 @@ export async function writeCoilsToBoard(
   config: LinearMotorConfig,
   dryRun: boolean = false,
 ): Promise<KicadWriteResult> {
-  if (!isTauriAvailable()) {
-    return {
-      items_attempted: 0,
-      items_created: 0,
-      failures: ["Backend not available — open the Tauri shell to write to KiCad"],
-      failure_summary: [],
-      commit_id: "",
-    };
-  }
+  if (!isTauriAvailable()) return mockKicadWrite();
   return await invoke<KicadWriteResult>("write_coils_to_board", {
     config,
     dryRun,
@@ -65,7 +58,7 @@ export async function writeCoilsToBoard(
 }
 
 export async function pingKicad(): Promise<KicadPingResult> {
-  if (!isTauriAvailable()) return { ok: false, version: "" };
+  if (!isTauriAvailable()) return mockKicadPing();
   return await invoke<KicadPingResult>("ping_kicad");
 }
 

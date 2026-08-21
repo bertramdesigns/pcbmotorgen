@@ -24,9 +24,57 @@ import type {
   BoardDiagnostics,
   PreconditionWarning,
   CoilPreview,
+  KicadConnection,
+  KicadWriteResult,
+  KicadPingResult,
   BFieldGridDto,
   DxfExportResult,
+  TravelEnvelopeDto,
+  MagnetGrade,
 } from "../types";
+import { MAGNET_GRADES } from "../types/magnets";
+
+// ---------------------------------------------------------------------------
+// Named mock physics constants.
+//
+// These mirror the real backend's approximated physics so `vite dev` output
+// stays plausibly close to prod. Each value is a shorthand the real solver
+// computes from first principles — naming them keeps the mock's intent (and
+// the fact that it is an approximation) explicit.
+// ---------------------------------------------------------------------------
+
+/** Force baseline coefficient: ~0.4 × Br × I × layers × (N/10) [N]. */
+const FORCE_BASELINE_K = 0.4;
+/** Friction safety multiplier applied to derive minimum-drive force. */
+const FRICTION_SAFETY_K = 1.3;
+/** Normal-force pull-in relative to thrust (≈1.5–1.7× ). */
+const NORMAL_FORCE_K = 1.6;
+/** Ripple fraction of the baseline thrust. */
+const FORCE_RIPPLE_PCT = 0.08;
+/** Arc/annular height for the decorative preview arcs (m). */
+const PREVIEW_ARC_HEIGHT_M = 0.0008;
+/** Copper protrusion per side above the substrate (m) — 1oz ≈ 35 µm. */
+const COPPER_PROTRUSION_1OZ_M = 35e-6;
+/** Solder-mask coating thickness (m). */
+const SOLDER_MASK_M = 20e-6;
+/** Assembly tolerance allowance in the height stack (m). */
+const TOLERANCE_M = 0.1e-3;
+/** Nominal trace width for the mock stackup/spec (m). */
+const NOMINAL_TRACE_W_M = 0.2e-3;
+/** Copper foil thickness for inner layers in the mock stackup (m). */
+const INNER_CU_THICKNESS_M = 70e-6;
+/** Copper resistivity (Ω·m). */
+const RHO = 1.72e-8;
+
+/**
+ * Mock magnet-grade table. Projects the static TS mirror of the Rust
+ * `pcbmotorgen_simulation::magnet_grades::MAGNET_GRADES` table into the same
+ * `MagnetGrade[]` wire shape `get_magnet_grades` returns, so `vite dev` output
+ * matches prod.
+ */
+export function mockMagnetGrades(): MagnetGrade[] {
+  return Object.values(MAGNET_GRADES).map((g) => ({ ...g }));
+}
 
 export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
   const pole_pitch_m = c.magnet_pitch_m;
@@ -41,8 +89,40 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
     magnet_gap_m: c.magnet_gap_m,
     min_via_pad_m: c.min_via_drill_m + 2 * c.min_via_annular_ring_m,
     acceleration_force_n: c.carriage_mass_kg * c.max_accel_m_s2,
-    minimum_drive_force_n: c.friction_n * 1.3,
+    minimum_drive_force_n: c.friction_n * FRICTION_SAFETY_K,
     active_length_m: c.active_area_length_m,
+  };
+}
+
+/**
+ * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`.
+ *
+ * Product reference convention: endpoints are COIL-CAPTURE positions that
+ * scale with the electrical period P_e = 2·pitch (independent of magnet
+ * count):
+ *   min = padding + (2/3)·P_e    (defaults slot_start 30: 30 + 8 = 38 mm)
+ *   max = (padding + active) − (3/4)·P_e   (defaults 177 − 9 = 168 mm)
+ * These are the first/last spots where the first/last coil carries enough
+ * charge to capture the first/last pole (leading 240°, trailing 270°).
+ * `rest_phase_m` is the TRACK-FRAME phase `(padding + φ) mod P_e` so the
+ * holding-force chart zeros align to the stable rests; it still depends on
+ * N. A slot region narrower than the envelope clamps max to min.
+ */
+export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
+  const P_e = 2 * c.magnet_pitch_m; // electrical period
+  const tau_p = P_e / 2; // pole pitch
+  let phi =
+    (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
+  phi %= P_e;
+  if (phi < 0) phi += P_e;
+  const slotStart = c.padding_m;
+  const slotEnd = c.padding_m + c.active_area_length_m;
+  const min = slotStart + (2 / 3) * P_e;
+  return {
+    min_position_m: min,
+    max_position_m: Math.max(slotEnd - (3 / 4) * P_e, min),
+    rest_phase_m: ((slotStart + phi) % P_e + P_e) % P_e,
+    electrical_period_m: P_e,
   };
 }
 
@@ -53,13 +133,22 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   // the preview in browser dev mode only ever rendered layer 0 while the
   // header advertised `num_layers` — i.e. "missing layer segments".
   const phases: PhaseCoilDto[] = [];
-  const span = c.magnet_count * c.magnet_pitch_m;
+  // The mock mirrors the real infinity braid: traces (and their pattern-made
+  // pole regions) are routed across the FULL domain (active area + both end
+  // paddings), NOT just the coil span. The mover must have conductors
+  // beneath it for every position along its travel, exactly like the real
+  // backend.
+  const coilSpan = c.magnet_count * c.magnet_pitch_m;
+  const domain = c.active_area_length_m + 2 * c.padding_m;
   const width = c.board_width_m;
   const nLayers = Math.max(1, c.num_layers);
   const nConductors = Math.max(2, c.magnet_count * 2);
-  const pitchX = span / (nConductors - 1);
+  const pitchX = domain / (nConductors - 1);
   const pole_pitch_m = c.magnet_pitch_m;
-  const slot_pitch_m = pole_pitch_m / Math.max(1, c.phases);
+  // Match the canonical slot-pitch formula: (pole_pitch / phases) × spacing_ratio
+  // (Vernier ratio). The routing sidecar reports the ideal phase-band pitch the
+  // same way — the earlier copy here omitted the Vernier factor.
+  const slot_pitch_m = (pole_pitch_m / Math.max(1, c.phases)) * (c.spacing_ratio || 1);
   const phase_clearance_m = c.min_space_m;
   const max_slot_width_m = slot_pitch_m - phase_clearance_m;
   const trace_count = Math.max(
@@ -78,14 +167,14 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   {
     const regionsPerPhase = Math.max(
       1,
-      Math.floor(span / Math.max(pole_pitch_m, 1e-6)),
+      Math.floor(domain / Math.max(pole_pitch_m, 1e-6)),
     );
     for (let p = 0; p < c.phases; p++) {
       const net = "ABC"[p] ?? String(p);
       const offset = (p * pole_pitch_m) / Math.max(1, c.phases);
       for (let i = 0; i < regionsPerPhase; i++) {
         const startX = offset + i * pole_pitch_m;
-        const endX = Math.min(span, offset + (i + 1) * pole_pitch_m);
+        const endX = Math.min(domain, offset + (i + 1) * pole_pitch_m);
         if (endX <= startX) continue;
         pole_regions.push({
           phase: net,
@@ -103,10 +192,10 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     // Two decorative corner arcs on the top edge + two via centers, purely
     // to exercise the arc/via render path in the preview (not connected).
     corner_arcs.push(
-      { start: [pitchX * 0.5, width], mid: [pitchX, width + 0.0008], end: [pitchX * 1.5, width], is_active: false },
-      { start: [span - pitchX * 1.5, width], mid: [span - pitchX, width + 0.0008], end: [span - pitchX * 0.5, width], is_active: false },
+      { start: [pitchX * 0.5, width], mid: [pitchX, width + PREVIEW_ARC_HEIGHT_M], end: [pitchX * 1.5, width], is_active: false },
+      { start: [domain - pitchX * 1.5, width], mid: [domain - pitchX, width + PREVIEW_ARC_HEIGHT_M], end: [domain - pitchX * 0.5, width], is_active: false },
     );
-    via_positions.push([pitchX, width / 2], [span - pitchX, width / 2]);
+    via_positions.push([pitchX, width / 2], [domain - pitchX, width / 2]);
   }
 
   for (let layer = 0; layer < nLayers; layer++) {
@@ -150,9 +239,9 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
         active_length_m: segs.filter((s) => s.is_active).reduce((s, sg) => s + Math.hypot(sg.end[0] - sg.start[0], sg.end[1] - sg.start[1]), 0),
         end_turn_length_m: segs.filter((s) => !s.is_active).reduce((s, sg) => s + Math.hypot(sg.end[0] - sg.start[0], sg.end[1] - sg.start[1]), 0),
         active_conductor_count: segs.filter((s) => s.is_active).length,
-        bounding_box: [0, 0, span, width] as [number, number, number, number],
+        bounding_box: [0, 0, domain, width] as [number, number, number, number],
         terminal_start: [0, 0] as [number, number],
-        terminal_end: [span, width] as [number, number],
+        terminal_end: [domain, width] as [number, number],
       });
     }
   }
@@ -161,7 +250,7 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     total_routing_length_m: c.active_area_length_m + 2 * c.padding_m,
     board_width_m: c.board_width_m,
     phases: Math.max(1, c.phases),
-    magnet_array_span_m: span,
+    magnet_array_span_m: coilSpan,
     pole_pitch_m,
     period_pitch_m: c.routing_pattern === "infinity-braid" ? pole_pitch_m : null,
     period_count:
@@ -184,13 +273,13 @@ export function mockForceSweep(c: LinearMotorConfig): ForceSweepResult {
   // Sinusoidal-ish force with ripple + a normal-force baseline.
   const br = c.magnet_remanence_t;
   const ipeak = c.max_current_a;
-  const baseline = 0.4 * br * ipeak * c.num_layers * (c.magnet_count / 10);
-  const ripple = baseline * 0.08;
+  const baseline = FORCE_BASELINE_K * br * ipeak * c.num_layers * (c.magnet_count / 10);
+  const ripple = baseline * FORCE_RIPPLE_PCT;
   const force_x = positions.map(
     (x) => baseline + ripple * Math.sin((x / Math.max(c.magnet_pitch_m, 1e-6)) * 2 * Math.PI * c.phases),
   );
   const force_y = positions.map((_, idx) => 0.01 * Math.sin(idx));
-  const force_z = positions.map(() => baseline * 1.6); // pull-in ~ 1.5–1.7× thrust
+  const force_z = positions.map(() => baseline * NORMAL_FORCE_K); // pull-in ~ 1.5–1.7× thrust
   const mean = force_x.reduce((a, b) => a + b, 0) / n;
   const peak = Math.max(...force_x);
   const min = Math.min(...force_x);
@@ -214,23 +303,22 @@ export function mockForceSweep(c: LinearMotorConfig): ForceSweepResult {
 export function mockHeightStack(c: LinearMotorConfig): HeightStackResultDto {
   return {
     pcb_thickness_m: c.pcb_thickness_m,
-    cu_protrusion_m: 35e-6 * (c.num_layers >= 6 ? 2 : 1),
-    solder_mask_m: 20e-6,
+    cu_protrusion_m: COPPER_PROTRUSION_1OZ_M * (c.num_layers >= 6 ? 2 : 1),
+    solder_mask_m: SOLDER_MASK_M,
     air_gap_m: c.air_gap_m,
     magnet_height_m: c.magnet_height_m,
     back_iron_thickness_m: c.back_iron_thickness_m,
-    tolerance_m: 0.1e-3,
+    tolerance_m: TOLERANCE_M,
     total_height_m:
-      c.pcb_thickness_m + 35e-6 + 20e-6 + c.air_gap_m + c.magnet_height_m + c.back_iron_thickness_m + 0.1e-3,
+      c.pcb_thickness_m + COPPER_PROTRUSION_1OZ_M + SOLDER_MASK_M + c.air_gap_m + c.magnet_height_m + c.back_iron_thickness_m + TOLERANCE_M,
   };
 }
 
 export function mockPowerBudget(c: LinearMotorConfig): PowerBudgetDto {
   // Crude I²R estimate based on coil length.
   const coilLen = c.active_area_length_m * c.board_width_m * c.num_layers * 2;
-  const rho = 1.72e-8; // Cu resistivity
-  const traceArea = 35e-6 * 0.2e-3; // 1oz, 0.2mm trace
-  const r = (rho * coilLen) / traceArea;
+  const traceArea = COPPER_PROTRUSION_1OZ_M * NOMINAL_TRACE_W_M; // 1oz, 0.2mm trace
+  const r = (RHO * coilLen) / traceArea;
   const cont = c.max_current_a ** 2 * r * c.phases;
   const burst = (c.max_current_a * 1.5) ** 2 * r * c.phases;
   return {
@@ -251,17 +339,17 @@ export function mockFriction(c: LinearMotorConfig): FrictionBudgetDto {
     wiper_contact_n: total * 0.2,
     cogging_n: 0,
     total_n: total,
-    minimum_drive_force_n: total * 1.3,
+    minimum_drive_force_n: total * FRICTION_SAFETY_K,
   };
 }
 
 export function mockStackup(c: LinearMotorConfig): StackupResultDto {
   const lc = c.num_layers;
   const traceW = Array.from({ length: lc }, (_, i) =>
-    0.2e-3 * (1 + Math.abs(i - (lc - 1) / 2) * 0.05),
+    NOMINAL_TRACE_W_M * (1 + Math.abs(i - (lc - 1) / 2) * 0.05),
   );
   const cuT = Array.from({ length: lc }, (_, i) =>
-    i === 0 || i === lc - 1 ? 35e-6 : 70e-6,
+    i === 0 || i === lc - 1 ? COPPER_PROTRUSION_1OZ_M : INNER_CU_THICKNESS_M,
   );
   return {
     layer_count: lc,
@@ -271,7 +359,7 @@ export function mockStackup(c: LinearMotorConfig): StackupResultDto {
     via_annular_ring_m: c.min_via_annular_ring_m,
     via_grid_rows: 2,
     via_grid_cols: 4,
-    estimated_force_n: 0.4 * c.magnet_remanence_t * c.max_current_a * lc,
+    estimated_force_n: FORCE_BASELINE_K * c.magnet_remanence_t * c.max_current_a * lc,
     estimated_dc_resistance_ohm: 1.2,
     notes: ["Mock stackup — backend not connected"],
   };
@@ -297,6 +385,27 @@ export function mockBoardDiagnostics(): BoardDiagnostics {
     board_y_min_mm: 0.0,
     board_y_max_mm: 0.0,
     available_net_classes: [],
+  };
+}
+
+/** Mock KiCad connection state — no board is open in dev mode. */
+export function mockKicadConnection(): KicadConnection {
+  return { connected: false, board_name: "(not connected)", copper_layers: 0 };
+}
+
+/** Mock KiCad ping — the backend (and KiCad) are absent in dev mode. */
+export function mockKicadPing(): KicadPingResult {
+  return { ok: false, version: "" };
+}
+
+/** Mock write result — surfacing that no backend exists. */
+export function mockKicadWrite(): KicadWriteResult {
+  return {
+    items_attempted: 0,
+    items_created: 0,
+    failures: ["Backend not available — open the Tauri shell to write to KiCad"],
+    failure_summary: [],
+    commit_id: "",
   };
 }
 

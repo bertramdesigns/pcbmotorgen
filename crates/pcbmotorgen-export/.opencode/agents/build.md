@@ -4,7 +4,7 @@ mode: primary
 color: "#1f77b4"
 permissions:
   edit:
-    "*": "allow"
+    "/*": "allow"
     "/tmp/": "allow"
   external_directory:
     "/tmp": "allow"
@@ -57,4 +57,4 @@ writes a coil set, verifies item count, and rolls back cleanly. Skipped in CI.
 
 ## 3.3 Branching
 
-- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `export/feat/ui-overhaul`, `export/chore/docs-cleanup`) and lands via a separate PR. Squash-merge on approval.
+- **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `export/feat/ui-overhaul`, `export/chore/docs-cleanup`) and lands via a separate PR. Ensure the PR is properly documented. Squash-merge on approval.

@@ -35,7 +35,14 @@ export function leftColumnFirstCard(page: Page) {
 /** Active-area length readout in the Design-dimensions box. */
 export function activeLengthReadout(page: Page) {
   return page.locator(
-    `section[aria-labelledby="design-dimensions-heading"] dt[title="Active area length"] + dd`,
+    `section[aria-labelledby="design-dimensions-heading"] dt:text-is("Active copper region") + dd`,
+  );
+}
+
+/** The "PCB trace total (X)" live output (traces' first-to-last X span). */
+export function traceTotalReadout(page: Page) {
+  return page.locator(
+    `section[aria-labelledby="design-dimensions-heading"] dt:text-is("PCB trace total (X)") + dd`,
   );
 }
 

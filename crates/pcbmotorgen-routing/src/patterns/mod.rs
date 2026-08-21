@@ -1,7 +1,7 @@
 //! Bundled routing patterns.
 //!
 //! [`infinity`] is the reference "infinity" diamond braid ported from
-//! `docs/reference/pcbBraid` (after Verbeek & Dehez).
+//! `.ref/pcbBraid` (after Verbeek & Dehez).
 
 pub mod infinity;
 

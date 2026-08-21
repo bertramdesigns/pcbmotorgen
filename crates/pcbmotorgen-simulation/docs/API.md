@@ -41,6 +41,7 @@ app crate or on `pcbmotorgen-export`. It depends on:
 | `magnetic::coil_model` | `CoilCurrentModel` — geometry → sampled conductor sub-segments. |
 | `magnetic::force_eval` | `ForceEvaluator`, `CommutationMode`, `ForceResult`. |
 | `stackup` | `HeightStackCalculator`, `PowerEstimator`, `FrictionEstimator`. |
+| `equilibrium` | Mover equilibrium rest positions + travel envelope (Clarke baseline). |
 
 ### Re-exported routing types
 
@@ -581,6 +582,45 @@ pub fn get_grade(grade: &str) -> Option<MagnetGrade>; // same suffix tolerance
 ```
 
 ---
+
+## 10b. Mover equilibrium: `equilibrium`
+
+Stable rest positions of the mover array centre under the fixed balanced
+baseline excitation (`I_A = +I`, `I_B = 0`, `I_C = −I`). The Clarke transform
+gives θe = π/6, i.e. an N-pole field peak at `x_peak = P_e/12` inside each
+electrical cycle; alternating poles (τ_p = P_e/2) lock onto successive peaks,
+so every stable rest centre satisfies `x ≡ φ (mod P_e)` with
+`φ = (x_peak + ((N−1)/2)·τ_p) mod P_e`.
+
+```rust
+pub struct TravelEnvelope {
+    pub min_position_m: f64,      // slider min (coil-capture) [m]
+    pub max_position_m: f64,      // slider max (coil-capture) [m] (≥ min)
+    pub rest_phase_m: f64,        // track-frame lattice phase (slot_start + φ) mod P_e
+    pub electrical_period_m: f64, // P_e
+}
+
+pub fn baseline_electrical_angle() -> f64;                // π/6
+pub fn baseline_field_peak_m(electrical_period_m) -> f64; // P_e/12
+pub fn rest_phase_m(electrical_period_m, magnet_count) -> f64;
+pub fn travel_envelope_over_slots(electrical_period_m, magnet_count,
+                                  slot_start_m, slot_end_m) -> TravelEnvelope;
+```
+
+The envelope endpoints are COIL-CAPTURE positions anchored to the slot/copper
+region in track coordinates, scaling with the electrical period only
+(independent of N):
+
+- `min = slot_start + (2/3)·P_e` — first coil captures the first pole at
+  electrical 240° (Phase A@120°, Phase B@0°, Phase C@240°).
+- `max = slot_end − (3/4)·P_e` — last coil captured at the 270° complement.
+- Defaults (P_e = 12 mm, slots [30, 177] mm in track coords): **38 → 168 mm**.
+- `rest_phase_m` is the TRACK-FRAME phase `(slot_start + φ) mod P_e` (= 4 mm
+  for the defaults), so holding-force zero markers align to the stable rests.
+- A slot region narrower than the envelope clamps `max` to `min` (degenerate).
+
+Exposed to the desktop UI as the `travel_envelope` command
+(`TravelEnvelopeIpc`).
 
 ## 11. Re-exports
 

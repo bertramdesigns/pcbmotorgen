@@ -5,9 +5,12 @@ import { validateDesign, hasErrors, type DesignConfigInput } from "./validation"
 function validConfig(overrides: Partial<DesignConfigInput> = {}): DesignConfigInput {
   return {
     travel_mm: 75,
-    coil_span_mm: 120,
-    magnet_count: 10,
-    magnet_gap_mm: 2,
+    coil_span_mm: 72,
+    magnet_count: 12,
+    magnet_width_mm: 4.5,
+    magnet_gap_mm: 1.5,
+    slot_width_mm: 12.0,
+    min_space_mm: 0.127,
     magnet_cross_width_mm: 10,
     active_area_width_mm: 20,
     num_layers: 4,
@@ -15,7 +18,6 @@ function validConfig(overrides: Partial<DesignConfigInput> = {}): DesignConfigIn
     routing_pattern: "infinity-braid",
     windings_per_phase: 2,
     min_trace_mm: 0.127,
-    min_space_mm: 0.127,
     peak_force_n: 1.0,
     target_force_n: 0.5,
     ...overrides,
@@ -41,8 +43,31 @@ describe("validateDesign", () => {
     expect(ids(validConfig({ magnet_count: 8 }))).not.toContain("magnet-count");
   });
 
-  it("rejects negative magnet gaps", () => {
-    expect(ids(validConfig({ magnet_gap_mm: -0.1 }))).toContain("magnet-gap");
+  it("requires a positive slot width", () => {
+    expect(ids(validConfig({ slot_width_mm: 0 }))).toContain("slot-width");
+    expect(ids(validConfig({ slot_width_mm: -1 }))).toContain("slot-width");
+  });
+
+  it("derives k from the magnet width and rejects it outside [0.50, 1.00]", () => {
+    // 6 mm pole pitch (12 mm slot width): 2 mm / 6 mm = k ≈ 0.33 → error.
+    expect(ids(validConfig({ magnet_width_mm: 2 }))).toContain("magnet-fill");
+    // 7 mm / 6 mm = k ≈ 1.17 → error.
+    expect(ids(validConfig({ magnet_width_mm: 7 }))).toContain("magnet-fill");
+    // Degenerate pitch makes k undefined → error.
+    expect(
+      ids(validConfig({ slot_width_mm: 0, magnet_width_mm: 4.5 })),
+    ).toContain("magnet-fill");
+    // 3–6 mm at the 6 mm pole pitch is the allowed band.
+    expect(ids(validConfig({ magnet_width_mm: 3 }))).not.toContain("magnet-fill");
+    expect(ids(validConfig({ magnet_width_mm: 6 }))).not.toContain("magnet-fill");
+  });
+
+  it("warns above k = 0.85 but still allows end-to-end magnets (k = 1.00)", () => {
+    const findings = validateDesign(validConfig({ magnet_width_mm: 6 }));
+    expect(findings.find((f) => f.id === "magnet-fill-leakage")?.level).toBe("warning");
+    expect(ids(validConfig({ magnet_width_mm: 6 }))).not.toContain("magnet-fill");
+    // Default 4.5 mm @ 6 mm pitch → k = 0.75: clean.
+    expect(validateDesign(validConfig())).toEqual([]);
   });
 
   it("warns when the magnet cross width exceeds the active area width", () => {

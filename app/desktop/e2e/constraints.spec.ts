@@ -3,6 +3,7 @@ import {
   designConstraintsPanel,
   numberField,
   activeLengthReadout,
+  traceTotalReadout,
   box,
   eventually,
 } from "./helpers";
@@ -30,10 +31,16 @@ test.describe("Design constraints restructure", () => {
     const initialLength = (await activeLengthReadout(page).textContent())!.trim();
     await travelInput.fill("100");
     await eventually(async () => {
-      await expect(activeLengthReadout(page)).toHaveText(/220\.0/);
+      await expect(activeLengthReadout(page)).toHaveText(/172\.0/);
     });
-    // Active area length = coil span (120 mm default) + desired travel.
-    expect(initialLength).not.toMatch(/220\.0/);
+    // Active area length = coil span (72 mm default) + desired travel.
+    expect(initialLength).not.toMatch(/172\.0/);
+
+    // The PCB trace total (the traces' first-to-last X span, drawn by the
+    // coil preview AND the design reflection) follows: 172 + 2 × 30 padding.
+    await eventually(async () => {
+      await expect(traceTotalReadout(page)).toHaveText(/232\.0/);
+    });
   }, { tag: ["@constraints", "@desktop"] });
 
   test("active area width, PCB thickness and air gap remain editable", async ({
@@ -72,15 +79,21 @@ test.describe("Design constraints restructure", () => {
       page.locator("details", { hasText: "Stackup" }),
     ).toHaveCount(0);
 
-    // The old driver toggle is gone and no range sliders remain; the numeric
-    // fields are the editable controls.
+    // The old driver toggle is gone and no range sliders remain in the
+    // constraints box; the numeric fields are the editable controls. (The
+    // mover-position slider in the design reflection aside is a separate
+    // feature and is not counted here.)
     await expect(
       page.getByRole("button", { name: "Magnets", exact: true }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Traces", exact: true }),
     ).toHaveCount(0);
-    await expect(page.locator("input[type='range']")).toHaveCount(0);
+    await expect(
+      page.locator(
+        "section[aria-labelledby='design-constraints-heading'] input[type='range']",
+      ),
+    ).toHaveCount(0);
 
     await expect(numberField(page, "PCB thickness (mm)")).toBeEnabled();
     await expect(numberField(page, "Air gap (mm)")).toBeEnabled();

@@ -10,7 +10,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   LinearMotorConfig,
-  ConfigDerived,
   CoilPathDto,
   ForceSweepResult,
   StackupResultDto,
@@ -18,10 +17,11 @@ import type {
   FrictionBudgetDto,
   PowerBudgetDto,
   BFieldGridDto,
+  TravelEnvelopeDto,
+  MagnetGrade,
 } from "../types";
 import { isTauriAvailable } from "./core";
 import {
-  mockConfigDerived,
   mockCoils,
   mockForceSweep,
   mockHeightStack,
@@ -29,13 +29,18 @@ import {
   mockFriction,
   mockStackup,
   mockBFieldGrid,
+  mockTravelEnvelope,
+  mockMagnetGrades,
 } from "./mocks";
 
-export async function computeConfigDerived(
-  config: LinearMotorConfig,
-): Promise<ConfigDerived> {
-  if (!isTauriAvailable()) return mockConfigDerived(config);
-  return await invoke<ConfigDerived>("compute_config_derived", { config });
+/**
+ * Fetch the magnet-grade reference table (NdFeB) from the backend. The Rust
+ * side reads `pcbmotorgen_simulation::magnet_grades`, the single source of
+ * truth; the static TS table is only the offline/mock fallback.
+ */
+export async function fetchMagnetGrades(): Promise<MagnetGrade[]> {
+  if (!isTauriAvailable()) return mockMagnetGrades();
+  return await invoke<MagnetGrade[]>("get_magnet_grades");
 }
 
 export async function generateCoils(
@@ -43,6 +48,14 @@ export async function generateCoils(
 ): Promise<CoilPathDto> {
   if (!isTauriAvailable()) return mockCoils(config);
   return await invoke<CoilPathDto>("generate_coils", { config });
+}
+
+/** Stable rest positions of the mover array centre (see TravelEnvelopeDto). */
+export async function fetchTravelEnvelope(
+  config: LinearMotorConfig,
+): Promise<TravelEnvelopeDto> {
+  if (!isTauriAvailable()) return mockTravelEnvelope(config);
+  return await invoke<TravelEnvelopeDto>("travel_envelope", { config });
 }
 
 export async function evaluateForceSweep(

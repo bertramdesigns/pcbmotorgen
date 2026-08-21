@@ -433,3 +433,38 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
     let dx = (hi - lo) / (n - 1) as f64;
     (0..n).map(|i| lo + i as f64 * dx).collect()
 }
+
+// ===========================================================================
+// travel_envelope — REAL (core equilibrium module)
+// ===========================================================================
+
+/// Stable-equilibrium travel envelope of the mover array centre under the
+/// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
+///
+/// Product reference convention: the endpoints are COIL-CAPTURE positions
+/// anchored to the SLOT/COPPER region — min = slot_start + (2/3)·P_e,
+/// max = slot_end − (3/4)·P_e, with P_e = 2 × pole pitch. Defaults
+/// (P_e = 12 mm, slots [30, 177] mm in track coords): **38 → 168 mm**.
+/// The track-frame lattice phase is `(slot_start + φ) mod P_e`, φ the
+/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`. The UI clamps
+/// its position slider to [min_position_m, max_position_m].
+#[tauri::command]
+pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {
+    let core = config.to_core();
+    let sim = core.to_simulation();
+    // P_e = 2 × pole pitch (SimulationInput.magnet_pitch_m is the
+    // centre-to-centre pole pitch).
+    let electrical_period_m = 2.0 * sim.magnet_pitch_m;
+    let ctx = core.routing_context();
+    let slot_start_m = ctx.padding_mm * 0.001;
+    let slot_end_m = (ctx.padding_mm + ctx.active_area_length_mm) * 0.001;
+    Ok(TravelEnvelopeIpc::from(
+        pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots(
+            electrical_period_m,
+            sim.magnet_count,
+            slot_start_m,
+            slot_end_m,
+        ),
+    ))
+}
+

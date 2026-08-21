@@ -49,7 +49,9 @@
             />
           </span>
           <span class="mt-1 block text-[10px] text-slate-500">
-            Active area length follows: coil span {config.coil_span_mm.toFixed(1)} mm + travel.
+            PCB trace total length follows: coil span {config.coil_span_mm.toFixed(1)} mm + travel
+            + 2 × {config.padding_mm.toFixed(0)} mm padding = {config.trace_total_length_mm.toFixed(1)} mm
+            (the routed traces' first-to-last X extent).
           </span>
         </label>
 
@@ -81,6 +83,27 @@
               class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
               onCommit={(value) => (config.pcb_thickness_mm = value)}
             />
+          </span>
+        </label>
+
+        <label class="min-w-0" title="Stator electrical pitch P_e: length of one full electrical cycle. One cycle contains two alternating poles, so pole pitch = P_e / 2.">
+          <span class="flex items-center justify-between gap-2">
+            <span class="min-w-0 truncate text-xs text-slate-300">Slot width (mm)</span>
+            <NumberField
+              id="slot-width"
+              value={config.slot_width_mm}
+              min={0.1}
+              max={40}
+              step={0.1}
+              ariaLabel="Slot width (mm)"
+              class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
+              onCommit={(value) => {
+                config.slot_width_mm = value;
+              }}
+            />
+          </span>
+          <span class="mt-1 block text-[10px] text-slate-500">
+            Pole pitch follows: slot width ÷ 2 = {config.pole_pitch_mm.toFixed(1)} mm.
           </span>
         </label>
 
