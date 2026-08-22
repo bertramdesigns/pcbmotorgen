@@ -18,3 +18,4 @@ __pycache__/
 /test
 .ref
 *pcbBraid/
+.kata.local.toml
