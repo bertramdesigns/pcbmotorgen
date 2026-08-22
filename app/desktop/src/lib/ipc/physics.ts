@@ -94,7 +94,8 @@ export async function computeStackup(
 }
 
 /**
- * Sample the B-field on an X–Z grid for the active magnet arrangement.
+ * Sample the B-field on an X–Z grid for the (fixed plain alternating)
+ * magnet array.
  * Returns a flat row-major array (Z slow axis) of B-vectors + positions.
  *
  * Defaults: 24×12 grid, x = [0, active_area_length_m],

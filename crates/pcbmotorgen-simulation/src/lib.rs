@@ -32,8 +32,8 @@ pub mod units;
 pub use magnetic::{CommutationMode, ForceEvaluator, ForceResult, MagnetArray, BFieldSample2D};
 pub use magnetic::coil_model::{CoilCurrentModel, ConductorSample};
 pub use params::{
-    BearingType, FrictionBudget, HeightStackResult, MagnetArrangement, PowerBudget,
-    SimulationError, SimulationInput, StackupResult,
+    BearingType, FrictionBudget, HeightStackResult, PowerBudget, SimulationError, SimulationInput,
+    StackupResult,
 };
 pub use stackup::{FrictionEstimator, HeightStackCalculator, PowerEstimator};
 

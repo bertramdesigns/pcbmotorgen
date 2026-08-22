@@ -45,8 +45,9 @@ The crate owns:
 
 - the `physics` adapter layer that insulates every upstream module from direct
   `magba` API usage (B-field computation, source assembly, path currents);
-- the four magnet arrangements (`MagnetArray`): `Alternating`, `Halbach`,
-  `AlternatingBackIron`, `HalbachBackIron` (back-iron via method-of-images);
+- the magnet array (`MagnetArray`): a fixed plain Z-polarised alternating
+  arrangement (Halbach and back-iron variants were removed from the product
+  scope to simplify the app and simulation);
 - the coil current model (`CoilCurrentModel`) — converts `PhaseCoil` geometry
   into sampled conductor sub-segments for Lorentz integration;
 - the force evaluator (`ForceEvaluator`): commutation, self-calibration guard,
@@ -94,13 +95,10 @@ Lorentz force:   F = I · Σ(dLᵢ × Bᵢ)           (mover force; Newton's 3rd
 Torque:          τ = Σ(rᵢ × Fᵢ)                (about the coil origin)
 Commutation:     I_p = I_pk · cos(θ_e − p · π·τ_slot/τ_p)
 Electrical angle θ_e = 2π·x / (2·τ_p) + phase_shift
-Back-iron image: z_image = 2·(air_gap + magnet_h + back_iron) − z, pol × K_IRON
 ```
 
 - `dLᵢ` = sub-segment direction-length vector, `Bᵢ` = field at its midpoint.
 - `τ_p` = pole pitch, `τ_slot` = slot pitch, `I_pk` = peak phase current.
-- `K_IRON = 0.85` (CRS steel, `µ_r ≈ 2000`) scales method-of-images ghost
-  magnets; interleave magnets use `1.2 × Br` to compensate for reduced volume.
 
 ## Commands
 
@@ -145,9 +143,7 @@ tests document this explicitly.
 - `SimulationInput` validation cascade and serde defaults (`num_layers = 4`,
   `windings_per_phase = 1` when absent);
 - derived-geometry accessors (travel, slot pitch, rest offset, via pad, …);
-- all four magnet arrangements: magnet counts, back-iron gating at
-  `back_iron_thickness_m = 0`, back-iron thickness dependence, Halbach vs
-  Alternating boost (≥ 5%);
+- the plain alternating magnet array (magnet counts, B-field polarity);
 - B-field 1D and 2D grid sampling (row-major `BFieldSample2D`);
 - conductor meshing, Lorentz force integration, commutation phase laws
   (1:1 and 4:5 Vernier), the 3-point FOC polarity + alignment self-calibration

@@ -307,10 +307,9 @@ export function mockHeightStack(c: LinearMotorConfig): HeightStackResultDto {
     solder_mask_m: SOLDER_MASK_M,
     air_gap_m: c.air_gap_m,
     magnet_height_m: c.magnet_height_m,
-    back_iron_thickness_m: c.back_iron_thickness_m,
     tolerance_m: TOLERANCE_M,
     total_height_m:
-      c.pcb_thickness_m + COPPER_PROTRUSION_1OZ_M + SOLDER_MASK_M + c.air_gap_m + c.magnet_height_m + c.back_iron_thickness_m + TOLERANCE_M,
+      c.pcb_thickness_m + COPPER_PROTRUSION_1OZ_M + SOLDER_MASK_M + c.air_gap_m + c.magnet_height_m + TOLERANCE_M,
   };
 }
 
@@ -502,7 +501,7 @@ export function mockDxfExportResult(config: LinearMotorConfig): DxfExportResult 
 
 /**
  * Mock B-field grid: sinusoidal Bz, magnitude ∝ Br. Sufficient for
- * visualising arrangement-dependent asymmetry in the absence of a backend.
+ * visualising the alternating-pole field in the absence of a backend.
  */
 export function mockBFieldGrid(
   c: LinearMotorConfig,
@@ -533,6 +532,5 @@ export function mockBFieldGrid(
     samples,
     x_extent_m,
     z_extent_m,
-    arrangement: c.magnet_arrangement,
   };
 }

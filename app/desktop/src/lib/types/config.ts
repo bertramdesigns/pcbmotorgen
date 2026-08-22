@@ -2,7 +2,7 @@
  * Config (IPC wire format — SI units) and the derived-value contract.
  */
 
-import type { CommutationMode, MagnetArrangement } from "./enums";
+import type { CommutationMode } from "./enums";
 
 /** The full design configuration sent to the Tauri backend on every call. */
 export interface LinearMotorConfig {
@@ -26,8 +26,6 @@ export interface LinearMotorConfig {
 
   magnet_remanence_t: number;
   magnet_grade: string;
-  magnet_arrangement: MagnetArrangement;
-  back_iron_thickness_m: number;
   air_gap_m: number;
 
   /** Routing-pattern id the backend should use to generate the coils,

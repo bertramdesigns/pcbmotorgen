@@ -10,7 +10,6 @@ pub struct HeightStackResult {
     pub solder_mask_m: f64,
     pub air_gap_m: f64,
     pub magnet_height_m: f64,
-    pub back_iron_thickness_m: f64,
     pub tolerance_m: f64,
 }
 
@@ -22,7 +21,6 @@ impl HeightStackResult {
             + self.solder_mask_m
             + self.air_gap_m
             + self.magnet_height_m
-            + self.back_iron_thickness_m
             + self.tolerance_m
     }
 
@@ -46,12 +44,6 @@ impl HeightStackResult {
             format!("  Air gap:          {:.2} mm", self.air_gap_m * 1e3),
             format!("  Magnet height:    {:.2} mm", self.magnet_height_m * 1e3),
         ];
-        if self.back_iron_thickness_m > 0.0 {
-            lines.push(format!(
-                "  Back-iron:        {:.2} mm",
-                self.back_iron_thickness_m * 1e3
-            ));
-        }
         lines.push(format!("  Tolerance:        {:.2} mm", self.tolerance_m * 1e3));
         lines.push("  ─────────────────────────────".to_string());
         lines.push(format!(

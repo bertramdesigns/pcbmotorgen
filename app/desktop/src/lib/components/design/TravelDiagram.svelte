@@ -3,10 +3,9 @@
    * TravelDiagram.svelte — two views of the stator / mover assembly.
    *
    *   1. 3/4 isometric view (TravelIsoView): axonometric projection of
-   *      the assembly (PCB wireframe + magnet wireframe + optional
-   *      back-iron). Z is exaggerated so the thin stackup is visible.
-   *      The magnet block sits at the current mover position along the
-   *      travel axis.
+   *      the assembly (PCB wireframe + magnet wireframe). Z is exaggerated
+   *      so the thin stackup is visible. The magnet block sits at the
+   *      current mover position along the travel axis.
    *
    *   2. Front-on orthographic view (TravelStackupView): Y–Z
    *      cross-section; each layer is a full-width rectangle. The N·S

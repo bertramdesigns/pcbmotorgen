@@ -2,7 +2,7 @@
   FluxDiagram.svelte — B-field arrow grid for the linear PCB motor.
 
   Implements ADR-0002 (flux viz via Rust `sample_b_field`) and ADR-0003
-  (auto-refresh on arrangement / dimension change). The grid of vectors
+  (auto-refresh on dimension change). The grid of vectors
   comes from `sampleBField` in `lib/ipc`; the Rust
   `pcbmotorgen_simulation::physics` adapter is the sole authoritative source
   for the B-field math — `magpylib` is never imported.
@@ -10,7 +10,6 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
   import { sampleBField, debounce, mm } from "../../ipc";
-  import { hasBackIron } from "../../geometry";
   import { computeMagnets } from "../../previewGeometry";
   import type { BFieldGridDto } from "../../types";
 
@@ -75,21 +74,6 @@
     return PALETTE[4];
   }
 
-  function arrangementLabel(arr: string): string {
-    switch (arr) {
-      case "HalbachBackIron":
-        return "Halbach + Back-iron";
-      case "AlternatingBackIron":
-        return "Alternating + Back-iron";
-      case "Halbach":
-        return "Halbach";
-      case "Alternating":
-        return "Alternating";
-      default:
-        return arr;
-    }
-  }
-
   // --- Reactive state -------------------------------------------------
   let grid = $state<BFieldGridDto | null>(null);
   let sampling = $state(false);
@@ -125,12 +109,10 @@
   // Leaving the tab cancels pending work and invalidates in-flight results.
   $effect(() => {
     void [
-      config.magnet_arrangement,
       config.magnet_width_mm,
       config.magnet_cross_width_mm,
       config.magnet_height_mm,
       config.air_gap_mm,
-      config.back_iron_thickness_mm,
       config.magnet_count,
       config.magnet_gap_mm,
       config.magnet_remanence_t,
@@ -193,29 +175,15 @@
     return { sx, sy, sw, sh, arrows, maxMag, xTicks, zTicks };
   });
 
-  // --- Derived: reference geometry (PCB, air gap, magnets, back iron) --
+  // --- Derived: reference geometry (PCB, air gap, magnets) --
   // Reads straight from `config` (mm) and converts to metres with `mm()`.
   // Independent of `plot` so the geometry is responsive the moment a
   // input changes — the arrows catch up 150 ms later after sampling.
-  //
-  // `has_back_iron` is a *separate* top-level derived (not a field on
-  // the `geom` object) so its dependency on both `magnet_arrangement`
-  // and `back_iron_thickness_mm` is unambiguous to the Svelte 5
-  // reactivity tracker. Sourcing it from the `geom` object also works,
-  // but having it as its own rune makes the conditional rendering in
-  // the template trivially reactive and removes any chance of a stale
-  // "BackIron" line lingering after the arrangement is toggled off.
-  let has_back_iron = $derived(
-    hasBackIron(config.magnet_arrangement, config.back_iron_thickness_mm),
-  );
-
   let geom = $derived.by(() => {
     // Read the watched fields explicitly so Svelte 5 tracks every one
     // as a dependency of this derived (the void-discard idiom is the
     // canonical "read but discard" pattern; harmless if a value is also
     // used in the body).
-    void config.magnet_arrangement;
-    void config.back_iron_thickness_mm;
     void config.air_gap_mm;
     void config.magnet_height_mm;
     void config.magnet_width_mm;
@@ -226,12 +194,10 @@
     const magnetHM = mm(config.magnet_height_mm);
     const magnetWM = mm(config.magnet_width_mm);
     const magnetGM = mm(config.magnet_gap_mm);
-    const backIronM = mm(config.back_iron_thickness_mm);
     const activeLenM = mm(config.active_area_length_mm);
     return {
       air_gap_top_m: airGapM, // bottom of magnets
       magnet_top_m: airGapM + magnetHM, // top of magnets
-      back_iron_top_m: airGapM + magnetHM + backIronM,
       magnet_width_m: magnetWM,
       magnet_pitch_m: magnetWM + magnetGM, // width + gap
       magnet_count: config.magnet_count,
@@ -249,7 +215,7 @@
       B-field flux density (X–Z cross-section, Y averaged)
     </h3>
     <span class="text-xs text-slate-400">
-      {grid ? arrangementLabel(grid.arrangement) : "—"}
+      Alternating poles
       {#if loading} · sampling…{/if}
     </span>
   </div>
@@ -346,9 +312,9 @@
 
       <!-- ============================================================ -->
       <!-- Reference geometry (drawn BEHIND the arrows).                 -->
-      <!-- Static cross-section: PCB surface, air gap, magnet bars,      -->
-      <!-- optional back-iron, and active-area end-stops. Dimmer than    -->
-      <!-- the arrows so the B-field remains the primary visual.        -->
+      <!-- Static cross-section: PCB surface, air gap, magnet bars, and  -->
+      <!-- active-area end-stops. Dimmer than the arrows so the B-field  -->
+      <!-- remains the primary visual.                                   -->
       <!-- ============================================================ -->
 
       <!-- Active-area end-stops (stator start / stator end) -->
@@ -430,9 +396,7 @@
         Air gap
       </text>
 
-      <!-- Magnet bars — alternating N (orange) / S (blue), fill-opacity 0.35.
-           Halbach is rendered with the same alternating pattern for now;
-           a true Halbach side-magnet viz is a future enhancement. -->
+      <!-- Magnet bars — alternating N (orange) / S (blue), fill-opacity 0.35. -->
       {#each magnetBars as m, i (i)}
         <rect
           x={plot.sx(m.x)}
@@ -446,31 +410,6 @@
           stroke-opacity="0.6"
         />
       {/each}
-
-      <!-- Back-iron top (only when the arrangement ends with "BackIron" and
-           the thickness is positive). Top-level `has_back_iron` derived is
-           a single Svelte 5 rune, so the {#if} re-evaluates the instant
-           either `magnet_arrangement` or `back_iron_thickness_mm` changes. -->
-      {#if has_back_iron}
-        <line
-          x1={PAD_L}
-          y1={plot.sy(geom.back_iron_top_m)}
-          x2={W - PAD_R}
-          y2={plot.sy(geom.back_iron_top_m)}
-          stroke="#a16207"
-          stroke-width="2"
-          stroke-opacity="0.6"
-        />
-        <text
-          x={W - PAD_R - 4}
-          y={Math.max(plot.sy(geom.back_iron_top_m) - 3, PAD_T + 9)}
-          text-anchor="end"
-          class="fill-yellow-500"
-          style="font-size:9px"
-        >
-          Steel back-iron
-        </text>
-      {/if}
 
       <!-- Arrows -->
       {#each plot.arrows as a, i (i)}

@@ -115,7 +115,7 @@ pub async fn get_magnet_grades() -> Result<Vec<MagnetGradeIpc>, String> {
 // compute_height_stack — REAL (core HeightStackCalculator)
 // ===========================================================================
 
-/// Compute the vertical height stack (PCB → air gap → magnet → back-iron).
+/// Compute the vertical height stack (PCB → air gap → magnet).
 ///
 /// Uses the real `pcbmotorgen_simulation::stackup::HeightStackCalculator` with its
 /// default 1 oz outer copper and 0.3 mm assembly tolerance.
@@ -132,7 +132,6 @@ pub async fn compute_height_stack(
             solder_mask_m: hs.solder_mask_m,
             air_gap_m: hs.air_gap_m,
             magnet_height_m: hs.magnet_height_m,
-            back_iron_thickness_m: hs.back_iron_thickness_m,
             tolerance_m: hs.tolerance_m,
             total_height_m: hs.total_height_m(),
         })
@@ -184,8 +183,8 @@ pub async fn generate_coils(config: LinearMotorConfigIpc) -> Result<CoilPathIpc,
 ///
 /// Uses the real `pcbmotorgen_simulation::magnetic::ForceEvaluator` which integrates
 /// the Lorentz force `F = I · Σ(dLᵢ × Bᵢ)` across all active conductors at
-/// each mover position. The magnet array is built from the config's
-/// `MagnetArrangement` (Alternating / Halbach / back-iron variants).
+/// each mover position. The magnet array is the fixed plain alternating
+/// Z-polarised array.
 ///
 /// Coils are generated for a single layer (layer 0) — sufficient for the
 /// force profile since the force scales linearly with layer count.
@@ -369,9 +368,8 @@ const SAMPLE_B_FIELD_GRID_CAP: usize = 4096;
 ///
 /// The flux-viz backend for the WP5 `FluxDiagram` Svelte component. The
 /// core `MagnetArray::bfield_grid` routes through the
-/// `pcbmotorgen_simulation::physics` magba adapter and dispatches on
-/// `MagnetArrangement`, so all four arrangements (Alternating,
-/// AlternatingBackIron, Halbach, HalbachBackIron) are reflected.
+/// `pcbmotorgen_simulation::physics` magba adapter and always builds the
+/// plain alternating array.
 ///
 /// **Grid cap:** `n_x * n_z` must be ≤ 4096. Returns `Err("grid too large")`
 /// otherwise. (24×12 = 288 is the recommended resolution; the cap is a
@@ -413,7 +411,6 @@ pub async fn sample_b_field(
             samples: samples_ipc,
             x_extent_m,
             z_extent_m,
-            arrangement: arrangement_pascal_case(core.magnet_arrangement),
         })
     })
     .await

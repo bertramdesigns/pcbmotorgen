@@ -3,8 +3,6 @@
 
 use super::LinearMotorConfig;
 
-use pcbmotorgen_simulation::params::MagnetArrangement;
-
 // The following methods form the config API. In the binary these are partly
 // exercised via `cargo test` (inline `#[cfg(test)]`) while the shipped runtime
 // path builds the config straight from the IPC DTO's `to_core()`, so keep the
@@ -67,12 +65,6 @@ impl LinearMotorConfig {
 
     /// Compact human-readable summary.
     pub fn summary(&self) -> String {
-        let arr_label = match self.magnet_arrangement {
-            MagnetArrangement::Alternating => "alternating poles",
-            MagnetArrangement::AlternatingBackIron => "alternating + back-iron",
-            MagnetArrangement::Halbach => "Halbach array",
-            MagnetArrangement::HalbachBackIron => "Halbach + back-iron",
-        };
         let topo_label = if self.routing_pattern.trim().is_empty() {
             "(none)".to_string()
         } else {
@@ -85,7 +77,7 @@ impl LinearMotorConfig {
              \x20 Travel (derived): {travel:.1} mm\n\
              \x20 Coil span:        {span:.1} mm\n\
              \x20 Magnet:          {count}× {w:.0}×{l:.0}×{h:.0} mm  Br={br:.2} T\n\
-             \x20 Arrangement:     {arr}\n\
+             \x20 Arrangement:     alternating poles\n\
              \x20 Coil topology:   {topo}\n\
              \x20 Pole pitch:      {pp:.1} mm\n\
              \x20 Slot pitch:      {sp:.2} mm  ({phases}-phase)\n\
@@ -109,7 +101,6 @@ impl LinearMotorConfig {
             l = self.magnet_dims_m[1] * 1e3,
             h = self.magnet_dims_m[2] * 1e3,
             br = self.magnet_remanence_t,
-            arr = arr_label,
             topo = topo_label,
             pp = self.pole_pitch_m() * 1e3,
             sp = self.slot_pitch_m() * 1e3,

@@ -37,8 +37,6 @@ function makeConfig(overrides: Partial<LinearMotorConfig> = {}): LinearMotorConf
     magnet_pitch_m: 0.012,
     magnet_remanence_t: 1.34,
     magnet_grade: "N44",
-    magnet_arrangement: "Alternating",
-    back_iron_thickness_m: 0,
     air_gap_m: 0.0005,
     routing_pattern: "infinity-braid",
     routing_params: {},
@@ -213,7 +211,7 @@ describe("mockHeightStack", () => {
     const h = mockHeightStack(c);
     expect(h.total_height_m).toBeCloseTo(
       h.pcb_thickness_m + h.cu_protrusion_m + h.solder_mask_m + h.air_gap_m +
-        h.magnet_height_m + h.back_iron_thickness_m + h.tolerance_m,
+        h.magnet_height_m + h.tolerance_m,
     );
   });
 });
@@ -265,7 +263,6 @@ describe("mockBFieldGrid", () => {
     expect(g.samples).toHaveLength(24 * 12);
     expect(g.x_extent_m).toEqual([0, 0.195]);
     expect(g.z_extent_m).toEqual([0, 0.006]);
-    expect(g.arrangement).toBe(c.magnet_arrangement);
     for (const s of g.samples) {
       expect(s.mag_t).toBeCloseTo(Math.hypot(s.bx_t, s.by_t, s.bz_t), 10);
     }
