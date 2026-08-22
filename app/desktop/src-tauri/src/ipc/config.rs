@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::enums::{CommutationModeIpc, MagnetArrangementIpc};
+use super::enums::CommutationModeIpc;
 use crate::config::LinearMotorConfig as CoreConfig;
 
 /// Default value for `windings_per_phase` when the field is absent during
@@ -61,8 +61,6 @@ pub struct LinearMotorConfigIpc {
 
     pub magnet_remanence_t: f64,
     pub magnet_grade: String,
-    pub magnet_arrangement: MagnetArrangementIpc,
-    pub back_iron_thickness_m: f64,
     pub air_gap_m: f64,
 
     /// Extensible routing-pattern plugin id (see `docs/adr/0009`). The
@@ -126,8 +124,6 @@ impl LinearMotorConfigIpc {
             magnet_pitch_m: self.magnet_pitch_m,
             magnet_remanence_t: self.magnet_remanence_t,
             magnet_grade: self.magnet_grade.clone(),
-            magnet_arrangement: self.magnet_arrangement.into(),
-            back_iron_thickness_m: self.back_iron_thickness_m,
             active_area_length_m: self.active_area_length_m,
             board_width_m: self.board_width_m,
             pcb_thickness_m: self.pcb_thickness_m,
@@ -182,8 +178,6 @@ impl From<&CoreConfig> for LinearMotorConfigIpc {
             magnet_pitch_m: c.magnet_pitch_m,
             magnet_remanence_t: c.magnet_remanence_t,
             magnet_grade: c.magnet_grade.clone(),
-            magnet_arrangement: c.magnet_arrangement.into(),
-            back_iron_thickness_m: c.back_iron_thickness_m,
             air_gap_m: c.air_gap_m,
             routing_pattern: c.routing_pattern.clone(),
             routing_params: c.routing_params.clone(),

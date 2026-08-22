@@ -37,7 +37,7 @@ app crate or on `pcbmotorgen-export`. It depends on:
 | `magnet_grades` | NdFeB grade → remanence lookup (N35…N52, suffix-tolerant). |
 | `params` | `SimulationInput` (input + validation + derived geometry) and shared result DTOs. |
 | `physics` | Thin adapter over `magba` — B-field and source-assembly construction. |
-| `magnetic::magnet_model` | `MagnetArray` — the four arrangements and B-field sampling. |
+| `magnetic::magnet_model` | `MagnetArray` — the plain alternating array and B-field sampling. |
 | `magnetic::coil_model` | `CoilCurrentModel` — geometry → sampled conductor sub-segments. |
 | `magnetic::force_eval` | `ForceEvaluator`, `CommutationMode`, `ForceResult`. |
 | `stackup` | `HeightStackCalculator`, `PowerEstimator`, `FrictionEstimator`. |
@@ -84,8 +84,6 @@ pub struct SimulationInput {
     pub magnet_count: u32,              // must be even, ≥ 2
     pub magnet_pitch_m: f64,            // centre-to-centre spacing = pole pitch [m]
     pub magnet_remanence_t: f64,        // Br at 20 °C [T]
-    pub magnet_arrangement: MagnetArrangement,
-    pub back_iron_thickness_m: f64,     // 0.0 = none [m]
 
     // Geometry
     pub active_area_length_m: f64,      // PRIMARY INPUT — stator copper length [m]
@@ -134,8 +132,8 @@ SimulationInput::validate(&self) -> Result<(), SimulationError>
 Validation rejects (first error wins): non-positive or non-3-tuple magnet dims,
 `magnet_count < 2` or odd, non-positive pitch or negative `pitch − width`,
 `remanence ∉ (0, 2.5]`, `phases < 1`, `spacing_ratio ∉ (0, 2]`, non-positive
-current / voltage / trace / space / via sizes, negative air gap, negative back
-iron, odd or < 2 layer counts, `num_layers > max_layers`, non-positive drive /
+current / voltage / trace / space / via sizes, negative air gap, odd or < 2
+layer counts, `num_layers > max_layers`, non-positive drive /
 temperature / active-length / board-width bounds, `active_area_length ≤ coil_span`
 (zero travel), negative padding, `windings_per_phase < 1` or footprint violation,
 and the force / mass / accel / capacitor targets.
@@ -165,11 +163,12 @@ and the force / mass / accel / capacitor targets.
 
 ```rust
 #[serde(rename_all = "snake_case")]
-pub enum MagnetArrangement { Alternating, AlternatingBackIron, Halbach, HalbachBackIron }
-
-#[serde(rename_all = "snake_case")]
 pub enum BearingType { PlasticChannel, PteLined, BallBearing }
 ```
+
+The magnet array is **always** the plain alternating arrangement (Halbach and
+back-iron variants were removed from the product scope), so there is no
+`MagnetArrangement` enum and no `back_iron_thickness_m` field.
 
 ### 3.5 Error type
 
@@ -180,27 +179,13 @@ pub struct SimulationError(pub String);   // Display + std::error::Error
 
 ---
 
-## 4. Magnet arrangements: `MagnetArray`
+## 4. Magnet array: `MagnetArray`
 
 `crate::magnetic::MagnetArray<'a>` builds and manages the magnet source
-assembly for all four arrangements.
-
-| Arrangement | Construction |
-| --- | --- |
-| `Alternating` | `magnet_count` Z-polarised cuboids, alternating `±Br` along `z`. |
-| `Halbach` | Above, plus `magnet_count − 1` X-polarised interleave cuboids at each gap midpoint (width `0.5 ×` main magnet width, `pol = 1.2 × Br`; skipped if < 0.1 mm). |
-| `AlternatingBackIron` | Alternating base + method-of-images mirror copies (`× K_IRON = 0.85`) mirrored about the back-iron **top face**. |
-| `HalbachBackIron` | Halbach base + image copies of every main **and** interleave magnet (`10 + 9 + 19 = 38` magnets for the default config). |
-
-**Back-iron gating:** when `back_iron_thickness_m == 0`, the image is **not**
-built — `AlternatingBackIron` reduces to `Alternating` (10 magnets) and
-`HalbachBackIron` to `Halbach` (19 magnets), producing identical B-fields. This
-is a covered regression (image plane requires an actual steel keeper).
-
-**Image geometry:** the mirror plane is the back-iron's top face
-`z_mirror = air_gap + magnet_h + back_iron`; the image of a magnet at z sits at
-`z_image = 2·z_mirror − z`, same polarisation scaled by `K_IRON = 0.85`
-(CRS steel, `µ_r ≈ 2000`).
+assembly. The mover always uses the **plain alternating** arrangement:
+`magnet_count` Z-polarised cuboids alternating `±Br` along `z`, spaced
+`magnet_pitch_m` apart. (Halbach interleaves and method-of-images back-iron
+copies were removed from the product scope to simplify the app and simulation.)
 
 ### 4.1 Public methods
 
@@ -211,8 +196,6 @@ build_assembly(&self, mover_position_m: f64) -> physics::MagbaSourceAssembly
 magnet_z_center_m(&self) -> f64
 magnet_x_centers_m(&self, mover_position_m: f64) -> Vec<f64>
 polarizations_t(&self) -> Vec<[f64; 3]>                 // main-magnet ±Z [T]
-interleave_x_centers_m(&self, mover_position_m: f64) -> Vec<f64>
-image_z_center_m(&self) -> Option<f64>                   // None when no back iron
 
 bfield_at_pcb_surface(&self, x_sample: &[f64], mover_position_m: f64,
                       z_observer: f64) -> Vec<[f64; 3]>  // B [T] at (x, y_center, z)
@@ -483,9 +466,9 @@ pub struct FrictionEstimator {
 impl FrictionEstimator {
     pub fn estimate(&self) -> FrictionBudget;                       // FFC drag = 0.020 N/conductor, wiper = 0.055 N
     pub fn estimate_for_config(&self, config: &SimulationInput) -> FrictionBudget; // split config.friction_n
-    pub fn from_config(config: &SimulationInput, bearing_type: BearingType,
+    pub fn from_config(bearing_type: BearingType,
                        ffc_conductor_count: u32, has_wiper_contact: bool) -> Self;
-        // normal force = 5 N when back iron present, else 0
+        // normal force always 0 (no back-iron pull-in in the current scope)
 }
 ```
 
@@ -526,7 +509,6 @@ pub struct HeightStackResult {
     pub solder_mask_m: f64,      // 20 µm nominal
     pub air_gap_m: f64,
     pub magnet_height_m: f64,
-    pub back_iron_thickness_m: f64,
     pub tolerance_m: f64,
 }
 
@@ -628,7 +610,7 @@ Exposed to the desktop UI as the `travel_envelope` command
 pub use pcbmotorgen_simulation::{
     BearingType, BFieldSample2D, CoilCurrentModel, CommutationMode, ConductorSample,
     FrictionBudget, FrictionEstimator, ForceEvaluator, ForceResult, HeightStackCalculator,
-    HeightStackResult, MagnetArrangement, MagnetArray, PowerBudget, PowerEstimator,
+    HeightStackResult, MagnetArray, PowerBudget, PowerEstimator,
     SimulationError, SimulationInput, StackupResult,
 };
 pub use pcbmotorgen_simulation::{CoilArc, CoilSegment, PhaseCoil, PHASE_NAMES}; // from routing
@@ -657,11 +639,10 @@ cargo build --workspace
 ```
 
 The suite covers unit conversion, grade lookup, the validation cascade, serde
-defaults, derived geometry, all four arrangements (counts, back-iron gating and
-thickness dependence, Halbach ≥ 5% boost), 1D/2D B-field sampling, conductor
-meshing, Lorentz integration, commutation (1:1 and 4:5 Vernier), the 3-point FOC
-guard, ripple statistics, all stackup estimators, and Python-oracle
-cross-validation. `test_vectors.rs` requires
+defaults, derived geometry, the plain alternating array (counts and polarity),
+1D/2D B-field sampling, conductor meshing, Lorentz integration, commutation
+(1:1 and 4:5 Vernier), the 3-point FOC guard, ripple statistics, all stackup
+estimators, and Python-oracle cross-validation. `test_vectors.rs` requires
 `scripts/fixtures/test_vectors.json` (bundle is present; regenerate with
 `scripts/export_test_vectors.py` to refresh).
 
@@ -674,7 +655,7 @@ cross-validation. `test_vectors.rs` requires
 - Magnet grades: `src/magnet_grades.rs`
 - Input / validation / derived / DTOs: `src/params/{mod,validation,derived,stackup_result,height_stack_result,power_budget,friction_budget}.rs`
 - magba adapter: `src/physics/mod.rs`
-- Magnet arrays + arrangements: `src/magnetic/magnet_model/`, `src/magnetic/magnet_model/arrangements/`
+- Magnet array: `src/magnetic/magnet_model/`, `src/magnetic/magnet_model/arrangements/`
 - Coil model: `src/magnetic/coil_model.rs`
 - Force evaluation: `src/magnetic/force_eval/{mod,commutation,force_result}.rs`
 - Stackup: `src/stackup/{mod,height_stack,power,friction}.rs`

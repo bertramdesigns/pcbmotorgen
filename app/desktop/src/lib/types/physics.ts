@@ -42,7 +42,6 @@ export interface HeightStackResultDto {
   solder_mask_m: number;
   air_gap_m: number;
   magnet_height_m: number;
-  back_iron_thickness_m: number;
   tolerance_m: number;
   total_height_m: number;
 }
@@ -77,13 +76,11 @@ export interface BFieldSampleDto {
   mag_t: number;
 }
 
-/** B-field grid over the magnet arrangement (sample_b_field). */
+/** B-field grid (sample_b_field). */
 export interface BFieldGridDto {
   samples: BFieldSampleDto[];
   /** [x_min, x_max] [m] */
   x_extent_m: [number, number];
   /** [z_min, z_max] [m] */
   z_extent_m: [number, number];
-  /** PascalCase arrangement label: "Alternating" | "AlternatingBackIron" | "Halbach" | "HalbachBackIron" */
-  arrangement: string;
 }

@@ -449,7 +449,6 @@ fn test_config_serde_round_trip() {
     let cfg2: SimulationInput = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(cfg.active_area_length_m, cfg2.active_area_length_m);
     assert_eq!(cfg.magnet_count, cfg2.magnet_count);
-    assert_eq!(cfg.magnet_arrangement, cfg2.magnet_arrangement);
     assert_eq!(cfg.phases, cfg2.phases);
     assert!((cfg.magnet_remanence_t - cfg2.magnet_remanence_t).abs() < 1e-12);
     assert!((cfg.air_gap_m - cfg2.air_gap_m).abs() < 1e-12);
@@ -472,8 +471,6 @@ fn test_config_serde_default_num_layers() {
         "magnet_pitch_m": 0.012,
         "magnet_remanence_t": 1.35,
         "magnet_grade": "N44",
-        "magnet_arrangement": "alternating",
-        "back_iron_thickness_m": 0.0,
         "board_width_m": 0.020,
         "pcb_thickness_m": 0.0016,
         "air_gap_m": 0.0005,

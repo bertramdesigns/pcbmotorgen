@@ -38,7 +38,7 @@ mod tests {
         let cfg = SimulationInput::default();
         let arr = MagnetArray::new(&cfg);
         let assembly = arr.build_assembly(0.0);
-        // 10 main magnets, no interleave/images for Alternating
+        // 10 main magnets — the array is always plain alternating.
         assert_eq!(assembly.iter().count(), 10);
     }
 }

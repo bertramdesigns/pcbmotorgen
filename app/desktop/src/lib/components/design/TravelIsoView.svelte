@@ -3,7 +3,6 @@
   import type { TraceMeasure } from "../../previewGeometry";
   import {
     ISO_Z_EXAG,
-    hasBackIron,
     isoBoxPath,
     isoCenter as computeIsoCenter,
     isoProject,
@@ -25,9 +24,9 @@
 
   // ====================================================================
   // 3/4 ISOMETRIC VIEW — axonometric projection of the assembly (PCB
-  // wireframe + magnet wireframe + optional back-iron). Z is exaggerated
-  // so the thin stackup is visible. The magnet block sits at the current
-  // mover position along the travel axis.
+  // wireframe + magnet wireframe). Z is exaggerated so the thin stackup
+  // is visible. The magnet block sits at the current mover position
+  // along the travel axis.
   //
   // Everything is drawn in the ROUTING/DOMAIN frame — the same frame the
   // coil canvas uses: x = 0 is the left edge of the routed traces, the
@@ -65,8 +64,7 @@
         totalHeight:
           config.pcb_thickness_mm +
           config.air_gap_mm +
-          config.magnet_height_mm +
-          config.back_iron_thickness_mm,
+          config.magnet_height_mm,
       },
       ISO_W,
       ISO_H,
@@ -74,18 +72,10 @@
     ),
   );
 
-  // Back-iron visibility predicate. Mirrors the same `has_back_iron` rune
-  // found in FluxDiagram.svelte and the orthographic stackup view so both
-  // views agree on when the steel back-iron should be drawn.
-  let has_back_iron = $derived(
-    hasBackIron(config.magnet_arrangement, config.back_iron_thickness_mm),
-  );
-
   let isoGeom = $derived.by(() => {
     const pcbT = config.pcb_thickness_mm;
     const ag = config.air_gap_mm;
     const mh = config.magnet_height_mm;
-    const bi = config.back_iron_thickness_mm;
     return {
       boardX0: boardStartMm,
       boardL: boardLengthMm,
@@ -96,12 +86,10 @@
       pcbT,
       ag,
       mh,
-      bi,
-      // Z-stack (stator at z=0, then PCB → air gap → magnet → optional back iron).
+      // Z-stack (stator at z=0, then PCB → air gap → magnet).
       pcbZTop: pcbT,
       airGapZBottom: pcbT,
       magnetZBottom: pcbT + ag,
-      backIronZBottom: pcbT + ag + mh,
       // Mover strip extent (domain frame, canvas-anchored + motion offset).
       magnetStartX: stripStartMm,
       magnetEndX: stripEndMm,
@@ -122,13 +110,6 @@
     isoBoxPath(isoGeom.magnetStartX, 0, isoGeom.magnetZBottom,
       isoGeom.magnetEndX - isoGeom.magnetStartX, isoGeom.W, isoGeom.mh,
       isoCenter.cx, isoCenter.cy, project),
-  );
-  let isoBackIronBox = $derived(
-    has_back_iron
-      ? isoBoxPath(isoGeom.magnetStartX, 0, isoGeom.backIronZBottom,
-          isoGeom.magnetEndX - isoGeom.magnetStartX, isoGeom.W, isoGeom.bi,
-          isoCenter.cx, isoCenter.cy, project)
-      : null,
   );
 
   // Dimension line under the board's front-bottom edge: ties the printed
@@ -171,11 +152,6 @@
     <text x={(isoMagnetBox.corners[4][0] + isoMagnetBox.corners[5][0]) / 2}
           y={isoMagnetBox.corners[4][1] - 4} text-anchor="middle"
           class="fill-emerald-300" style="font-size:9px">Magnets</text>
-
-    <!-- Back iron wireframe (if present) -->
-    {#if isoBackIronBox}
-      <path d={isoBackIronBox.d} fill="#a16207" fill-opacity="0.35" stroke="#ca8a04" stroke-width="1" />
-    {/if}
 
     <!-- Axis legend (bottom-left corner) -->
     <g style="font-size:8px" stroke-linecap="round">

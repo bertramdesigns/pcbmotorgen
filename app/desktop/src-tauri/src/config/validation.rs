@@ -119,12 +119,6 @@ impl LinearMotorConfig {
                 self.air_gap_m
             )));
         }
-        if self.back_iron_thickness_m < 0.0 {
-            return Err(ConfigError(format!(
-                "back_iron_thickness_m must be ≥ 0, got {}",
-                self.back_iron_thickness_m
-            )));
-        }
         if self.max_layers < 2 || self.max_layers % 2 != 0 {
             return Err(ConfigError(format!(
                 "max_layers must be an even number ≥ 2, got {}",

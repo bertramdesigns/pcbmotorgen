@@ -139,7 +139,6 @@
         <span class="text-slate-300">PCB: <span class="text-slate-100">{(height.pcb_thickness_m * 1000).toFixed(2)} mm</span></span>
         <span class="text-slate-300">Air gap: <span class="text-slate-100">{(height.air_gap_m * 1000).toFixed(2)} mm</span></span>
         <span class="text-slate-300">Magnet: <span class="text-slate-100">{(height.magnet_height_m * 1000).toFixed(2)} mm</span></span>
-        <span class="text-slate-300">Back-iron: <span class="text-slate-100">{(height.back_iron_thickness_m * 1000).toFixed(2)} mm</span></span>
         <span class="text-slate-300 col-span-2">Total: <span class="text-emerald-300">{(height.total_height_m * 1000).toFixed(2)} mm</span></span>
       </div>
     {:else}

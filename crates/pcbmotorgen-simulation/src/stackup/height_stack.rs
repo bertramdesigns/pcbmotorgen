@@ -35,7 +35,6 @@ impl HeightStackCalculator {
             solder_mask_m: SOLDER_MASK_M,
             air_gap_m: config.air_gap_m,
             magnet_height_m: config.magnet_dims_m[2],
-            back_iron_thickness_m: config.back_iron_thickness_m,
             tolerance_m: self.tolerance_m,
         }
     }
@@ -106,7 +105,7 @@ mod tests {
         let calc = HeightStackCalculator::default();
         let cfg = default_config();
         let hs = calc.calculate(&cfg);
-        let expected = 0.0016 + 35e-6 + 20e-6 + 0.0005 + 0.004 + 0.0 + 0.0003;
+        let expected = 0.0016 + 35e-6 + 20e-6 + 0.0005 + 0.004 + 0.0003;
         assert!((hs.total_height_m() - expected).abs() < 1e-12);
     }
 

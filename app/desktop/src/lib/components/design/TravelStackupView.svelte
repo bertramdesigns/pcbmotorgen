@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
-  import { hasBackIron } from "../../geometry";
 
   let { config }: { config: ConfigStore } = $props();
 
@@ -22,10 +21,9 @@
   let pcbThicknessMm = $derived(config.pcb_thickness_mm);
   let airGapMm = $derived(config.air_gap_mm);
   let magnetHeightMm = $derived(config.magnet_height_mm);
-  let backIronMm = $derived(config.back_iron_thickness_mm);
   let boardWidthMm = $derived(config.active_area_width_mm);
   let totalStackMm = $derived(
-    pcbThicknessMm + airGapMm + magnetHeightMm + backIronMm,
+    pcbThicknessMm + airGapMm + magnetHeightMm,
   );
 
   // X-axis now spans the BOARD WIDTH (Y in the config) — was active
@@ -45,16 +43,9 @@
   let orthoPcbTopY = $derived(orthoBaseY - pcbThicknessMm * orthoZScale);
   let orthoAirGapTopY = $derived(orthoPcbTopY - airGapMm * orthoZScale);
   let orthoMagnetTopY = $derived(orthoAirGapTopY - magnetHeightMm * orthoZScale);
-  let orthoBackIronTopY = $derived(orthoMagnetTopY - backIronMm * orthoZScale);
 
   // X position of the height-dimension line in the orthographic view.
   let orthoDimX = $derived(ORTHO_W - 4);
-
-  // Back-iron gating for the stackup rect + dim ticks; shares the same
-  // predicate as the 3/4 iso view and FluxDiagram.
-  let has_back_iron = $derived(
-    hasBackIron(config.magnet_arrangement, config.back_iron_thickness_mm),
-  );
 </script>
 
 <div class="min-w-0">
@@ -91,25 +82,13 @@
       N · S
     </text>
 
-    <!-- Back iron (if present) — full width, gated on the same
-         `has_back_iron` predicate as the 3/4 view and FluxDiagram. -->
-    {#if has_back_iron && backIronMm * orthoZScale >= 0.5}
-      <rect x={ORTHO_PAD_L} y={orthoBackIronTopY}
-            width={orthoStackPxW}
-            height={backIronMm * orthoZScale}
-            fill="#a16207" fill-opacity="0.6" stroke="#ca8a04" stroke-width="0.5" />
-    {/if}
-
     <!-- Stack height dimension line (right side) -->
     <g stroke="#94a3b8" stroke-width="0.5">
-      <line x1={orthoDimX} y1={orthoBaseY} x2={orthoDimX} y2={orthoBackIronTopY} />
+      <line x1={orthoDimX} y1={orthoBaseY} x2={orthoDimX} y2={orthoMagnetTopY} />
       <line x1={orthoDimX - 2} y1={orthoBaseY} x2={orthoDimX + 2} y2={orthoBaseY} />
       <line x1={orthoDimX - 2} y1={orthoPcbTopY} x2={orthoDimX + 2} y2={orthoPcbTopY} />
       <line x1={orthoDimX - 2} y1={orthoAirGapTopY} x2={orthoDimX + 2} y2={orthoAirGapTopY} />
       <line x1={orthoDimX - 2} y1={orthoMagnetTopY} x2={orthoDimX + 2} y2={orthoMagnetTopY} />
-      {#if has_back_iron}
-        <line x1={orthoDimX - 2} y1={orthoBackIronTopY} x2={orthoDimX + 2} y2={orthoBackIronTopY} />
-      {/if}
     </g>
     <!-- Layer thickness labels (only if there's room for the text) -->
     <text x={orthoDimX - 4} y={(orthoBaseY + orthoPcbTopY) / 2 + 2.5} text-anchor="end"
@@ -126,13 +105,7 @@
           class="fill-slate-300" style="font-size:7px">
       {magnetHeightMm.toFixed(1)} mm
     </text>
-    {#if has_back_iron && backIronMm * orthoZScale > 7}
-      <text x={orthoDimX - 4} y={(orthoMagnetTopY + orthoBackIronTopY) / 2 + 2.5} text-anchor="end"
-            class="fill-slate-300" style="font-size:7px">
-        {backIronMm.toFixed(1)} mm
-      </text>
-    {/if}
-    <text x={orthoDimX - 4} y={orthoBackIronTopY - 3} text-anchor="end"
+    <text x={orthoDimX - 4} y={orthoMagnetTopY - 3} text-anchor="end"
           class="fill-slate-200 font-semibold" style="font-size:7px">
       Total: {totalStackMm.toFixed(1)} mm
     </text>

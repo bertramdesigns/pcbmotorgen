@@ -7,12 +7,5 @@
  * boundary.
  */
 
-/** NdFeB magnetization arrangement along the travel axis. */
-export type MagnetArrangement =
-  | "Alternating"
-  | "AlternatingBackIron"
-  | "Halbach"
-  | "HalbachBackIron";
-
 /** Comutation strategy used by the force sweep. */
 export type CommutationMode = "max_torque" | "phase_a_only";

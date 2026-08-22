@@ -85,23 +85,18 @@ impl FrictionEstimator {
         }
     }
 
-    /// Construct an estimator using back-iron config to set normal force.
+    /// Construct an estimator with a default zero normal force (no back-iron
+    /// pull-in — the magnetic keeper was removed from the product scope).
     pub fn from_config(
-        config: &SimulationInput,
         bearing_type: BearingType,
         ffc_conductor_count: u32,
         has_wiper_contact: bool,
     ) -> Self {
-        let normal_force = if config.back_iron_thickness_m > 0.0 {
-            5.0 // conservative default
-        } else {
-            0.0
-        };
         Self {
             bearing_type,
             ffc_conductor_count,
             has_wiper_contact,
-            normal_force_n: normal_force,
+            normal_force_n: 0.0,
             cogging_n: 0.0,
         }
     }
@@ -185,17 +180,8 @@ mod tests {
     }
 
     #[test]
-    fn test_from_config_no_back_iron() {
-        let cfg = default_config();
-        let est = FrictionEstimator::from_config(&cfg, BearingType::BallBearing, 26, false);
+    fn test_from_config_no_attractive_normal_force() {
+        let est = FrictionEstimator::from_config(BearingType::BallBearing, 26, false);
         assert!((est.normal_force_n - 0.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn test_from_config_with_back_iron() {
-        let mut cfg = default_config();
-        cfg.back_iron_thickness_m = 0.001;
-        let est = FrictionEstimator::from_config(&cfg, BearingType::BallBearing, 26, false);
-        assert!((est.normal_force_n - 5.0).abs() < 1e-12);
     }
 }

@@ -4,7 +4,6 @@
 //! its validation error [`ConfigError`] and the orchestration/derived-method
 //! helpers. All physics and shared result types have moved into the leaf
 //! crates — [`SimulationInput`](pcbmotorgen_simulation::params::SimulationInput),
-//! [`MagnetArrangement`](pcbmotorgen_simulation::params::MagnetArrangement),
 //! `StackupResult`/`HeightStackResult`/`FrictionBudget`/`PowerBudget` live in
 //! `pcbmotorgen_simulation::params`; `RoutingContext`/`DesignRules` live in
 //! `pcbmotorgen_routing`. The parent delegates derived arithmetic to the
@@ -24,8 +23,6 @@
 //!   `routing_pattern_id`, `sync_magnet_grade`).
 
 use serde::{Deserialize, Serialize};
-
-use pcbmotorgen_simulation::params::MagnetArrangement;
 
 pub mod bridges;
 pub mod derived;
@@ -75,10 +72,6 @@ pub struct LinearMotorConfig {
     pub magnet_remanence_t: f64,
     /// Standard NdFeB grade name (N35–N52) or "Custom".
     pub magnet_grade: String,
-    /// Pole/flux-concentrator arrangement.
-    pub magnet_arrangement: MagnetArrangement,
-    /// CRS steel keeper thickness on rear face of magnets [m]. 0.0 = none.
-    pub back_iron_thickness_m: f64,
 
     // --- Geometry ---
     /// Physical length of the stator copper trace region [m]. PRIMARY INPUT.
@@ -193,8 +186,6 @@ impl Default for LinearMotorConfig {
             magnet_pitch_m: mm(12.0),
             magnet_remanence_t: 1.35,
             magnet_grade: "N44".to_string(),
-            magnet_arrangement: MagnetArrangement::Alternating,
-            back_iron_thickness_m: 0.0,
             active_area_length_m: mm(195.0),
             board_width_m: mm(20.0),
             pcb_thickness_m: 0.0016,
@@ -410,10 +401,9 @@ mod tests {
             solder_mask_m: 20e-6,
             air_gap_m: 0.0005,
             magnet_height_m: 0.004,
-            back_iron_thickness_m: 0.0,
             tolerance_m: 0.0003,
         };
-        let expected = 0.0016 + 35e-6 + 20e-6 + 0.0005 + 0.004 + 0.0 + 0.0003;
+        let expected = 0.0016 + 35e-6 + 20e-6 + 0.0005 + 0.004 + 0.0003;
         assert!((hs.total_height_m() - expected).abs() < 1e-12);
     }
 
@@ -425,7 +415,6 @@ mod tests {
             solder_mask_m: 20e-6,
             air_gap_m: 0.0005,
             magnet_height_m: 0.004,
-            back_iron_thickness_m: 0.0,
             tolerance_m: 0.0003,
         };
         assert!(hs.fits_in_budget(0.010));
@@ -440,7 +429,6 @@ mod tests {
             solder_mask_m: 20e-6,
             air_gap_m: 0.0005,
             magnet_height_m: 0.004,
-            back_iron_thickness_m: 0.0,
             tolerance_m: 0.0003,
         };
         let total = hs.total_height_m();
@@ -498,23 +486,11 @@ mod tests {
         assert_eq!(cfg2.active_area_length_m, cfg.active_area_length_m);
         assert_eq!(cfg2.magnet_count, cfg.magnet_count);
         assert_eq!(cfg2.routing_pattern, cfg.routing_pattern);
-        assert_eq!(cfg2.magnet_arrangement, cfg.magnet_arrangement);
     }
 
     #[test]
     fn test_routing_pattern_defaults() {
         let cfg = LinearMotorConfig::default();
         assert_eq!(cfg.routing_pattern, "infinity-braid");
-    }
-
-    #[test]
-    fn test_enum_serde_snake_case() {
-        let json = r#""infinity-braid""#;
-        let s: String = serde_json::from_str(json).unwrap();
-        assert_eq!(s, "infinity-braid");
-
-        let json = r#""halbach""#;
-        let arr: MagnetArrangement = serde_json::from_str(json).unwrap();
-        assert_eq!(arr, MagnetArrangement::Halbach);
     }
 }

@@ -3,7 +3,7 @@
 //! Built on the `physics` adapter layer.
 //!
 //! ## Module layout
-//! - [`magnet_model`] — `MagnetArray` (4 arrangements: Alternating, Halbach, back-iron)
+//! - [`magnet_model`] — `MagnetArray` (base Z-polarised alternating array)
 //! - [`coil_model`] — `CoilCurrentModel` (active segments → force integration)
 //! - [`force_eval`] — `ForceEvaluator` + `ForceResult` (Lorentz force, Newton's 3rd Law)
 

@@ -1,22 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  hasBackIron,
   slotPitchMm,
   restOffsetMm,
   isoProject,
   isoCenter,
   isoBoxPath,
 } from "./geometry";
-
-describe("hasBackIron", () => {
-  it("is true only when the arrangement ends with BackIron and thickness > 0", () => {
-    expect(hasBackIron("AlternatingBackIron", 1)).toBe(true);
-    expect(hasBackIron("HalbachBackIron", 0.5)).toBe(true);
-    expect(hasBackIron("HalbachBackIron", 0)).toBe(false);
-    expect(hasBackIron("Alternating", 1)).toBe(false);
-    expect(hasBackIron("Halbach", 2)).toBe(false);
-  });
-});
 
 describe("slotPitchMm / restOffsetMm", () => {
   it("scales the pole pitch by the vernier ratio", () => {

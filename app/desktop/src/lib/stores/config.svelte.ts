@@ -9,7 +9,6 @@
 
 import type {
   LinearMotorConfig,
-  MagnetArrangement,
   CommutationMode,
   RoutingPatternInfo,
   RoutingParamDef,
@@ -17,17 +16,6 @@ import type {
 } from "../types";
 import { getRemanence, MAGNET_GRADES, extractBaseGrade } from "../types";
 import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins, fetchMagnetGrades } from "../ipc";
-
-/** Default back-iron thickness applied when the user enables a BackIron
- *  magnet arrangement for the first time. Only used when the user has
- *  not already configured a non-zero value. Exported so the auto-default
- *  behavior (in MagnetsPanel.svelte) can reference the same value. */
-export const DEFAULT_BACK_IRON_THICKNESS_MM = 1.0;
-
-export const BACK_IRON_ARRANGEMENTS: ReadonlySet<MagnetArrangement> = new Set([
-  "AlternatingBackIron",
-  "HalbachBackIron",
-]);
 
 export class ConfigStore {
   // --- Topology ----------------------------------------------------------
@@ -75,8 +63,6 @@ export class ConfigStore {
   magnet_height_mm = $state(3.0);
   magnet_grade = $state("N44");
   magnet_remanence_t = $state(1.34);
-  magnet_arrangement = $state<MagnetArrangement>("Alternating");
-  back_iron_thickness_mm = $state(0);
   air_gap_mm = $state(0.5);
 
   // --- Phase-band constraint (mm) ---------------------------------------
@@ -314,8 +300,6 @@ export class ConfigStore {
 
       magnet_remanence_t: this.magnet_remanence_t,
       magnet_grade: this.magnet_grade,
-      magnet_arrangement: this.magnet_arrangement,
-      back_iron_thickness_m: mm(this.back_iron_thickness_mm),
       air_gap_m: mm(this.air_gap_mm),
 
       routing_pattern: this.routing_pattern,

@@ -229,8 +229,6 @@
       config.magnet_cross_width_mm,
       config.magnet_remanence_t,
       config.magnet_grade,
-      config.magnet_arrangement,
-      config.back_iron_thickness_mm,
       config.air_gap_mm,
       config.routing_pattern,
       config.routing_params_version,

@@ -50,16 +50,6 @@ fn default_windings_per_phase() -> u32 {
 // Enums
 // ---------------------------------------------------------------------------
 
-/// Permanent magnet arrangement on the carriage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MagnetArrangement {
-    Alternating,
-    AlternatingBackIron,
-    Halbach,
-    HalbachBackIron,
-}
-
 /// Mover linear bearing / guide type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,10 +82,6 @@ pub struct SimulationInput {
     pub magnet_pitch_m: f64,
     /// Remnant flux density Br at 20 °C [T].
     pub magnet_remanence_t: f64,
-    /// Pole/flux-concentrator arrangement.
-    pub magnet_arrangement: MagnetArrangement,
-    /// CRS steel keeper thickness on rear face of magnets [m]. 0.0 = none.
-    pub back_iron_thickness_m: f64,
 
     // --- Geometry ---
     /// Physical length of the stator copper trace region [m]. PRIMARY INPUT.
@@ -167,8 +153,6 @@ impl Default for SimulationInput {
             magnet_count: 10,
             magnet_pitch_m: mm(12.0),
             magnet_remanence_t: 1.35,
-            magnet_arrangement: MagnetArrangement::Alternating,
-            back_iron_thickness_m: 0.0,
             active_area_length_m: mm(195.0),
             board_width_m: mm(20.0),
             pcb_thickness_m: 0.0016,
@@ -235,8 +219,6 @@ mod tests {
             "magnet_count": 10,
             "magnet_pitch_m": 0.012,
             "magnet_remanence_t": 1.35,
-            "magnet_arrangement": "alternating",
-            "back_iron_thickness_m": 0.0,
             "board_width_m": 0.020,
             "pcb_thickness_m": 0.0016,
             "air_gap_m": 0.0005,
@@ -261,11 +243,5 @@ mod tests {
         let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
         assert_eq!(cfg.num_layers, 4, "num_layers must default to 4 when absent");
         assert!(cfg.windings_per_phase >= 1);
-    }
-
-    #[test]
-    fn test_magnet_arrangement_serde() {
-        let arr: MagnetArrangement = serde_json::from_str(r#""halbach""#).unwrap();
-        assert_eq!(arr, MagnetArrangement::Halbach);
     }
 }

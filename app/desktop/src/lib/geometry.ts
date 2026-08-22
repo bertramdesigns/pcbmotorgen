@@ -6,19 +6,6 @@
  * DesignDimensions to remove duplicated derived math.
  */
 
-/**
- * Back-iron visibility predicate. `magnet_arrangement` ends in
- * "BackIron" and the thickness is positive.
- *
- * Was duplicated verbatim in TravelDiagram.svelte and FluxDiagram.svelte.
- */
-export function hasBackIron(
-  magnetArrangement: string,
-  backIronThicknessMm: number,
-): boolean {
-  return magnetArrangement.endsWith("BackIron") && backIronThicknessMm > 0;
-}
-
 /** Slot pitch: vernier fraction of the pole pitch per phase. */
 export function slotPitchMm(
   polePitchMm: number,

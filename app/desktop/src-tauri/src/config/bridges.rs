@@ -61,8 +61,6 @@ impl LinearMotorConfig {
             magnet_count: self.magnet_count,
             magnet_pitch_m: self.magnet_pitch_m,
             magnet_remanence_t: self.magnet_remanence_t,
-            magnet_arrangement: self.magnet_arrangement,
-            back_iron_thickness_m: self.back_iron_thickness_m,
             active_area_length_m: self.active_area_length_m,
             board_width_m: self.board_width_m,
             pcb_thickness_m: self.pcb_thickness_m,

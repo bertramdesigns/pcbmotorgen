@@ -284,7 +284,7 @@ impl ForceEvaluator {
     ///
     /// Why the fallback to `phase_shift = π`: the spec's strict reading
     /// ("no legitimate polarity inversion") is incompatible with the
-    /// default `SimulationInput` (whose magnet arrangement produces a
+    /// default `SimulationInput` (whose alternating-pole array produces a
     /// 180°-flipped FOC direction at `phase_shift = 0`). The fallback
     /// preserves the spec's *intent* — catching real FOC errors (sin vs
     /// cos, wrong per-coil offset) — without rejecting the production
@@ -630,7 +630,7 @@ mod tests {
     /// The 3-point polarity + alignment guard must accept the default
     /// `SimulationInput` and set `phase_shift` to either 0 or π.
     ///
-    /// The default config has a magnet arrangement whose FOC direction is
+    /// The default config has an alternating-pole array whose FOC direction is
     /// 180°-flipped relative to the cos-FOC, so the guard ends up at
     /// `phase_shift = π` (the fallback polarity). The test allows either
     /// value; the strict "phase_shift = 0" reading from the original spec

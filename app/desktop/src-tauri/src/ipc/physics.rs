@@ -55,9 +55,6 @@ impl BFieldSampleIpc {
 /// `samples[i_z * n_x + i_x]`. The Svelte `FluxDiagram` reshapes the flat
 /// `samples` into a 2D `n_z × n_x` arrow grid using `x_extent_m` /
 /// `z_extent_m` to recover the physical axes.
-///
-/// `arrangement` is the **PascalCase** arrangement name
-/// (`"Alternating"`, `"HalbachBackIron"`, …) — exposed for UI diagnostics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct BFieldGridIpc {
@@ -66,21 +63,6 @@ pub struct BFieldGridIpc {
     pub x_extent_m: [f64; 2],
     /// `[z_min, z_max]` over which the grid was sampled [m].
     pub z_extent_m: [f64; 2],
-    /// PascalCase arrangement label (matches the IPC enum wire format).
-    pub arrangement: String,
-}
-
-/// Convert a core `MagnetArrangement` to its PascalCase wire label.
-pub fn arrangement_pascal_case(
-    a: pcbmotorgen_simulation::params::MagnetArrangement,
-) -> String {
-    use pcbmotorgen_simulation::params::MagnetArrangement as A;
-    match a {
-        A::Alternating => "Alternating".to_string(),
-        A::AlternatingBackIron => "AlternatingBackIron".to_string(),
-        A::Halbach => "Halbach".to_string(),
-        A::HalbachBackIron => "HalbachBackIron".to_string(),
-    }
 }
 
 // ===========================================================================
@@ -139,7 +121,6 @@ pub struct HeightStackResultIpc {
     pub solder_mask_m: f64,
     pub air_gap_m: f64,
     pub magnet_height_m: f64,
-    pub back_iron_thickness_m: f64,
     pub tolerance_m: f64,
     pub total_height_m: f64,
 }
