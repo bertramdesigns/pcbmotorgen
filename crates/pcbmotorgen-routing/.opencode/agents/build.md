@@ -25,12 +25,6 @@ Always keep the `/docs/API.md` document upated. This file is consumed by other a
 
 Kata is the system of record for intent.
 
-Because the Kata database is shared with all sub-crates, work should be labeled based on the related domain - desktop, simulation, export, or design. Always check the label before picking up an outstanding ticket. Always add labels to new tickets for the related domain.
-
-Make sure to also track future work, deferred work, and wishes.
-
-- Never `kata delete` or `kata purge` without explicit user authorization.
-
 ```dot
 digraph kata {
   rankdir=TB; node [shape=box];
@@ -101,3 +95,4 @@ You coordinate execution tasks by delegating to the appropriate specialized suba
   continuous 2-layer result for a reference config; Python runner path parses +
   validates sample JSON.
 - **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `routing/feat/ui-overhaul`, `routing/chore/docs-cleanup`) and lands via a separate PR. Ensure the PR is properly documented. Squash-merge on approval.
+- **Kata Gate:** Kata is the system of record for intent. Before beginning any work, search first: run `kata list`. If no open issue matches the work, create one with `kata create` and add the relevant domain label (`desktop` / `simulation` / `export` / `design`). When the work happens on a dedicated branch, stamp it once: `kata meta set <ref> work.branch <branch>`. Before ending the session, either `kata close <ref> --done` with a message and evidence, or `kata label add <ref> needs-review` plus a comment describing what remains. Never `kata delete` or `kata purge` without explicit user authorization.
