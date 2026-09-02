@@ -95,21 +95,41 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
 }
 
 /**
- * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`.
+ * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`
+ * (lattice-snapped, span-aware spec, kata xb16).
  *
- * Product reference convention: endpoints are COIL-CAPTURE positions that
- * scale with the electrical period P_e = 2·pitch (independent of magnet
- * count):
- *   min = padding + (2/3)·P_e    (defaults copper_region_start 30: 30 + 8 = 38 mm)
- *   max = (padding + active) − (3/4)·P_e   (defaults 177 − 9 = 168 mm)
- * These are the first/last spots where the first/last coil carries enough
- * charge to capture the first/last pole (leading 240°, trailing 270°).
- * `rest_phase_m` is the TRACK-FRAME phase `(padding + φ) mod P_e` so the
- * holding-force chart zeros align to the stable rests; it still depends on
- * N. A copper region narrower than the envelope clamps max to min.
+ * Endpoints are the first/last STABLE REST POSITIONS of the array CENTRE
+ * inside the copper active area (glossary "Travel Envelope"), derived in
+ * two steps:
+ *   1. Span-aware centre clamp — the centre must keep the whole mover
+ *      inside copper: centre ∈ [copper_start + span/2, copper_end − span/2]
+ *      with the glossary "Mover Span" span = N·τ_p (τ_p = P_e/2). The
+ *      range WIDENS as N shrinks.
+ *   2. Lattice snapping — both endpoints snap onto the track-frame rest
+ *      lattice `x ≡ φ_track (mod P_e)` with φ_track =
+ *      (copper_start + φ) mod P_e and φ = (P_e/12 + ((N−1)/2)·τ_p)
+ *      mod P_e (φ is N-dependent). Defaults (N=12, τ_p=6 mm → P_e=12 mm,
+ *      copper [30,177] mm): the clamp is [66, 141] mm and φ_track = 4 mm,
+ *      so min = **76 = 4 + 6·12 mm** and max = **136 = 4 + 11·12 mm** —
+ *      the pinned values ARE lattice points (pre-xb16 coil-capture values
+ *      were 38/168 mm). N=4 widens the clamp to [42, 165] mm → 52/160 mm.
+ * `rest_phase_m` is unchanged: the TRACK-FRAME lattice phase, so the
+ * holding-force chart zeros stay aligned to the stable rests. When no
+ * lattice point exists between the clamped bounds (copper shorter than the
+ * mover span, or too short to admit one full lattice step past the lower
+ * bound), max clamps to min — the envelope never inverts, though the
+ * array may overhang the copper at that single rest position.
  */
 export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
   const P_e = 2 * c.magnet_pitch_m; // electrical period
+  if (!(P_e > 0)) {
+    return {
+      min_position_m: 0,
+      max_position_m: 0,
+      rest_phase_m: 0,
+      electrical_period_m: P_e,
+    };
+  }
   const tau_p = P_e / 2; // pole pitch
   let phi =
     (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
@@ -117,11 +137,25 @@ export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
   if (phi < 0) phi += P_e;
   const copperRegionStart = c.padding_m;
   const copperRegionEnd = c.padding_m + c.active_area_length_m;
-  const min = copperRegionStart + (2 / 3) * P_e;
+  // Track-frame rest phase: every stable rest centre ≡ φ_track (mod P_e).
+  const phaseTrack = (((copperRegionStart + phi) % P_e) + P_e) % P_e;
+  // Span-aware centre clamp: keep the whole array inside the copper.
+  const span = c.magnet_count * tau_p;
+  const lower = copperRegionStart + span / 2;
+  const upper = copperRegionEnd - span / 2;
+  // Lattice snapping with the Rust implementation's float guards: a
+  // mathematically integral quotient nudged to e.g. 3.000…4 must not
+  // step a full period too far.
+  const LATTICE_SNAP_EPS_M = 1e-9;
+  let min = phaseTrack + Math.ceil((lower - phaseTrack) / P_e) * P_e;
+  while (min - P_e >= lower - LATTICE_SNAP_EPS_M) min -= P_e;
+  let max = phaseTrack + Math.floor((upper - phaseTrack) / P_e) * P_e;
+  while (max + P_e <= upper + LATTICE_SNAP_EPS_M) max += P_e;
+  // Degenerate (no lattice point between the bounds): never inverted.
   return {
     min_position_m: min,
-    max_position_m: Math.max(copperRegionEnd - (3 / 4) * P_e, min),
-    rest_phase_m: ((copperRegionStart + phi) % P_e + P_e) % P_e,
+    max_position_m: Math.max(max, min),
+    rest_phase_m: phaseTrack,
     electrical_period_m: P_e,
   };
 }
