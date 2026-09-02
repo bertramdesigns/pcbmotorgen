@@ -48,7 +48,7 @@
     <div
       class="rounded-md border border-sky-500/40 bg-sky-500/5 px-3 py-2 text-xs text-sky-200"
     >
-      <div class="font-semibold mb-1">Coil preview ({previewResult.topology})</div>
+      <div class="font-semibold mb-1">Coil preview ({previewResult.pattern_id})</div>
       <div class="font-mono text-[11px] leading-snug">
         {previewResult.num_layers} layer(s) ·
         {previewResult.total_tracks} track(s) ·

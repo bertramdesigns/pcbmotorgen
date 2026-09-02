@@ -15,7 +15,7 @@ import type {
   PhaseCoilDto,
   PoleRegionDto,
   RoutingDimensionsDto,
-  SlotWidthDto,
+  PhaseBandWidthDto,
   ForceSweepResult,
   StackupResultDto,
   HeightStackResultDto,
@@ -78,14 +78,14 @@ export function mockMagnetGrades(): MagnetGrade[] {
 
 export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
   const pole_pitch_m = c.magnet_pitch_m;
-  const coil_span_m = c.magnet_count * c.magnet_pitch_m;
-  const travel_m = c.active_area_length_m - coil_span_m;
-  const slot_pitch_m = (pole_pitch_m / c.phases) * c.spacing_ratio;
+  const magnet_array_span_m = c.magnet_count * c.magnet_pitch_m;
+  const travel_m = c.active_area_length_m - magnet_array_span_m;
+  const phase_band_pitch_m = (pole_pitch_m / c.phases) * c.spacing_ratio;
   return {
     pole_pitch_m,
-    coil_span_m,
+    magnet_array_span_m,
     travel_m,
-    slot_pitch_m,
+    phase_band_pitch_m,
     magnet_gap_m: c.magnet_gap_m,
     min_via_pad_m: c.min_via_drill_m + 2 * c.min_via_annular_ring_m,
     acceleration_force_n: c.carriage_mass_kg * c.max_accel_m_s2,
@@ -100,13 +100,13 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
  * Product reference convention: endpoints are COIL-CAPTURE positions that
  * scale with the electrical period P_e = 2·pitch (independent of magnet
  * count):
- *   min = padding + (2/3)·P_e    (defaults slot_start 30: 30 + 8 = 38 mm)
+ *   min = padding + (2/3)·P_e    (defaults copper_region_start 30: 30 + 8 = 38 mm)
  *   max = (padding + active) − (3/4)·P_e   (defaults 177 − 9 = 168 mm)
  * These are the first/last spots where the first/last coil carries enough
  * charge to capture the first/last pole (leading 240°, trailing 270°).
  * `rest_phase_m` is the TRACK-FRAME phase `(padding + φ) mod P_e` so the
  * holding-force chart zeros align to the stable rests; it still depends on
- * N. A slot region narrower than the envelope clamps max to min.
+ * N. A copper region narrower than the envelope clamps max to min.
  */
 export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
   const P_e = 2 * c.magnet_pitch_m; // electrical period
@@ -115,13 +115,13 @@ export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
     (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
   phi %= P_e;
   if (phi < 0) phi += P_e;
-  const slotStart = c.padding_m;
-  const slotEnd = c.padding_m + c.active_area_length_m;
-  const min = slotStart + (2 / 3) * P_e;
+  const copperRegionStart = c.padding_m;
+  const copperRegionEnd = c.padding_m + c.active_area_length_m;
+  const min = copperRegionStart + (2 / 3) * P_e;
   return {
     min_position_m: min,
-    max_position_m: Math.max(slotEnd - (3 / 4) * P_e, min),
-    rest_phase_m: ((slotStart + phi) % P_e + P_e) % P_e,
+    max_position_m: Math.max(copperRegionEnd - (3 / 4) * P_e, min),
+    rest_phase_m: ((copperRegionStart + phi) % P_e + P_e) % P_e,
     electrical_period_m: P_e,
   };
 }
@@ -135,34 +135,37 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   const phases: PhaseCoilDto[] = [];
   // The mock mirrors the real infinity braid: traces (and their pattern-made
   // pole regions) are routed across the FULL domain (active area + both end
-  // paddings), NOT just the coil span. The mover must have conductors
+  // paddings), NOT just the mover span. The mover must have conductors
   // beneath it for every position along its travel, exactly like the real
   // backend.
-  const coilSpan = c.magnet_count * c.magnet_pitch_m;
+  const moverSpan = c.magnet_count * c.magnet_pitch_m;
   const domain = c.active_area_length_m + 2 * c.padding_m;
   const width = c.board_width_m;
   const nLayers = Math.max(1, c.num_layers);
   const nConductors = Math.max(2, c.magnet_count * 2);
   const pitchX = domain / (nConductors - 1);
   const pole_pitch_m = c.magnet_pitch_m;
-  // Match the canonical slot-pitch formula: (pole_pitch / phases) × spacing_ratio
-  // (Vernier ratio). The routing sidecar reports the ideal phase-band pitch the
-  // same way — the earlier copy here omitted the Vernier factor.
-  const slot_pitch_m = (pole_pitch_m / Math.max(1, c.phases)) * (c.spacing_ratio || 1);
+  // Match the canonical phase-band-pitch formula: (pole_pitch / phases) ×
+  // spacing_ratio (Vernier ratio). The routing sidecar reports the ideal
+  // phase-band pitch the same way — the earlier copy here omitted the
+  // Vernier factor.
+  const phase_band_pitch_m =
+    (pole_pitch_m / Math.max(1, c.phases)) * (c.spacing_ratio || 1);
   const phase_clearance_m = c.min_space_m;
-  const max_slot_width_m = slot_pitch_m - phase_clearance_m;
+  const max_phase_band_width_m = phase_band_pitch_m - phase_clearance_m;
   const trace_count = Math.max(
     1,
-    Math.round(c.routing_params.num_strands ?? c.windings_per_phase ?? 1),
+    Math.round(c.routing_params.num_strands ?? c.strands_per_phase ?? 1),
   );
-  const slot_width_m =
+  const band_width_m =
     trace_count * c.min_trace_m + (trace_count - 1) * c.min_space_m;
-  const slot_widths: SlotWidthDto[] = [];
+  const phase_band_widths: PhaseBandWidthDto[] = [];
   // Pattern-owned pole-region bands (the routing sidecar's authoritative
   // phase/pole boundaries). The mock mirrors the infinity braid: one region
-  // per phase per pole pitch, each phase interleaved by a slot-pitch offset
-  // so the alternating red/blue zones overlap the interleaved wave bands.
-  // Coordinates are metres (the Tauri adapter converts routing mm → SI).
+  // per phase per pole pitch, each phase interleaved by a phase-band-pitch
+  // offset so the alternating red/blue zones overlap the interleaved wave
+  // bands. Coordinates are metres (the Tauri adapter converts routing mm →
+  // SI).
   const pole_regions: PoleRegionDto[] = [];
   {
     const regionsPerPhase = Math.max(
@@ -216,16 +219,16 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     }
     for (let p = 0; p < c.phases; p++) {
       const net = "ABC"[p] ?? String(p);
-      slot_widths.push({
+      phase_band_widths.push({
         layer,
         net,
         trace_count,
         trace_width_m: c.min_trace_m,
         trace_spacing_m: c.min_space_m,
         angle_rad: Math.PI / 2,
-        slot_width_m,
-        max_slot_width_m,
-        margin_m: max_slot_width_m - slot_width_m,
+        band_width_m,
+        max_band_width_m: max_phase_band_width_m,
+        margin_m: max_phase_band_width_m - band_width_m,
       });
       phases.push({
         phase_idx: p,
@@ -250,17 +253,17 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     total_routing_length_m: c.active_area_length_m + 2 * c.padding_m,
     board_width_m: c.board_width_m,
     phases: Math.max(1, c.phases),
-    magnet_array_span_m: coilSpan,
+    magnet_array_span_m: moverSpan,
     pole_pitch_m,
     period_pitch_m: c.routing_pattern === "infinity-braid" ? pole_pitch_m : null,
     period_count:
       c.routing_pattern === "infinity-braid"
         ? Math.max(1, Math.floor((c.active_area_length_m + 2 * c.padding_m) / pole_pitch_m))
         : null,
-    slot_pitch_m,
+    phase_band_pitch_m,
     phase_clearance_m,
-    max_slot_width_m,
-    slot_widths,
+    max_phase_band_width_m,
+    phase_band_widths,
     pole_regions,
   };
   return { phases, layer_count: c.num_layers, routing_dimensions };
@@ -442,7 +445,7 @@ export function mockPreviewCoils(config: LinearMotorConfig): CoilPreview {
   }));
   return {
     num_layers: numLayers,
-    topology: config.routing_pattern,
+    pattern_id: config.routing_pattern,
     layers,
     total_tracks: totalTracks,
     total_vias: 0,

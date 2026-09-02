@@ -37,8 +37,12 @@ export interface PhaseCoilDto {
   via_positions?: [number, number][];
 }
 
-/** Effective active-conductor band width for one (layer, net) group. */
-export interface SlotWidthDto {
+/**
+ * Effective phase-band (conductor bundle) width for one (layer, net) group.
+ * This is the full coil-side bundle width — NOT a single-slot width (a slot
+ * houses one active leg).
+ */
+export interface PhaseBandWidthDto {
   layer: number;
   net: string;
   trace_count: number;
@@ -46,15 +50,15 @@ export interface SlotWidthDto {
   trace_spacing_m: number;
   /** Angle from the travel axis, in radians. */
   angle_rad: number;
-  /** Bottom-up effective slot width along the travel axis. */
-  slot_width_m: number;
+  /** Bottom-up effective bundle width along the travel axis. */
+  band_width_m: number;
   /** Top-down maximum allowed width, when pole pitch is known. */
-  max_slot_width_m: number | null;
-  /** max_slot_width_m - slot_width_m, when pole pitch is known. */
+  max_band_width_m: number | null;
+  /** max_band_width_m - band_width_m, when pole pitch is known. */
   margin_m: number | null;
 }
 
-/** Pole-pitch and slot-width handoff returned with generated geometry. */
+/** Pole-pitch and phase-band handoff returned with generated geometry. */
 export interface RoutingDimensionsDto {
   active_area_length_m: number;
   total_routing_length_m: number;
@@ -66,11 +70,11 @@ export interface RoutingDimensionsDto {
   pole_pitch_m: number | null;
   period_pitch_m: number | null;
   period_count: number | null;
-  /** Ideal phase-band pitch: pole_pitch_m / phases. */
-  slot_pitch_m: number | null;
+  /** Ideal phase-band pitch: pole_pitch_m / phases (spacing_ratio = 1.0). */
+  phase_band_pitch_m: number | null;
   phase_clearance_m: number;
-  max_slot_width_m: number | null;
-  slot_widths: SlotWidthDto[];
+  max_phase_band_width_m: number | null;
+  phase_band_widths: PhaseBandWidthDto[];
   /** Pattern-owned pole-pitch boundaries, in metres, used by preview zones. */
   pole_regions: PoleRegionDto[];
 }
@@ -106,6 +110,7 @@ export interface TravelEnvelopeDto {
   max_position_m: number;
   /** Rest phase φ: every stable rest centre ≡ φ (mod electrical_period_m). */
   rest_phase_m: number;
-  /** Electrical period P_e (slot/electrical pitch, m). */
+  /** Electrical period P_e = 2 × pole pitch τp (one full 360° electrical
+   *  cycle, m). */
   electrical_period_m: number;
 }

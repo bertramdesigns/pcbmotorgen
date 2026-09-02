@@ -16,7 +16,7 @@
 >
   <div class="space-y-3">
     <!-- General geometry + clearance. No driver toggle: every field here is
-         a normal user input. Derived values (travel, pole pitch, coil span,
+         a normal user input. Derived values (travel, pole pitch, mover span,
          rest offset, preview metrics) stay read-only in the reflection. -->
     <section
       class="rounded-md border border-slate-700 bg-slate-800/40 px-3 py-2.5"
@@ -31,7 +31,7 @@
       <div class="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
         <label
           class="min-w-0"
-          title="Center-to-center travel you want; active area length follows (coil span + travel)."
+          title="Center-to-center travel you want; active area length follows (mover span + travel)."
         >
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300"
@@ -49,7 +49,7 @@
             />
           </span>
           <span class="mt-1 block text-[10px] text-slate-500">
-            PCB trace total length follows: coil span {config.coil_span_mm.toFixed(1)} mm + travel
+            PCB trace total length follows: mover span {config.mover_span_mm.toFixed(1)} mm + travel
             + 2 × {config.padding_mm.toFixed(0)} mm padding = {config.trace_total_length_mm.toFixed(1)} mm
             (the routed traces' first-to-last X extent).
           </span>
@@ -88,22 +88,23 @@
 
         <label class="min-w-0" title="Stator electrical pitch P_e: length of one full electrical cycle. One cycle contains two alternating poles, so pole pitch = P_e / 2.">
           <span class="flex items-center justify-between gap-2">
-            <span class="min-w-0 truncate text-xs text-slate-300">Slot width (mm)</span>
+            <span class="min-w-0 truncate text-xs text-slate-300">Electrical pitch P_e (mm)</span>
             <NumberField
-              id="slot-width"
-              value={config.slot_width_mm}
+              id="electrical-pitch"
+              value={config.electrical_pitch_mm}
               min={0.1}
               max={40}
               step={0.1}
-              ariaLabel="Slot width (mm)"
+              ariaLabel="Electrical pitch P_e (mm)"
               class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
               onCommit={(value) => {
-                config.slot_width_mm = value;
+                config.electrical_pitch_mm = value;
               }}
             />
           </span>
           <span class="mt-1 block text-[10px] text-slate-500">
-            Pole pitch follows: slot width ÷ 2 = {config.pole_pitch_mm.toFixed(1)} mm.
+            Pole pitch τp = P_e ÷ 2 = {config.pole_pitch_mm.toFixed(1)} mm. A slot houses one
+            active conductor leg — per-slot band widths are shown in the Coil Preview diagnostics.
           </span>
         </label>
 

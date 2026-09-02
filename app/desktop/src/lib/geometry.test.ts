@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
-  slotPitchMm,
+  phaseBandPitchMm,
   restOffsetMm,
   isoProject,
   isoCenter,
   isoBoxPath,
 } from "./geometry";
 
-describe("slotPitchMm / restOffsetMm", () => {
+describe("phaseBandPitchMm / restOffsetMm", () => {
   it("scales the pole pitch by the vernier ratio", () => {
-    // 3 phases, 1:1 ratio → slot pitch = pitch / 3, rest = 0
-    expect(slotPitchMm(12, 3, 1)).toBeCloseTo(4);
+    // 3 phases, 1:1 ratio → phase-band pitch = pitch / 3, rest = 0
+    expect(phaseBandPitchMm(12, 3, 1)).toBeCloseTo(4);
     expect(restOffsetMm(12, 3, 1)).toBe(0);
     // 5:6 ratio → rest offset = pitch/3 × 1/6
-    expect(slotPitchMm(12, 3, 5 / 6)).toBeCloseTo(10 / 3);
+    expect(phaseBandPitchMm(12, 3, 5 / 6)).toBeCloseTo(10 / 3);
     expect(restOffsetMm(12, 3, 5 / 6)).toBeCloseTo(2 / 3);
   });
 

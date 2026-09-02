@@ -52,7 +52,7 @@ test.describe("magnet pattern -> trace regeneration", () => {
 });
 
 test.describe("routing dimensions -> preview overlays", () => {
-  test("pole pitch and slot-width overlays can be toggled independently", async ({
+  test("pole pitch and band-width overlays can be toggled independently", async ({
     page,
   }) => {
     await page.goto("/");
@@ -63,7 +63,7 @@ test.describe("routing dimensions -> preview overlays", () => {
 
     await eventually(async () => {
       expect(await inlineCanvas.getAttribute("data-pole-pitch")).toBe("1");
-      expect(Number(await inlineCanvas.getAttribute("data-slot-widths"))).toBeGreaterThan(0);
+      expect(Number(await inlineCanvas.getAttribute("data-band-widths"))).toBeGreaterThan(0);
     });
 
     await page
@@ -74,24 +74,24 @@ test.describe("routing dimensions -> preview overlays", () => {
     const polePitch = dialog.getByRole("checkbox", {
       name: "Show pole-pitch dimension ruler",
     });
-    const slotWidths = dialog.getByRole("checkbox", {
-      name: "Show slot-width diagnostics",
+    const bandWidths = dialog.getByRole("checkbox", {
+      name: "Show band-width diagnostics",
     });
 
     await expect(modalCanvas).toBeVisible();
     await expect(polePitch).toBeChecked();
-    await expect(slotWidths).toBeChecked();
+    await expect(bandWidths).toBeChecked();
 
     await polePitch.uncheck();
     await eventually(async () => {
       expect(await modalCanvas.getAttribute("data-pole-pitch")).toBe("0");
-      expect(Number(await modalCanvas.getAttribute("data-slot-widths"))).toBeGreaterThan(0);
+      expect(Number(await modalCanvas.getAttribute("data-band-widths"))).toBeGreaterThan(0);
     });
 
-    await slotWidths.uncheck();
+    await bandWidths.uncheck();
     await eventually(async () => {
       expect(await modalCanvas.getAttribute("data-pole-pitch")).toBe("0");
-      expect(await modalCanvas.getAttribute("data-slot-widths")).toBe("0");
+      expect(await modalCanvas.getAttribute("data-band-widths")).toBe("0");
     });
   }, { tag: ["@logic", "@desktop"] });
 

@@ -103,7 +103,7 @@
             1,
           )} mm) · X Length {config.magnet_width_mm.toFixed(1)} mm · gap {config.magnet_gap_mm.toFixed(
             1,
-          )} mm · coil span {config.coil_span_mm.toFixed(1)} mm.
+          )} mm · mover span {config.mover_span_mm.toFixed(1)} mm.
           The X Length IS the input; the fill factor is derived from it
           (k = W_m / τ_p), and the inter-magnet gap follows as
           W_gap = τ_p − W_m (zero at k = 1.00).

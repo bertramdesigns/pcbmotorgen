@@ -29,19 +29,19 @@
       </span>
     </label>
 
-    <label class="min-w-0" title="Parallel winding paths per phase.">
+    <label class="min-w-0" title="Parallel strands per phase — number of parallel serpentine paths per phase, stacked across the board width.">
       <span class="flex items-center justify-between gap-2">
-        <span class="min-w-0 truncate text-xs text-slate-300">Windings per phase</span>
+        <span class="min-w-0 truncate text-xs text-slate-300">Strands per phase</span>
         <NumberField
-          id="windings-per-phase"
-          value={config.windings_per_phase}
+          id="strands-per-phase"
+          value={config.strands_per_phase}
           min={1}
           max={16}
           step={1}
           integer
-          ariaLabel="Windings per phase"
+          ariaLabel="Strands per phase"
           class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
-          onCommit={(value) => (config.windings_per_phase = value)}
+          onCommit={(value) => (config.strands_per_phase = value)}
         />
       </span>
     </label>

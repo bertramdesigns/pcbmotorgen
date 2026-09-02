@@ -17,7 +17,7 @@
    *   owned by App.svelte: the slider / number field below commit into it,
    *   and the CoilPreview magnet strip reflects the same position. The value
    *   is the CENTER of the magnet array in mm, clamped to the movable range
-   *   (continuous — a coreless PCB motor has no commutation-step snapping).
+   *   (continuous — a coreless motor has no detent/cogging force; slider endpoints are stable rest positions spaced one electrical period P_e apart).
    */
   import type { ConfigStore } from "../../stores/config.svelte";
   import type { MotionStore } from "../../stores/motion.svelte";
@@ -69,7 +69,7 @@
         ? " (measured)"
         : ""} · active = {config.active_area_length_mm.toFixed(
         1,
-      )} mm · coil_span = {config.coil_span_mm.toFixed(
+      )} mm · mover_span = {config.mover_span_mm.toFixed(
         1,
       )} mm ·
       <span class={invalid ? "text-rose-400" : "text-sky-300"}

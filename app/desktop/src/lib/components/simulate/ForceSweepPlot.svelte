@@ -1,6 +1,15 @@
 <script lang="ts">
-  import type { ForceSweepResult } from "../../types";
+  import type { CommutationMode, ForceSweepResult } from "../../types";
   import { createLinearScale, paddedRange, ticks, polyline } from "../../chart";
+
+  // Human-readable labels for the raw `CommutationMode` wire values — the UI
+  // must not echo snake_case wire values back to the user.
+  const COMMUTATION_LABELS: Record<CommutationMode, string> = {
+    max_thrust: "Max thrust (FOC)",
+    phase_a_only: "Phase A only",
+  };
+
+  const commutationLabel = (mode: CommutationMode): string => COMMUTATION_LABELS[mode];
 
   let { result }: { result: ForceSweepResult | null } = $props();
 
@@ -37,15 +46,15 @@
 
 <div class="rounded-lg bg-slate-800/40 border border-slate-700 p-4">
   <div class="flex items-center justify-between mb-2">
-    <h3 class="text-sm font-semibold text-slate-200">Force vs. Position Sweep</h3>
+    <h3 class="text-sm font-semibold text-slate-200">Thrust vs. Position Sweep</h3>
     {#if result}
       <span class="text-xs text-slate-400">
-        {result.commutation} · I={result.current_a.toFixed(2)} A · n={result.n_positions}
+        {commutationLabel(result.commutation)} · I={result.current_a.toFixed(2)} A · n={result.n_positions}
       </span>
     {/if}
   </div>
 
-  <svg viewBox="0 0 {W} {H}" class="w-full h-auto" role="img" aria-label="Force sweep plot">
+  <svg viewBox="0 0 {W} {H}" class="w-full h-auto" role="img" aria-label="Thrust sweep plot">
     {#if plot}
       <!-- grid -->
       {#each plot.yTicks as t (t.v)}
@@ -63,7 +72,7 @@
       <text x={W / 2} y={H - 4} text-anchor="middle" class="fill-slate-400" style="font-size:11px">Mover position (mm)</text>
       <text x={14} y={H / 2} text-anchor="middle" transform="rotate(-90 14 {H / 2})" class="fill-slate-400" style="font-size:11px">Thrust F_x (N)</text>
 
-      <!-- force polyline -->
+      <!-- thrust polyline -->
       <polyline points={plot.linePts} fill="none" stroke="#10b981" stroke-width="1.6" />
 
       <!-- mean line -->
@@ -71,7 +80,7 @@
             stroke="#f59e0b" stroke-width="1" stroke-dasharray="5 3" />
     {:else}
       <text x={W / 2} y={H / 2} text-anchor="middle" class="fill-slate-500" style="font-size:14px">
-        Awaiting force sweep…
+        Awaiting thrust sweep…
       </text>
     {/if}
   </svg>

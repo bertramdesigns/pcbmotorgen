@@ -12,7 +12,7 @@
   Lightbox: the preview expands into a modal overlay via the ⤢ button (or a
   double-click on the inline preview). The expanded view hosts ALL
   interactive presentation toggles — per-phase, per-layer, via, pole-pitch,
-  slot-width and pole-region visibility, the pole-region phase picker, and
+  band-width and pole-region visibility, the pole-region phase picker, and
   the one-section hint. Zoom and reset-view controls live
   BELOW the canvas in both views. Both view instances (inline frame + canvas
   and modal frame + canvas) stay mounted while the component exists, but
@@ -42,7 +42,7 @@
     computeVisibleSegments,
     computeVisibleArcs,
     computePolePitchRuler,
-    computeSlotWidthRows,
+    computeBandWidthRows,
     computeOverlayFitBounds,
     computeMoverStripBounds,
     computePoleRegionZones,
@@ -57,7 +57,7 @@
     type PreviewConfigLike,
     type PolePitchRuler,
     type PoleRegionZone,
-    type SlotWidthRow,
+    type BandWidthRow,
   } from "../../previewGeometry";
   import type { WorldTransform } from "../../chart";
   import { fitWorldToView, unionBounds } from "../../chart";
@@ -106,8 +106,8 @@
   // magnet_count / magnet_width_mm / magnet_gap_mm plus extras, which is
   // fine for structural typing). Magnet placement also consumes the generated
   // routing_dimensions sidecar when available: each pitch cell's right edge
-  // (solid bar + trailing gap) is anchored to the pattern's B-phase slot
-  // centres so the poles stay locked to the slot zones. Legacy or missing
+  // (solid bar + trailing gap) is anchored to the pattern's B-phase leg
+  // centres so the poles stay locked to the leg zones. Legacy or missing
   // sidecars use computeMagnets' centered pitch-cell fallback.
   // -------------------------------------------------------------------
   let g = $derived(computePreviewGeometry(coils, config as PreviewConfigLike));
@@ -115,7 +115,7 @@
   /** World→virtual transform for a zoom level, using the CURRENT geometry
    *  (backed by lib/chart fitWorldToView; injected into the gesture class).
    *  `overlayFitBounds` unions the schematic fit box with any
-   *  `routing_dimensions` overlay geometry (pole-pitch ruler, slot-width
+   *  `routing_dimensions` overlay geometry (pole-pitch ruler, band-width
    *  rows, pole regions) so the camera never clips an annotation. */
   function worldTransformFor(zoom: number): WorldTransform {
     return fitWorldToView(overlayFitBounds, W, H, PAD, zoom);
@@ -137,7 +137,7 @@
   let magnets = $derived(computeMagnets(config, coils?.routing_dimensions));
   // The mover position from the shared MotionStore places the whole strip in
   // ABSOLUTE track coordinates: bar 0's left edge lands exactly at
-  // `motion.stripStartMm` (= position − coil_span/2), matching the design
+  // `motion.stripStartMm` (= position − mover_span/2), matching the design
   // reflection's iso view and readouts. Polarity order and pitch come from
   // the pattern-anchored `computeMagnets` layout.
   let visibleMagnets = $derived.by(() => {
@@ -150,7 +150,7 @@
   // relative to the pattern-anchored rest layout, so reset-view never clips
   // the moved magnets.
   let maxMoverOffsetM = $derived.by(() => {
-    const halfSpanM = config.coil_span_mm / 2000;
+    const halfSpanM = config.mover_span_mm / 2000;
     const restStartM =
       magnets.length > 0 ? Math.min(...magnets.map((m) => m.x)) : 0;
     const leadAtMin = motion.moverMinMm / 1000 - halfSpanM - restStartM;
@@ -167,7 +167,7 @@
   );
 
   // -------------------------------------------------------------------
-  // routing_dimensions sidecar overlays: pole-pitch ruler, slot-width rows,
+  // routing_dimensions sidecar overlays: pole-pitch ruler, band-width rows,
   // and pattern-owned pole-region zones.
   // Pure world-space geometry from lib/previewGeometry; resistant to an
   // absent/legacy sidecar (null sidecars → no ruler, no rows). The camera
@@ -181,14 +181,14 @@
       g.fitBounds.maxY + 0.0008, // just above the magnet strip
     ),
   );
-  let slotRows = $derived(
-    computeSlotWidthRows(coils, coils?.routing_dimensions),
+  let bandRows = $derived(
+    computeBandWidthRows(coils, coils?.routing_dimensions),
   );
 
   // Independent presentation toggles, expanded-preview controls only. Kept
   // even when no data exists (they simply are not bound then).
   let showPolePitch = $state(true);
-  let showSlotWidths = $state(true);
+  let showBandWidths = $state(true);
   let showPoleRegions = $state(true); // default on, like the other overlays
   let poleRegionPhase = $state(""); // "" = all phases
 
@@ -228,7 +228,7 @@
           0.003,
         ),
         showPolePitch ? poleRuler : null,
-        showSlotWidths ? slotRows : [],
+        showBandWidths ? bandRows : [],
         showPoleRegions ? visiblePoleRegionZones : [],
         g.boardRect.y,
         g.boardRect.y + g.boardRect.h,
@@ -237,11 +237,11 @@
     })(),
   );
   let hasPolePitchData = $derived(poleRuler !== null);
-  let hasSlotWidthData = $derived(slotRows.length > 0);
+  let hasBandWidthData = $derived(bandRows.length > 0);
 
-  /** One-section filter for slot rows: show only rows anchored inside the
+  /** One-section filter for band rows: show only rows anchored inside the
    *  currently kept (first-N-active) conductor x-window for their phase. */
-  function slotRowInOneSection(row: SlotWidthRow): boolean {
+  function bandRowInOnePeriod(row: BandWidthRow): boolean {
     if (!oneSection) return true;
     const segs = visibleSegments.get(row.phaseIdx * 1000 + row.layer);
     if (!segs || segs.length === 0) return false;
@@ -513,7 +513,7 @@
     drawRevision += 1;
     let drawnSegments = 0;
     let drawnVias = 0;
-    let drawnSlotWidths = 0;
+    let drawnBandWidths = 0;
     let drawnPoleRegions = 0;
 
     const ctx = canvas.getContext("2d");
@@ -537,7 +537,7 @@
       canvas.dataset.segments = "0";
       canvas.dataset.vias = "0";
       canvas.dataset.polePitch = "0";
-      canvas.dataset.slotWidths = "0";
+      canvas.dataset.bandWidths = "0";
       canvas.dataset.poleRegions = "0";
       canvas.dataset.revision = String(drawRevision);
       return;
@@ -712,7 +712,7 @@
       ctx.fillStyle = mag.pole > 0 ? "#f97316" : "#3b82f6";
       // Paint the configured solid width exactly. A fixed 0.5 mm inset here
       // adds an unmodelled gap and moves the visible pole centre away from the
-      // slot-zone anchor.
+      // leg-zone anchor.
       ctx.fillRect(mag.x, g.magnetTop, Math.max(mag.w, 0.0005), 0.003);
     }
     ctx.globalAlpha = 1;
@@ -761,16 +761,16 @@
       );
     }
 
-    // b. Slot-width diagnostics — one bracket per matched (layer, net).
-    if (showSlotWidths) {
+    // b. Band-width diagnostics — one bracket per matched (layer, net).
+    if (showBandWidths) {
       const endTick = 0.0005;
       const labelRaise = endTick + 0.0005;
-      for (const row of slotRows) {
+      for (const row of bandRows) {
         // Honor phase/layer visibility and the one-section window.
         if (!isPhaseVisible(row.phaseIdx) || !isLayerVisible(row.layer))
           continue;
-        if (!slotRowInOneSection(row)) continue;
-        const halfM = Math.max(row.slotM / 2, 0.0004);
+        if (!bandRowInOnePeriod(row)) continue;
+        const halfM = Math.max(row.bandM / 2, 0.0004);
         // Negative margin → red over-budget; ok margin → green; no top-down
         // limit known → amber/grey.
         const strokeColor =
@@ -816,12 +816,12 @@
         const marginText =
           row.marginM === null ? "" : ` · Δ ${formatMarginMm(row.marginM)}`;
         drawWorldCaption(
-          `L${row.layer} ${row.phaseName} ${formatMetresMm(row.slotM)} / ${limitText}${marginText}`,
+          `L${row.layer} ${row.phaseName} ${formatMetresMm(row.bandM)} / ${limitText}${marginText}`,
           row.anchorX,
           row.y + labelRaise,
           strokeColor,
         );
-        drawnSlotWidths += 1;
+        drawnBandWidths += 1;
       }
       ctx.globalAlpha = 1;
     }
@@ -883,7 +883,7 @@
     ctx.moveTo(0, H - 8);
     ctx.lineTo(20, H - 8);
     ctx.stroke();
-    ctx.fillText("active conductor", 26, H - 4);
+    ctx.fillText("active leg", 26, H - 4);
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 2]);
     ctx.beginPath();
@@ -908,7 +908,7 @@
     canvas.dataset.segments = String(drawnSegments);
     canvas.dataset.vias = String(drawnVias);
     canvas.dataset.polePitch = String(showPolePitch && poleRuler ? 1 : 0);
-    canvas.dataset.slotWidths = String(drawnSlotWidths);
+    canvas.dataset.bandWidths = String(drawnBandWidths);
     canvas.dataset.poleRegions = String(drawnPoleRegions);
     canvas.dataset.revision = String(drawRevision);
   }
@@ -932,7 +932,7 @@
     void layerVisibility;
     void showVias;
     void showPolePitch;
-    void showSlotWidths;
+    void showBandWidths;
     void showPoleRegions;
     void poleRegionPhase;
     void visiblePoleRegionZones;
@@ -940,7 +940,7 @@
     void visibleArcs;
     void visibleMagnets;
     void poleRuler;
-    void slotRows;
+    void bandRows;
     void overlayFitBounds;
     void g;
     void frameSize;
@@ -997,7 +997,7 @@
     <div class="flex items-center gap-2">
       <span class="text-xs text-slate-400">
         {coils
-          ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} item${coils.phases.length === 1 ? "" : "s"}`
+          ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} coil group${coils.phases.length === 1 ? "" : "s"}`
           : "no coils yet"}
       </span>
       <button
@@ -1032,7 +1032,7 @@
     ontouchcancel={gestures.handleTouchEnd}
     ondblclick={onInlineDoubleClick}
   >
-    <!-- data-segments / data-vias / data-pole-pitch / data-slot-widths /
+    <!-- data-segments / data-vias / data-pole-pitch / data-band-widths /
          data-pole-regions / data-revision are written imperatively in
          drawInto() (canvas.dataset), NOT bound reactively — see the counter
          comment above. -->
@@ -1085,7 +1085,7 @@
           <div class="flex items-center gap-3 flex-wrap">
             <span class="text-xs text-slate-400">
               {coils
-                ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} item${coils.phases.length === 1 ? "" : "s"}`
+                ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} coil group${coils.phases.length === 1 ? "" : "s"}`
                 : "no coils yet"}
             </span>
             <button
@@ -1193,7 +1193,7 @@
               class="accent-emerald-500"
               aria-label="Show only one repeating section of the pattern"
             />
-            <span>one section</span>
+            <span>one electrical period</span>
           </label>
           <!-- Pole-pitch ruler toggle (only when the sidecar ships a pitch). -->
           {#if hasPolePitchData}
@@ -1215,24 +1215,24 @@
               <span>Pole pitch</span>
             </label>
           {/if}
-          <!-- Slot-width diagnostics toggle (only visible with matched rows). -->
-          {#if hasSlotWidthData}
+          <!-- Band-width diagnostics toggle (only visible with matched rows). -->
+          {#if hasBandWidthData}
             <label
               class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
             >
               <input
                 type="checkbox"
-                bind:checked={showSlotWidths}
+                bind:checked={showBandWidths}
                 class="accent-emerald-500"
-                aria-label="Show slot-width diagnostics"
+                aria-label="Show band-width diagnostics"
               />
               <span
                 class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background-color: #34d399; opacity: {showSlotWidths
+                style="background-color: #34d399; opacity: {showBandWidths
                   ? 1
                   : 0.35}"
               ></span>
-              <span>Slot widths</span>
+              <span>Conductor band widths</span>
             </label>
           {/if}
           <!-- Pole-region zones toggle + phase picker (only when the routing
@@ -1376,10 +1376,10 @@
 
         <!-- Modal note -->
         <p class="text-xs text-slate-500">
-          Solid lines = active conductors. Dashed = end-turns. Magnet poles
+          Solid lines = active legs. Dashed = end-turns. Magnet poles
           overlay along the top edge. Layers are overlaid at true coordinates;
           use the layer toggles to inspect each copper layer. Pole-pitch,
-          slot-width and pole-region annotations come from the
+          band-width and pole-region annotations come from the
           routing-dimensions sidecar (pole-region x boundaries are
           pattern-owned).{#if oneSection}
             <span class="text-amber-300"

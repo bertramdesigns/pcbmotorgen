@@ -2,8 +2,9 @@
   /**
    * MoverPositionControls.svelte — shared mover-position controls for the
    * MotionStore: position number field and the travel slider, plus the live
-   * readout. Motion is continuous (a coreless PCB motor has no discrete
-   * holding-force steps), so there is no snap dropdown to configure.
+   * readout. Motion input is continuous — a coreless motor has no
+   * detent/cogging force. The slider endpoints are stable rest positions
+   * spaced one electrical period P_e apart (fixed-excitation equilibria).
    *
    * Used by the Design reflection (TravelDiagram) and the CoilPreview
    * lightbox so both screens expose identical position controls on the same
@@ -63,8 +64,8 @@
   <HoldingForceChart {config} {motion} />
 
   <div class="mt-1 text-[10px] text-slate-500" aria-live="polite">
-    Position: {motion.clampedPositionMm.toFixed(1)} mm · On PCB:
+    Position: {motion.clampedPositionMm.toFixed(1)} mm · Mover extent:
     <span class="text-slate-300">{bounds.startMm.toFixed(1)} - {bounds.endMm.toFixed(1)} mm</span>
-    · Travel: {motion.offsetFromRestMm.toFixed(1)} / {travelRangeMm.toFixed(1)} mm
+    · Offset from rest: {motion.offsetFromRestMm.toFixed(1)} / {travelRangeMm.toFixed(1)} mm
   </div>
 </div>

@@ -212,7 +212,7 @@
 <div class="rounded-lg bg-slate-800/40 border border-slate-700 p-4">
   <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
     <h3 class="text-sm font-semibold text-slate-200">
-      B-field flux density (X–Z cross-section, Y averaged)
+      Magnetic flux density B (X–Z cross-section, Y averaged)
     </h3>
     <span class="text-xs text-slate-400">
       Alternating poles
@@ -317,7 +317,7 @@
       <!-- remains the primary visual.                                   -->
       <!-- ============================================================ -->
 
-      <!-- Active-area end-stops (stator start / stator end) -->
+      <!-- Copper active-area edges (active area start / active area end) — routed traces extend into the end paddings -->
       <line
         x1={plot.sx(0)}
         y1={PAD_T}
@@ -344,7 +344,7 @@
         class="fill-slate-500"
         style="font-size:8px"
       >
-        Stator start
+        Active area start
       </text>
       <text
         x={plot.sx(geom.active_area_length_m) - 3}
@@ -353,7 +353,7 @@
         class="fill-slate-500"
         style="font-size:8px"
       >
-        Stator end
+        Active area end
       </text>
 
       <!-- PCB top surface (Z = 0) -->

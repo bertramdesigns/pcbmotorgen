@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
   import type {
+    CommutationMode,
     ForceSweepResult,
     FrictionBudgetDto,
     PowerBudgetDto,
@@ -8,6 +9,15 @@
     StackupResultDto,
   } from "../../types";
   import { rippleStatus } from "../../format";
+
+  // Human-readable labels for the raw `CommutationMode` wire values — the UI
+  // must not echo snake_case wire values back to the user.
+  const COMMUTATION_LABELS: Record<CommutationMode, string> = {
+    max_thrust: "Max thrust (FOC)",
+    phase_a_only: "Phase A only",
+  };
+
+  const commutationLabel = (mode: CommutationMode): string => COMMUTATION_LABELS[mode];
 
   let {
     config,
@@ -51,22 +61,22 @@
     Live Metrics
   </h3>
 
-  <!-- Primary force metrics -->
+  <!-- Primary thrust metrics -->
   <div class="grid grid-cols-2 gap-2">
     <div class="rounded-md bg-slate-800/60 border border-slate-700 px-3 py-2">
-      <div class="text-xs text-slate-400">Peak Force</div>
+      <div class="text-xs text-slate-400">Peak Thrust</div>
       <div class="font-mono text-lg text-sky-300">{sweep ? sweep.peak_thrust_n.toFixed(3) : "—"} <span class="text-xs text-slate-500">N</span></div>
     </div>
     <div class="rounded-md bg-slate-800/60 border border-slate-700 px-3 py-2">
-      <div class="text-xs text-slate-400">Mean Force</div>
+      <div class="text-xs text-slate-400">Mean Thrust</div>
       <div class="font-mono text-lg text-emerald-300">{sweep ? sweep.mean_thrust_n.toFixed(3) : "—"} <span class="text-xs text-slate-500">N</span></div>
     </div>
     <div class="rounded-md bg-slate-800/60 border border-slate-700 px-3 py-2">
-      <div class="text-xs text-slate-400">Min Force</div>
+      <div class="text-xs text-slate-400">Min Thrust</div>
       <div class="font-mono text-lg text-rose-300">{sweep ? sweep.min_thrust_n.toFixed(3) : "—"} <span class="text-xs text-slate-500">N</span></div>
     </div>
     <div class="rounded-md bg-slate-800/60 border border-slate-700 px-3 py-2">
-      <div class="text-xs text-slate-400">Force Ripple</div>
+      <div class="text-xs text-slate-400">Thrust Ripple</div>
       <div class="font-mono text-lg {rippleStatus(sweep?.ripple_pct) === 'ok' ? 'text-emerald-300' : rippleStatus(sweep?.ripple_pct) === 'warn' ? 'text-amber-300' : 'text-rose-300'}">
         {sweep ? sweep.ripple_pct.toFixed(1) : "—"} <span class="text-xs text-slate-500">%</span>
       </div>
@@ -75,7 +85,7 @@
 
   <!-- Stacked bar: electromagnetic vs friction vs net usable -->
   <div class="rounded-md bg-slate-800/60 border border-slate-700 px-3 py-3">
-    <div class="text-xs text-slate-400 mb-2">Net Usable Force Margin (F_em − F_friction)</div>
+    <div class="text-xs text-slate-400 mb-2">Net Usable Thrust Margin (F_em − F_friction)</div>
     {#if barSegments}
       <div class="flex h-5 w-full rounded overflow-hidden border border-slate-700">
         <div class="bg-emerald-500" style:width="{barSegments.em.pct}%"></div>
@@ -88,7 +98,7 @@
         <span class="text-sky-300">Net {barSegments.net.val.toFixed(3)} N</span>
       </div>
     {:else}
-      <div class="text-xs text-slate-500">Awaiting force + friction computation…</div>
+      <div class="text-xs text-slate-500">Awaiting thrust + friction computation…</div>
     {/if}
     {#if netUsableN !== null}
       <div class="mt-2 text-sm">
@@ -123,7 +133,7 @@
         <span class="text-slate-300">Bearing: <span class="text-slate-100">{(friction.bearing_friction_n * 1000).toFixed(1)} mN</span></span>
         <span class="text-slate-300">Cable drag: <span class="text-slate-100">{(friction.cable_drag_n * 1000).toFixed(1)} mN</span></span>
         <span class="text-slate-300">Wiper: <span class="text-slate-100">{(friction.wiper_contact_n * 1000).toFixed(1)} mN</span></span>
-        <span class="text-slate-300">Cogging: <span class="text-slate-100">{(friction.cogging_n * 1000).toFixed(1)} mN</span></span>
+        <span class="text-slate-300">Detent (cogging): <span class="text-slate-100">{(friction.cogging_n * 1000).toFixed(1)} mN</span></span>
         <span class="text-slate-300 col-span-2">Total: <span class="text-rose-300">{(friction.total_n * 1000).toFixed(1)} mN</span> · Min drive: <span class="text-amber-300">{(friction.minimum_drive_force_n * 1000).toFixed(1)} mN</span></span>
       </div>
     {:else}
@@ -152,7 +162,7 @@
     {#if stackup}
       <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs font-mono">
         <span class="text-slate-300">Layers: <span class="text-slate-100">{stackup.layer_count}</span></span>
-        <span class="text-slate-300">Est. force: <span class="text-emerald-300">{stackup.estimated_force_n.toFixed(3)} N</span></span>
+        <span class="text-slate-300">Est. thrust: <span class="text-emerald-300">{stackup.estimated_force_n.toFixed(3)} N</span></span>
         <span class="text-slate-300">Via grid: <span class="text-slate-100">{stackup.via_grid_rows}×{stackup.via_grid_cols}</span></span>
         <span class="text-slate-300">R_phase: <span class="text-slate-100">{stackup.estimated_dc_resistance_ohm.toFixed(3)} Ω</span></span>
       </div>
@@ -163,6 +173,6 @@
 
   <!-- Drive config echo -->
   <div class="rounded-md bg-slate-800/40 border border-slate-700 px-3 py-2 text-xs text-slate-400">
-    Drive: {config.commutation} · {config.phases} phase · {config.max_current_a.toFixed(2)} A @ {config.supply_voltage_v.toFixed(1)} V
+    Drive: {commutationLabel(config.commutation)} · {config.phases} phase · {config.max_current_a.toFixed(2)} A @ {config.supply_voltage_v.toFixed(1)} V
   </div>
 </div>

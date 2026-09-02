@@ -22,21 +22,21 @@ export interface Finding {
 /** Structural view of the config fields the validation rules consume. */
 export interface DesignConfigInput {
   travel_mm: number;
-  coil_span_mm: number;
+  mover_span_mm: number;
   magnet_count: number;
   /** X length of one magnet (mm) — the user-facing input. The pole fill
    *  factor is DERIVED from this and the pole pitch inside the rule below. */
   magnet_width_mm: number;
   magnet_gap_mm: number;
-  /** Slot/electrical pitch P_e (mm); the pole pitch is τ_p = P_e / 2. */
-  slot_width_mm: number;
+  /** Electrical pitch P_e (mm); the pole pitch is τp = P_e / 2. */
+  electrical_pitch_mm: number;
   min_space_mm: number;
   magnet_cross_width_mm: number;
   active_area_width_mm: number;
   num_layers: number;
   max_layers: number;
   routing_pattern: string;
-  windings_per_phase: number;
+  strands_per_phase: number;
   min_trace_mm: number;
   peak_force_n: number;
   target_force_n: number;
@@ -53,7 +53,7 @@ export function validateDesign(config: DesignConfigInput): Finding[] {
       level: "error",
       message:
         `Desired center-to-center travel must be positive ` +
-        `(the mover array spans ${config.coil_span_mm.toFixed(1)} mm). ` +
+        `(the mover array spans ${config.mover_span_mm.toFixed(1)} mm). ` +
         `Current travel = ${Number.isFinite(travel) ? travel.toFixed(1) : "invalid"} mm.`,
     });
   }
@@ -66,17 +66,20 @@ export function validateDesign(config: DesignConfigInput): Finding[] {
     });
   }
 
-  if (config.slot_width_mm <= 0 || !Number.isFinite(config.slot_width_mm)) {
+  if (
+    config.electrical_pitch_mm <= 0 ||
+    !Number.isFinite(config.electrical_pitch_mm)
+  ) {
     next.push({
-      id: "slot-width",
+      id: "electrical-pitch",
       level: "error",
-      message: `Slot width must be positive (got ${config.slot_width_mm}).`,
+      message: `Electrical pitch (P_e) must be positive (got ${config.electrical_pitch_mm}).`,
     });
   }
 
-  // Pole fill factor derived from the width input: k = W_m / τ_p with
-  // τ_p = P_e / 2 (the slot width IS the electrical pitch).
-  const polePitchMm = config.slot_width_mm / 2;
+  // Pole fill factor derived from the width input: k = W_m / τp —
+  // the electrical pitch P_e is twice the pole pitch: τp = P_e / 2.
+  const polePitchMm = config.electrical_pitch_mm / 2;
   const k = polePitchMm > 0 ? config.magnet_width_mm / polePitchMm : Number.NaN;
   if (!Number.isFinite(k) || k < 0.5 || k > 1.0) {
     next.push({
@@ -132,9 +135,9 @@ export function validateDesign(config: DesignConfigInput): Finding[] {
     });
   }
 
-  const strandHeight = config.active_area_width_mm / Math.max(config.windings_per_phase, 1);
+  const strandHeight = config.active_area_width_mm / Math.max(config.strands_per_phase, 1);
   const minimumStrandHeight = config.min_trace_mm + config.min_space_mm;
-  if (config.windings_per_phase > 1 && strandHeight < minimumStrandHeight) {
+  if (config.strands_per_phase > 1 && strandHeight < minimumStrandHeight) {
     next.push({
       id: "strand-clearance",
       level: "warning",

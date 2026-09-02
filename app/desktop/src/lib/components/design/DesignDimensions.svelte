@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
   import {
-    slotPitchMm as slotPitchMmFor,
+    phaseBandPitchMm as phaseBandPitchMmFor,
     restOffsetMm as restOffsetMmFor,
   } from "../../geometry";
 
@@ -12,9 +12,9 @@
     measuredTraceLengthMm?: number | null;
   } = $props();
 
-  // Vernier slot-pitch / rest-offset formulas live in lib/geometry.
-  let slotPitchMm = $derived(
-    slotPitchMmFor(config.pole_pitch_mm, config.phases, config.spacing_ratio),
+  // Vernier phase-band pitch / rest-offset formulas live in lib/geometry.
+  let phaseBandPitchMm = $derived(
+    phaseBandPitchMmFor(config.pole_pitch_mm, config.phases, config.spacing_ratio),
   );
   let restOffsetMm = $derived(
     restOffsetMmFor(config.pole_pitch_mm, config.phases, config.spacing_ratio),
@@ -43,7 +43,7 @@
       </dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Copper active region inside the end paddings (coil span + travel)">Active copper region</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Copper active region inside the end paddings (mover span + travel)">Active copper region</dt>
       <dd class="font-mono text-xs text-sky-200">{config.active_area_length_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
@@ -51,16 +51,16 @@
       <dd class="font-mono text-xs text-sky-200">{config.active_area_width_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Coil span">Coil span</dt>
-      <dd class="font-mono text-xs text-sky-200">{config.coil_span_mm.toFixed(1)} mm</dd>
+      <dt class="truncate text-[10px] text-slate-500" title="Mover span (magnet array span)">Mover span</dt>
+      <dd class="font-mono text-xs text-sky-200">{config.mover_span_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
       <dt class="truncate text-[10px] text-slate-500" title="Pole pitch">Pole pitch</dt>
       <dd class="font-mono text-xs text-sky-200">{config.pole_pitch_mm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Vernier-adjusted phase-band pitch (spacing ratio applied)">Vernier slot pitch</dt>
-      <dd class="font-mono text-xs text-sky-200">{slotPitchMm.toFixed(2)} mm</dd>
+      <dt class="truncate text-[10px] text-slate-500" title="Vernier-adjusted phase-band pitch ((pole pitch / phases) × spacing ratio). Not the glossary slot pitch τs = L_stator/N_slots, which coincides only for uniform 1-slot-per-pole-per-phase windings.">Phase-band pitch (Vernier)</dt>
+      <dd class="font-mono text-xs text-sky-200">{phaseBandPitchMm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
       <dt class="truncate text-[10px] text-slate-500" title="Vernier rest offset">Rest offset</dt>

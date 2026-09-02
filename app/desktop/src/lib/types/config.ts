@@ -12,17 +12,17 @@ export interface LinearMotorConfig {
   /** Extra PCB length on each end (m) for end-turn routing. Multi-strand
    *  windings need this so their offset x positions fit. */
   padding_m: number;
-  /** Number of parallel serpentine paths per phase on the same layer
-   *  ("strands", stacked in y). 1 = single-strand; >1 = multi-strand for
-   *  more copper per net. */
-  windings_per_phase: number;
+  /** Number of parallel serpentine paths (strands) per phase on the same
+   *  layer, stacked in y. 1 = single-strand. Distinct from a winding: a
+   *  winding (coil) is one complete conductive loop. */
+  strands_per_phase: number;
 
   magnet_count: number;
   magnet_width_m: number; // travel-axis dimension
   magnet_cross_width_m: number; // across-stator dimension
   magnet_height_m: number;
   magnet_gap_m: number; // derived: pitch - width (kept for clarity)
-  magnet_pitch_m: number; // = magnet_width + magnet_gap
+  magnet_pitch_m: number; // = magnet_width + magnet_gap (= pole pitch τp for the alternating array)
 
   magnet_remanence_t: number;
   magnet_grade: string;
@@ -67,9 +67,10 @@ export interface LinearMotorConfig {
 /** Derived geometry values (compute_config_derived). */
 export interface ConfigDerived {
   pole_pitch_m: number;
-  coil_span_m: number;
+  magnet_array_span_m: number;
   travel_m: number;
-  slot_pitch_m: number;
+  /** Vernier-adjusted phase-band pitch: (pole_pitch/phases) × spacing_ratio. */
+  phase_band_pitch_m: number;
   magnet_gap_m: number;
   min_via_pad_m: number;
   acceleration_force_n: number;
