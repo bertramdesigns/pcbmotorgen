@@ -5,8 +5,10 @@
    *
    * One sine wave per phase: F_p(x) = −sin(2π(x − φ − p·P_e/N)/P_e). For a
    * 3-phase motor that is three waves mutually offset by 120° electrical
-   * (P_e/3 in space); the phase-A wave's zeros sit exactly on the stable
-   * equilibrium rest positions that bound the slider range. Marker dots
+   * (P_e/3 in space); the phase-A wave's zeros sit on the stable
+   * equilibrium rest positions (rest_phase + k·P_e), marked as reference
+   * anchors. The slider endpoints are the span-aware flush travel limits
+   * (kata 5c7r) and generally do NOT coincide with a zero. Marker dots
    * track the current mover centre on every phase wave.
    */
   import type { ConfigStore } from "../../stores/config.svelte";

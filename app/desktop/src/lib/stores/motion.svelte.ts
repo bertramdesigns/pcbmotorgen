@@ -8,23 +8,18 @@
  * The value is the CENTER of the magnet array in ABSOLUTE TRACK coordinates
  * (the routing/domain frame: the copper active area is [0, active_area_length_m],
  * no padding offset) — the same frame every preview draws in. Motion input is
- * continuous: a coreless motor has no detent/cogging force, and the slider
- * endpoints are stable rest positions spaced one electrical period P_e apart
- * (full-step commutation would re-anchor every τp). The RANGE endpoints are
- * physics-derived: they come from the backend
- * travel envelope — the first/last STABLE EQUILIBRIUM rest positions of the
- * array CENTRE under the baseline excitation (IA=+I, IB=0, IC=−I), computed
- * over the MEASURED routed track (kata xb16 spec, mirroring the Rust
- * `travel_envelope_over_slots`): the centre is clamped so the array stays
- * inside the copper active area — centre ∈ [span/2, active_area_length_m −
- * span/2] with the glossary "Mover Span" span = N·τ_p, a
- * range that WIDENS as N shrinks and has the width of the configured free
- * travel — and both endpoints are snapped to the NEAREST point of the rest
- * lattice `x ≡ φ_track (mod P_e)` (ties inward), deviating by ≤ P_e/2 per
- * endpoint so the swept range approximates the configured travel. This is
- * the glossary-normative "first/last stable rest position inside the copper
- * active area"; the pre-xb16 edge rule (leading edge ≥ track start at min,
- * trailing edge ≤ track end at max) is superseded — the clamp bounds the
+ * continuous: a coreless motor has no detent/cogging force. The RANGE
+ * endpoints come from the backend travel envelope — the span-aware FLUSH
+ * limits of the copper active area (kata 5c7r, mirroring the Rust
+ * `travel_envelope_over_slots`): centre ∈ [span/2, active_area_length_m −
+ * span/2] with the glossary "Mover Span" span = N·τ_p, so the array edges
+ * sit exactly on the copper bounds at both endpoints and the swept range
+ * equals the configured free travel EXACTLY. The endpoints are MECHANICAL
+ * LIMITS, NOT stable rest positions — the rests (x ≡ φ (mod P_e)) are
+ * reported by the envelope's rest_phase_m/electrical_period_m and marked on
+ * the holding-force chart; the mover may hold position between rests. The
+ * pre-xb16 edge rule (leading edge ≥ track start at min, trailing edge ≤
+ * track end at max) is superseded by the flush clamp — the clamp bounds the
  * CENTRE, not the array edges. Until an envelope arrives the store falls
  * back to the geometric "array flush inside the copper" range below.
  */
@@ -36,7 +31,7 @@ export class MotionStore {
   /** Raw mover-centre input (mm) before clamping. */
   positionMm = $state(60);
 
-  /** Backend equilibrium envelope (SI, metres); null until fetched. */
+  /** Backend travel envelope (SI, metres); null until fetched. */
   envelope = $state<TravelEnvelopeDto | null>(null);
 
   constructor(private config: ConfigStore) { }
@@ -57,12 +52,12 @@ export class MotionStore {
   });
 
   // --- Geometric fallback bounds ------------------------------------------
-  // Approximates the backend clamp — the array flush inside the copper
-  // active area [0, active_area_length] — WITHOUT the backend nearest-rest
-  // lattice snap. The residual difference is unknowable here without φ
-  // (only the backend envelope carries it), so these bounds are the
-  // UNSNAPPED clamp range and may sit up to P_e/2 per endpoint away from
-  // the true stable rests.
+  // This IS the same flush clamp the backend computes (kata 5c7r):
+  // centre ∈ [span/2, active_area_length − span/2] — array flush inside
+  // the copper active area — so fallback and backend envelope agree on the
+  // limits by construction; only the rest phase (φ, N-dependent) arrives
+  // with the envelope, which the client approximates via fallbackRestPhaseMm
+  // until then.
   private geometricMinMm = $derived.by(() => this.moverSpanMm / 2);
   private geometricMaxMm = $derived.by(() =>
     Math.max(
@@ -72,17 +67,17 @@ export class MotionStore {
   );
 
   /**
-   * Leftmost allowed mover centre: first stable equilibrium rest position
-   * of the array centre inside the copper active area (lattice-snapped,
-   * span-aware — kata xb16).
+   * Leftmost allowed mover centre: the span-aware FLUSH limit of the copper
+   * active area (kata 5c7r) — the array's left edge sits exactly on the
+   * copper bound. A mechanical limit, not a stable rest position.
    */
   moverMinMm = $derived(
     this.envelope ? this.envelope.min_position_m * 1000 : this.geometricMinMm,
   );
   /**
-   * Rightmost allowed mover centre: last stable equilibrium rest position
-   * of the array centre inside the copper active area (lattice-snapped,
-   * span-aware — kata xb16).
+   * Rightmost allowed mover centre: the span-aware FLUSH limit of the copper
+   * active area (kata 5c7r) — the array's right edge sits exactly on the
+   * copper bound. A mechanical limit, not a stable rest position.
    */
   moverMaxMm = $derived.by(() => {
     if (!this.envelope) return this.geometricMaxMm;
@@ -95,7 +90,7 @@ export class MotionStore {
       ? Math.max(this.moverMinMm, Math.min(this.moverMaxMm, this.positionMm))
       : this.moverMinMm,
   );
-  /** Strip shift from the leftmost stable centre (mm): 0 at moverMinMm. */
+  /** Strip shift from the leftmost flush limit (mm): 0 at moverMinMm. */
   offsetFromRestMm = $derived(this.clampedPositionMm - this.moverMinMm);
 
   /**

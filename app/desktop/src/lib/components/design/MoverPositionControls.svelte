@@ -3,8 +3,12 @@
    * MoverPositionControls.svelte — shared mover-position controls for the
    * MotionStore: position number field and the travel slider, plus the live
    * readout. Motion input is continuous — a coreless motor has no
-   * detent/cogging force. The slider endpoints are stable rest positions
-   * spaced one electrical period P_e apart (fixed-excitation equilibria).
+   * detent/cogging force. The slider endpoints are the span-aware FLUSH
+   * travel limits (kata 5c7r): the array edges sit exactly on the copper
+   * active-area bounds at min and max, and the sweep equals the configured
+   * travel exactly. The endpoints are limits, not stable rest positions —
+   * the rests (spaced one electrical period P_e) are marked by the
+   * force-chart zeros below, and the mover may hold position between them.
    *
    * Used by the Design reflection (TravelDiagram) and the CoilPreview
    * lightbox so both screens expose identical position controls on the same

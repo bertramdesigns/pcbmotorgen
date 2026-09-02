@@ -96,39 +96,28 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
 
 /**
  * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`
- * (nearest-snapped, span-aware spec, kata xb16).
+ * (flush, span-aware spec, kata 5c7r).
  *
- * Endpoints are the first/last STABLE REST POSITIONS of the array CENTRE
- * inside the copper active area (glossary "Travel Envelope"), derived in
- * two steps:
- *   1. Span-aware centre clamp — the centre must keep the whole mover
- *      inside copper: centre ∈ [span/2, active_area_length − span/2]
- *      with the glossary "Mover Span" span = N·τ_p (τ_p = P_e/2). The
- *      range WIDENS as N shrinks and has the width of the configured free
- *      travel (travel = active_area_length − span) — the range the slider
- *      must sweep. The copper active area is the WHOLE track [0,
- *      active_area_length]: there is no padding offset (kata hrd8).
- *   2. Nearest-rest lattice snapping — each endpoint snaps to the lattice
- *      point NEAREST its clamp bound on the track-frame rest lattice
- *      `x ≡ φ_track (mod P_e)` with φ_track = φ (copper start 0) and
- *      φ = (P_e/12 + ((N−1)/2)·τ_p) mod P_e (φ is N-dependent), ties
- *      resolving inward. Each endpoint deviates from its clamp bound by at
- *      most P_e/2, so the sweep stays within one P_e of the configured
- *      travel; an endpoint may sit up to P_e/2 OUTSIDE its bound (array
- *      edge overhangs the copper end — the out-hanging magnets see no
- *      conductors). Inward snapping (first rest ≥ bound, last rest ≤
- *      bound) was tried first and rejected: it cut up to 2·P_e from the
- *      sweep — 36% of the configured travel at the app defaults (N=10,
- *      P_e=24 mm: [80, 128] = 48 mm instead of ≈75 mm). Defaults (N=12,
- *      τ_p=6 mm → P_e=12 mm, copper [0,147] mm): the clamp is [36, 111] mm
- *      and φ_track = 10 mm, so min = **34 = 10 + 2·12 mm** and
- *      max = **106 = 10 + 8·12 mm** — a 72 mm sweep against the 75 mm
- *      configured travel. N=4 widens the clamp to [12, 135] mm → 10/130 mm.
- * `rest_phase_m` is unchanged: the TRACK-FRAME lattice phase, so the
- * holding-force chart zeros stay aligned to the stable rests. When the
- * copper is shorter than the mover span, or the clamped range is narrower
- * than one lattice step, max clamps to min — the envelope never inverts,
- * though the array may overhang the copper at that single rest position.
+ * The endpoints are the TRAVEL LIMITS of the array CENTRE: the span-aware
+ * flush clamp that keeps the whole mover inside the copper active area —
+ *   centre ∈ [span/2, active_area_length − span/2]
+ * with the glossary "Mover Span" span = N·τ_p (τ_p = P_e/2). At min the
+ * leading array edge sits exactly on the copper start; at max the trailing
+ * edge sits exactly on the copper end, so the sweep equals the configured
+ * free travel (travel = active_area_length − span) EXACTLY. The copper
+ * active area is the whole track [0, active_area_length]: there is no
+ * padding offset (kata hrd8). The endpoints are limits, NOT stable rest
+ * positions — the rests stay on the x ≡ φ (mod P_e) lattice and are
+ * reported via `rest_phase_m` for the holding-force chart zeros (the
+ * slider may park between rests; a closed-loop drive compensates the
+ * non-zero fixed-excitation force there). History: the endpoints were
+ * rest-snapped under kata xb16 (inward, then nearest snap); both variants
+ * fought the flush geometry and were replaced after field verification.
+ * Defaults (N=12, τ_p=6 mm → P_e=12 mm, copper [0,147] mm): span 72 mm →
+ * **[36, 111] mm**, a 75 mm sweep = the configured travel exactly.
+ * N=4 widens the clamp to [12, 135] mm.
+ * When the copper is shorter than the mover span, max clamps to min —
+ * the envelope never inverts.
  */
 export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
   const P_e = 2 * c.magnet_pitch_m; // electrical period
@@ -146,48 +135,17 @@ export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
   phi %= P_e;
   if (phi < 0) phi += P_e;
   // Copper active area = the whole track [0, active_area_length]; there is
-  // no padding offset (kata hrd8).
-  const copperRegionStart = 0;
-  const copperRegionEnd = c.active_area_length_m;
-  // Track-frame rest phase: every stable rest centre ≡ φ_track (mod P_e).
-  const phaseTrack = (((copperRegionStart + phi) % P_e) + P_e) % P_e;
-  // Span-aware centre clamp: keep the whole array inside the copper.
+  // no padding offset (kata hrd8). Track-frame rest phase: every stable
+  // rest centre ≡ φ_track (mod P_e).
+  const phaseTrack = (phi % P_e + P_e) % P_e;
+  // Span-aware flush clamp: the array edges sit exactly on the copper
+  // bounds at the endpoints (kata 5c7r — no lattice snapping).
   const span = c.magnet_count * tau_p;
-  const lower = copperRegionStart + span / 2;
-  const upper = copperRegionEnd - span / 2;
-  // Nearest-rest lattice snapping with the Rust implementation's float
-  // guards: a mathematically integral quotient nudged to e.g. 3.000…4 must
-  // not step a full period too far.
-  const LATTICE_SNAP_EPS_M = 1e-9;
-  const latticeFloor = (x: number): number => {
-    let p = phaseTrack + Math.floor((x - phaseTrack) / P_e) * P_e;
-    while (p + P_e <= x + LATTICE_SNAP_EPS_M) p += P_e;
-    return p;
-  };
-  const latticeCeil = (x: number): number => {
-    let p = phaseTrack + Math.ceil((x - phaseTrack) / P_e) * P_e;
-    while (p - P_e >= x - LATTICE_SNAP_EPS_M) p -= P_e;
-    return p;
-  };
-  // Closest lattice point to x; an exact tie resolves inward (preferHigher
-  // for the lower endpoint, toward the envelope interior).
-  const latticeNearest = (x: number, preferHigher: boolean): number => {
-    const below = latticeFloor(x);
-    const above = latticeCeil(x);
-    const dBelow = x - below;
-    const dAbove = above - x;
-    if (Math.abs(dAbove - dBelow) <= LATTICE_SNAP_EPS_M) {
-      return preferHigher ? above : below;
-    }
-    return dAbove < dBelow ? above : below;
-  };
-  const min = latticeNearest(lower, true);
-  const max = latticeNearest(upper, false);
-  // Degenerate (copper shorter than the span, or range narrower than one
-  // lattice step): never inverted.
+  const min = span / 2;
+  const max = Math.max(c.active_area_length_m - span / 2, min);
   return {
     min_position_m: min,
-    max_position_m: Math.max(max, min),
+    max_position_m: max,
     rest_phase_m: phaseTrack,
     electrical_period_m: P_e,
   };

@@ -50,7 +50,7 @@ export async function generateCoils(
   return await invoke<CoilPathDto>("generate_coils", { config });
 }
 
-/** Stable rest positions of the mover array centre (see TravelEnvelopeDto). */
+/** Travel limits of the mover array centre (see TravelEnvelopeDto). */
 export async function fetchTravelEnvelope(
   config: LinearMotorConfig,
 ): Promise<TravelEnvelopeDto> {

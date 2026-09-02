@@ -169,16 +169,15 @@ describe("mockCoils", () => {
     expect(restMax - restMin + travelM).toBeCloseTo(0.147);
     // The drawn (pattern-anchored) rest strip starts on the board.
     expect(restMin).toBeGreaterThanOrEqual(0);
-    // Sweeping the strip across the mock ENVELOPE (nearest-snap spec) keeps
-    // it within the domain up to the documented ≤ P_e/2 per-endpoint
-    // overhang (out-hanging magnets see no conductors).
+    // Sweeping the strip across the mock ENVELOPE (flush spec) keeps it
+    // exactly within the domain: leading edge on the copper start at min,
+    // trailing edge on the copper end at max (kata 5c7r).
     const env = mockTravelEnvelope(c);
     const spanM = restMax - restMin;
     const stripStartAtMin = env.min_position_m - spanM / 2;
     const stripEndAtMax = env.max_position_m + spanM / 2;
-    const halfPeriod = 2 * c.magnet_pitch_m / 2;
-    expect(stripStartAtMin).toBeGreaterThanOrEqual(-halfPeriod);
-    expect(stripEndAtMax).toBeLessThanOrEqual(g.contentBox.maxX + halfPeriod);
+    expect(stripStartAtMin).toBeGreaterThanOrEqual(0);
+    expect(stripEndAtMax).toBeLessThanOrEqual(g.contentBox.maxX);
   });
 });
 
@@ -282,59 +281,54 @@ describe("mockBFieldGrid", () => {
 describe("mockTravelEnvelope", () => {
   // PRODUCT REFERENCE PINS — if min or max move, these tests fail.
   //
-  // Nearest-snapped, span-aware convention (kata xb16, mirroring the Rust
-  // `travel_envelope_over_slots`): endpoints are the first/last stable rest
-  // positions of the array CENTRE inside copper — centre clamp
-  // [span/2, active − span/2] with span = N·τ_p (the copper active area is
-  // the whole track [0, active]: no padding, kata hrd8), each endpoint
-  // snapped to the NEAREST point on x ≡ φ_track (mod P_e) (ties inward),
-  // deviating by ≤ P_e/2 per endpoint so the sweep approximates the
-  // configured travel. Endpoints therefore DEPEND on N (they widen as N
-  // shrinks); rest_phase_m is the track-frame phase φ mod P_e.
-  it("defaults (N=12, P_e=12 mm, copper [0,147]) span 34 → 106 mm", () => {
+  // Flush, span-aware convention (kata 5c7r, mirroring the Rust
+  // `travel_envelope_over_slots`): the endpoints are the TRAVEL LIMITS of
+  // the array centre — the flush clamp [span/2, active − span/2] with
+  // span = N·τ_p (the copper active area is the whole track [0, active]:
+  // no padding, kata hrd8). The array edges sit exactly on the copper
+  // bounds at the endpoints, so the sweep equals the configured travel
+  // EXACTLY. The endpoints are limits, NOT rest positions — rest_phase_m
+  // (φ mod P_e) still reports where the stable rests live. Endpoints
+  // DEPEND on N (they widen as N shrinks).
+  it("defaults (N=12, P_e=12 mm, copper [0,147]) flush limits 36 → 111 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
     expect(env.electrical_period_m).toBeCloseTo(0.012, 12);
-    // φ_track = 10 mm lattice: clamp [36, 111] mm → min = nearest to 36 =
-    // 10 + 2·12 = 34 mm (2 mm away vs 46 at 10 mm), max = 10 + 8·12 =
-    // 106 mm (5 mm away vs 118 at 7 mm). Sweep 72 mm vs travel 75 mm.
-    expect(env.min_position_m).toBeCloseTo(0.034, 12);
-    expect(env.max_position_m).toBeCloseTo(0.106, 12);
+    // span = 72 mm → [36, 111] mm: strip 0–72 mm at min, 75–147 mm at
+    // max; sweep 75 mm = the configured travel exactly.
+    expect(env.min_position_m).toBeCloseTo(0.036, 12);
+    expect(env.max_position_m).toBeCloseTo(0.111, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
   });
 
-  it("N=4 widens the envelope to 10 → 130 mm on the same φ_track = 10 mm lattice", () => {
+  it("N=4 widens the flush limits to 12 → 135 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
-    // Clamp [12, 135] mm → min = nearest to 12 = 10 + 0·12 = 10 mm,
-    // max = 10 + 10·12 = 130 mm.
-    expect(env.min_position_m).toBeCloseTo(0.010, 12);
-    expect(env.max_position_m).toBeCloseTo(0.130, 12);
+    // span = 24 mm → [12, 135] mm.
+    expect(env.min_position_m).toBeCloseTo(0.012, 12);
+    expect(env.max_position_m).toBeCloseTo(0.135, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
   });
 
-  it("N=6 endpoints 16 → 124 mm; track-frame phase φ mod 12 = 4 mm", () => {
+  it("N=6 flush limits 18 → 129 mm; rest phase φ mod 12 = 4 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
-    // φ_track = 4 mm lattice; clamp [18, 129] mm → min = 4 + 1·12 = 16 mm,
-    // max = 4 + 10·12 = 124 mm.
-    expect(env.min_position_m).toBeCloseTo(0.016, 12);
-    expect(env.max_position_m).toBeCloseTo(0.124, 12);
+    // span = 36 mm → [18, 129] mm.
+    expect(env.min_position_m).toBeCloseTo(0.018, 12);
+    expect(env.max_position_m).toBeCloseTo(0.129, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
   });
 
   it("clamps max to min when the copper region cannot host the envelope", () => {
     // Copper [0, 10] mm is far shorter than the N=24 span (144 mm): the
-    // clamped centre range [72, −34] mm is inverted, so both endpoints
-    // snap to min = nearest φ_track = 10 mm lattice point to 72 mm
-    // (70 mm — 2 mm away vs 82 at 10 mm).
+    // flush clamp [72, −34] mm inverts → max clamps to min (72 mm).
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
     );
-    expect(env.min_position_m).toBeCloseTo(0.070, 12);
+    expect(env.min_position_m).toBeCloseTo(0.072, 12);
     expect(env.max_position_m).toBeCloseTo(env.min_position_m, 12);
   });
 });
