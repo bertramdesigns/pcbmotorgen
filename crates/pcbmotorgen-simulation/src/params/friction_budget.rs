@@ -11,9 +11,9 @@ pub struct FrictionBudget {
     pub cable_drag_n: f64,
     #[serde(default)]
     pub wiper_contact_n: f64,
-    /// Conservative friction-budget placeholder; physical detent (cogging)
-    /// force is zero for coreless/slotless topologies (glossary). The app
-    /// path overrides cogging_n to 0.
+    /// Detent (cogging) force; always 0 from the estimators — detent is zero
+    /// for the coreless/slotless topologies this crate models (glossary).
+    /// Nonzero values only enter via an explicitly constructed budget.
     #[serde(default)]
     pub cogging_n: f64,
 }

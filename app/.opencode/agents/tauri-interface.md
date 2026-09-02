@@ -4,9 +4,9 @@ description: Frontend, Backend, and Tauri IPC orchestrator.
 permission:
   edit:
     "*": "deny"
-    "app/src-tauri/**/*": "allow"
-    "app/src-tauri/**": "allow"
-    "app/src/lib/**/*": "allow"
+    "app/desktop/src-tauri/**/*": "allow"
+    "app/desktop/src-tauri/**": "allow"
+    "app/desktop/src/lib/**/*": "allow"
     "Cargo.toml": "allow"
     "crates/**": "allow"
 ---

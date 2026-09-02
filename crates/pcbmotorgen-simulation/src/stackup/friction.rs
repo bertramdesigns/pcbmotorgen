@@ -71,21 +71,18 @@ impl FrictionEstimator {
         };
         let cable_fraction = 0.20;
         let wiper_fraction = if self.has_wiper_contact { 0.10 } else { 0.0 };
-        // The 5% cogging allocation is a conservative friction-budget
-        // placeholder; physical detent (cogging) force is zero for
-        // coreless/slotless topologies (glossary). The app path overrides
-        // cogging_n to 0.
-        let cogging_fraction = 0.05;
-
-        let total_fraction =
-            bearing_fraction + cable_fraction + wiper_fraction + cogging_fraction;
+        // No cogging allocation: physical detent (cogging) force is zero for
+        // coreless/slotless topologies (glossary), the only topology this
+        // crate models. Callers that need a nonzero detent component can set
+        // `FrictionEstimator::cogging_n` and use `estimate()` instead.
+        let total_fraction = bearing_fraction + cable_fraction + wiper_fraction;
         let sf = total / total_fraction;
 
         FrictionBudget {
             bearing_friction_n: bearing_fraction * sf,
             cable_drag_n: cable_fraction * sf,
             wiper_contact_n: wiper_fraction * sf,
-            cogging_n: cogging_fraction * sf,
+            cogging_n: 0.0,
         }
     }
 
@@ -181,6 +178,22 @@ mod tests {
         let est = FrictionEstimator::default();
         let fb = est.estimate_for_config(&cfg);
         assert!((fb.total_n() - 0.0).abs() < 1e-12);
+    }
+
+    /// kata zt1r: the 5% cogging allocation is removed — the split covers
+    /// bearing + cable + wiper exactly and cogging is always zero
+    /// (detent force is zero for coreless topologies, glossary).
+    #[test]
+    fn test_estimate_for_config_no_cogging_allocation() {
+        let mut cfg = default_config();
+        cfg.friction_n = 1.0;
+        let est = FrictionEstimator::default(); // PTFE-lined, no wiper
+        let fb = est.estimate_for_config(&cfg);
+        assert!((fb.cogging_n - 0.0).abs() < 1e-12);
+        // PTFE: 0.55 bearing / 0.20 cable split over the 0.75 total fraction.
+        assert!((fb.bearing_friction_n - 0.55 / 0.75).abs() < 1e-12);
+        assert!((fb.cable_drag_n - 0.20 / 0.75).abs() < 1e-12);
+        assert!((fb.total_n() - 1.0).abs() < 1e-12);
     }
 
     #[test]

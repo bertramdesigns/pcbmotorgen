@@ -5,8 +5,8 @@ description: Specialized Svelte 5 code editor. MUST BE USED PROACTIVELY when cre
 permission:
   edit:
     "*": "deny"
-    "app/src": "allow"
-    "app/src/**": "allow" # Svelte frontend (incl. top-level files like App.svelte)
+    "app/desktop/src": "allow"
+    "app/desktop/src/**": "allow" # Svelte frontend (incl. top-level files like App.svelte)
     "/tmp/**/*": "allow" # Temporary files for Svelte MCP server
 ---
 
