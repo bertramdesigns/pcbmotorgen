@@ -40,17 +40,27 @@ impl PowerEstimator {
         let r_per_m = cu_resistance_per_length(trace_width_m, cu_thickness_m, RHO_CU);
         let r_phase = r_per_m * total_length_m;
 
-        // NOTE: uses the peak current directly (I_peak²), conservative by 2×
-        // vs the glossary definition P_loss = I_rms²·R_phase with
-        // I_rms = I_peak/√2 for sinusoidal drive. Planned correction — do not
-        // silently change.
-        let i_cont = config.max_current_a;
-        let p_cont = config.phases as f64 * i_cont * i_cont * r_phase;
+        // CONTINUOUS (thermal) chain — RMS-referenced.
+        //
+        // Per the glossary ("Thermal Resistance & Power Dissipation"):
+        // P_loss = I_rms² · R_phase with I_rms = I_peak/√2 for sinusoidal
+        // drive. `max_current_a` is the PEAK phase current, so continuous
+        // loss (and the ΔT it feeds) uses the RMS value. (The old
+        // peak-referenced model overestimated continuous loss and ΔT by 2×.)
+        let i_rms = config.max_current_a / std::f64::consts::SQRT_2;
+        let p_cont = config.phases as f64 * i_rms * i_rms * r_phase;
 
+        // BURST (capacitor sizing) chain — PEAK-referenced.
+        //
+        // The burst is a short transient (~T_BURST_S) at full instantaneous
+        // current, so it must use the PEAK current (not I_rms); this keeps
+        // the burst loss and the bulk-capacitor sizing physically correct.
+        // `i_burst` derives from `config.max_current_a` (peak), scaled by the
+        // burst/continuous force ratio.
         let i_burst = if config.target_force_n > 0.0 {
-            i_cont * (config.peak_force_n / config.target_force_n)
+            config.max_current_a * (config.peak_force_n / config.target_force_n)
         } else {
-            i_cont
+            config.max_current_a
         };
         let p_burst = config.phases as f64 * i_burst * i_burst * r_phase;
 
@@ -64,7 +74,9 @@ impl PowerEstimator {
         };
 
         let p_mech = config.target_force_n * V_RATED_M_S;
-        let p_elec = config.supply_voltage_v * i_cont;
+        // Efficiency chain at the continuous (rated) operating point uses
+        // the RMS current — same sinusoidal-average reference as p_cont.
+        let p_elec = config.supply_voltage_v * i_rms;
         let efficiency = if p_elec > 0.0 {
             (p_mech / p_elec * 100.0).min(100.0)
         } else {
@@ -184,8 +196,64 @@ mod tests {
         let cfg = default_config();
         let est = PowerEstimator::default();
         let pb = est.estimate(&cfg, None);
-        // peak_force = 1.0, target = 0.5 → I_burst = 2×I_cont → P_burst = 4×P_cont
+        // peak_force = 1.0, target = 0.5 → I_burst = 2×I_peak → P_burst > P_cont
         assert!(pb.burst_power_w > pb.continuous_power_w);
+    }
+
+    /// Quantitative vector for the RMS continuous-power model (kata e23n).
+    ///
+    /// With `default_config()` (max_current_a = 1.0 A PEAK, phases = 3):
+    /// - continuous loss is RMS-referenced: P_cont = phases·(I_peak/√2)²·R,
+    ///   i.e. exactly HALF of the old peak-referenced phases·1²·R.
+    /// - burst loss stays PEAK-referenced: i_burst = 1.0·(1.0/0.5) = 2 A peak,
+    ///   so P_burst = 3·4·R while P_cont = 3·0.5·R → ratio 8 (not 4).
+    /// - ΔT = P_cont · R_thermal (15 °C/W).
+    #[test]
+    fn test_rms_continuous_power_quantitative() {
+        let cfg = default_config();
+        let est = PowerEstimator::default();
+        let pb = est.estimate(&cfg, None);
+        let eps = 1e-12;
+
+        let r = pb.phase_resistance_ohm;
+        let i_rms = cfg.max_current_a / std::f64::consts::SQRT_2;
+
+        // P_cont = phases · I_rms² · R_phase — exactly half the peak-referenced value.
+        let expected_cont = cfg.phases as f64 * i_rms * i_rms * r;
+        assert!(
+            (pb.continuous_power_w - expected_cont).abs() < eps,
+            "continuous_power_w {} != expected {expected_cont}",
+            pb.continuous_power_w
+        );
+        let peak_referenced = cfg.phases as f64 * 1.0 * 1.0 * r;
+        assert!(
+            (pb.continuous_power_w * 2.0 - peak_referenced).abs() < eps,
+            "P_cont must be exactly half of the peak-referenced value"
+        );
+
+        // P_burst stays peak-referenced: i_burst = I_peak·(peak_force/target_force).
+        let i_burst = cfg.max_current_a * (cfg.peak_force_n / cfg.target_force_n);
+        let expected_burst = cfg.phases as f64 * i_burst * i_burst * r;
+        assert!(
+            (pb.burst_power_w - expected_burst).abs() < eps,
+            "burst_power_w {} != expected {expected_burst}",
+            pb.burst_power_w
+        );
+
+        // Burst/continuous ratio reflects the peak reference: (2²)/( (1/√2)² ) = 8, not 4.
+        let ratio = pb.burst_power_w / pb.continuous_power_w;
+        assert!(
+            (ratio - 8.0).abs() < 1e-9,
+            "burst/continuous ratio {ratio} must be 8 (peak-referenced burst), not 4"
+        );
+
+        // ΔT = P_cont · R_thermal_c_per_w.
+        assert!(
+            (pb.temperature_rise_c - pb.continuous_power_w * 15.0).abs() < eps,
+            "temperature_rise_c {} != P_cont·15.0 = {}",
+            pb.temperature_rise_c,
+            pb.continuous_power_w * 15.0
+        );
     }
 
     #[test]
