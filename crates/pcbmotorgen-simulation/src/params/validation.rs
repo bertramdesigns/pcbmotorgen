@@ -170,12 +170,6 @@ impl SimulationInput {
                 self.pcb_thickness_m
             )));
         }
-        if self.padding_m < 0.0 {
-            return Err(SimulationError(format!(
-                "padding_m must be ≥ 0 (no negative padding), got {}",
-                self.padding_m
-            )));
-        }
         if self.strands_per_phase < 1 {
             return Err(SimulationError(format!(
                 "strands_per_phase must be ≥ 1, got {}",

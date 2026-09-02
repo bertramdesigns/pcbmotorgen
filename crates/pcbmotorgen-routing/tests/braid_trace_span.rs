@@ -1,15 +1,16 @@
 //! Pins the infinity braid's ACTUAL trace X-extent for the app's reference
 //! defaults. The braid routes whole diamond periods after reserving the
 //! phase/strand interleave step, so the routed span is intentionally SHORTER
-//! than the nominal routing domain (active area + 2 × padding) by up to one
-//! period of slack at the right-hand end. Consumers (desktop previews,
-//! readouts) must therefore measure the returned segments instead of
-//! trusting the configured domain — this test documents the expected drift.
+//! than the nominal routing domain (which equals the active area — there is
+//! no end padding) by up to one period of slack at the right-hand end.
+//! Consumers (desktop previews, readouts) must therefore measure the
+//! returned segments instead of trusting the configured domain — this test
+//! documents the expected drift.
 
 use pcbmotorgen_routing::{generate_routing_report, RoutingContext};
 use std::collections::HashMap;
 
-/// App reference defaults: 147 mm active area, 30 mm end paddings,
+/// App reference defaults: 147 mm active area (the whole routing domain),
 /// τ_p = 6 mm pole pitch, 72 mm magnet-array span, 3 phases, 4 layers.
 fn reference_context() -> RoutingContext {
     RoutingContext {
@@ -19,7 +20,6 @@ fn reference_context() -> RoutingContext {
         phases: 3,
         min_trace_mm: 0.127,
         min_space_mm: 0.127,
-        padding_mm: 30.0,
         expects_continuous: true,
         params: HashMap::new(), // pattern defaults (num_strands = 5; 2 is only the minimum)
         magnet_pitch_mm: Some(6.0),
@@ -51,10 +51,10 @@ fn braid_span_is_shorter_than_the_nominal_domain_by_sub_period_slack() {
         .iter()
         .map(|s| s.start.x.max(s.end.x))
         .fold(f64::NEG_INFINITY, f64::max);
-    let domain = 147.0 + 2.0 * 30.0; // 207 mm nominal
+    let domain = 147.0; // the active area IS the routing domain
     let span = max_x - 0.0;
-    // Measured 203.6 mm for the reference defaults: the last partial period
-    // (207 is not a whole multiple of the pitched+interleave unit) is left
+    // Measured 143.6 mm for the reference defaults: the last partial period
+    // (147 is not a whole multiple of the pitched+interleave unit) is left
     // unrouted. Pin with a tolerant band so unrelated geometry churn does
     // not flake, but catch accidental full-domain fills or large losses.
     assert!(

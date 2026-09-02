@@ -6,8 +6,8 @@
  * position in one place moves the magnet overlay in the other.
  *
  * The value is the CENTER of the magnet array in ABSOLUTE TRACK coordinates
- * (the routing/domain frame: routed traces start at ≈ 0, copper begins one
- * end-padding in) — the same frame every preview draws in. Motion input is
+ * (the routing/domain frame: the copper active area is [0, active_area_length_m],
+ * no padding offset) — the same frame every preview draws in. Motion input is
  * continuous: a coreless motor has no detent/cogging force, and the slider
  * endpoints are stable rest positions spaced one electrical period P_e apart
  * (full-step commutation would re-anchor every τp). The RANGE endpoints are
@@ -16,8 +16,8 @@
  * array CENTRE under the baseline excitation (IA=+I, IB=0, IC=−I), computed
  * over the MEASURED routed track (kata xb16 spec, mirroring the Rust
  * `travel_envelope_over_slots`): the centre is clamped so the array stays
- * inside the copper active area — centre ∈ [copper_start + span/2,
- * copper_end − span/2] with the glossary "Mover Span" span = N·τ_p, a
+ * inside the copper active area — centre ∈ [span/2, active_area_length_m −
+ * span/2] with the glossary "Mover Span" span = N·τ_p, a
  * range that WIDENS as N shrinks and has the width of the configured free
  * travel — and both endpoints are snapped to the NEAREST point of the rest
  * lattice `x ≡ φ_track (mod P_e)` (ties inward), deviating by ≤ P_e/2 per
@@ -57,23 +57,17 @@ export class MotionStore {
   });
 
   // --- Geometric fallback bounds ------------------------------------------
-  // Approximates the backend clamp of the nearest-snapped travel envelope
-  // (kata xb16): centre ∈ [copper_start + span/2, copper_end − span/2] —
-  // the array flush inside the copper active area. The backend additionally
-  // snaps each endpoint to the NEAREST rest-lattice point (≤ P_e/2
-  // deviation per endpoint); that residual difference is unknowable here
-  // without φ (φ_track is N-dependent and only the backend envelope carries
-  // it), so these bounds are the UNSNAPPED clamp range and may sit up to
-  // P_e/2 per endpoint away from the true stable rests.
-  private geometricMinMm = $derived.by(
-    () => this.config.padding_mm + this.moverSpanMm / 2,
-  );
+  // Approximates the backend clamp — the array flush inside the copper
+  // active area [0, active_area_length] — WITHOUT the backend nearest-rest
+  // lattice snap. The residual difference is unknowable here without φ
+  // (only the backend envelope carries it), so these bounds are the
+  // UNSNAPPED clamp range and may sit up to P_e/2 per endpoint away from
+  // the true stable rests.
+  private geometricMinMm = $derived.by(() => this.moverSpanMm / 2);
   private geometricMaxMm = $derived.by(() =>
     Math.max(
       this.geometricMinMm,
-      this.config.padding_mm +
-        this.config.active_area_length_mm -
-        this.moverSpanMm / 2,
+      this.config.active_area_length_mm - this.moverSpanMm / 2,
     ),
   );
 

@@ -479,7 +479,7 @@ describe("computeOverlayFitBounds", () => {
     expect(bounds.maxX).toBeGreaterThan(base.maxX);
   });
 
-  it("expands the fit to cover pole-region zones reaching into padding", () => {
+  it("expands the fit to cover pole-region zones poking past the nominal domain", () => {
     const zones = computePoleRegionZones(poleRegionsFixture());
     const zoneBox = computePoleRegionBounds(zones, 0.018, 0.02)!;
     expect(zoneBox).not.toBeNull();
@@ -710,8 +710,8 @@ describe("traceSpanXM", () => {
     const coils = mockCoils(config.toIpc());
     const span = traceSpanXM(coils);
     expect(span).not.toBeNull();
-    // Traces tile the full routing domain: active area + 2 × padding
-    // (147 + 2 × 30 = 207 mm) — exactly config.trace_total_length_mm.
+    // Traces tile the routing domain, which equals the active area (no end
+    // padding: 147 mm) — exactly config.trace_total_length_mm.
     expect((span![1] - span![0]) * 1000).toBeCloseTo(config.trace_total_length_mm, 3);
   });
 
@@ -727,7 +727,7 @@ describe("measureTrace", () => {
     const config = new ConfigStore();
     const m = measureTrace(mockCoils(config.toIpc()), config);
     expect(m).not.toBeNull();
-    expect(m!.traceLengthMm).toBeCloseTo(207, 3);
+    expect(m!.traceLengthMm).toBeCloseTo(147, 3);
     expect(m!.traceStartMm).toBeCloseTo(0, 6);
   });
 

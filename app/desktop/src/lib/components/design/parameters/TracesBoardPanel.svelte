@@ -13,22 +13,6 @@
   </h4>
 
   <div class="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
-    <label class="min-w-0" title="Extra board length reserved for end-turn routing.">
-      <span class="flex items-center justify-between gap-2">
-        <span class="min-w-0 truncate text-xs text-slate-300">Routing padding (mm)</span>
-        <NumberField
-          id="routing-padding"
-          value={config.padding_mm}
-          min={0}
-          max={400}
-          step={0.5}
-          ariaLabel="Routing padding (mm)"
-          class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
-          onCommit={(value) => (config.padding_mm = value)}
-        />
-      </span>
-    </label>
-
     <label class="min-w-0" title="Parallel strands per phase — number of parallel serpentine paths per phase, stacked across the board width.">
       <span class="flex items-center justify-between gap-2">
         <span class="min-w-0 truncate text-xs text-slate-300">Strands per phase</span>

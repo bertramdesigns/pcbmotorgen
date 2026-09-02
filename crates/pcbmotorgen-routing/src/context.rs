@@ -26,8 +26,6 @@ pub struct RoutingContext {
     pub min_trace_mm: f64,
     /// Minimum trace-to-trace clearance [mm].
     pub min_space_mm: f64,
-    /// Extra PCB length on each end of the active area for routing [mm].
-    pub padding_mm: f64,
     /// Whether the pattern declares that its conductors are continuous (end→
     /// start connect within a tolerance) so the validator checks continuity.
     pub expects_continuous: bool,

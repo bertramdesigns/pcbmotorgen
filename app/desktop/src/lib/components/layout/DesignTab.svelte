@@ -49,9 +49,9 @@
             />
           </span>
           <span class="mt-1 block text-[10px] text-slate-500">
-            PCB trace total length follows: mover span {config.mover_span_mm.toFixed(1)} mm + travel
-            + 2 × {config.padding_mm.toFixed(0)} mm padding = {config.trace_total_length_mm.toFixed(1)} mm
-            (the routed traces' first-to-last X extent).
+            PCB trace total length follows: mover span {config.mover_span_mm.toFixed(1)} mm + travel =
+            {config.trace_total_length_mm.toFixed(1)} mm (the routed traces' first-to-last X extent;
+            end turns are part of the braid pattern).
           </span>
         </label>
 

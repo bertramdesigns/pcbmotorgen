@@ -9,9 +9,6 @@ export interface LinearMotorConfig {
   active_area_length_m: number;
   board_width_m: number;
   pcb_thickness_m: number;
-  /** Extra PCB length on each end (m) for end-turn routing. Multi-strand
-   *  windings need this so their offset x positions fit. */
-  padding_m: number;
   /** Number of parallel serpentine paths (strands) per phase on the same
    *  layer, stacked in y. 1 = single-strand. Distinct from a winding: a
    *  winding (coil) is one complete conductive loop. */

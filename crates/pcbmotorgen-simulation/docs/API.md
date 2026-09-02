@@ -90,7 +90,6 @@ pub struct SimulationInput {
     pub board_width_m: f64,             // across-travel PCB dimension [m]
     pub pcb_thickness_m: f64,           // substrate thickness [m]
     pub air_gap_m: f64,                 // magnet face → copper clearance [m]
-    pub padding_m: f64,                 // extra PCB length per end [m] (serde default 0)
     pub strands_per_phase: u32,         // parallel strands (serpentine paths) per phase
                                         // (default 1; legacy key `windings_per_phase`
                                         // accepted as a serde alias)
@@ -137,7 +136,7 @@ Validation rejects (first error wins): non-positive or non-3-tuple magnet dims,
 current / voltage / trace / space / via sizes, negative air gap, odd or < 2
 layer counts, `num_layers > max_layers`, non-positive drive /
 temperature / active-length / board-width bounds, `active_area_length ≤ the
-magnet array span` (zero travel), negative padding, `strands_per_phase < 1` or
+magnet array span` (zero travel), `strands_per_phase < 1` or
 footprint violation, and the force / mass / accel / capacitor targets.
 
 ### 3.2 Serde defaults (backward compatibility)
@@ -145,7 +144,6 @@ footprint violation, and the force / mass / accel / capacitor targets.
 - `num_layers` defaults to **4** when absent (legacy JSON payloads).
 - `strands_per_phase` defaults to **1** when absent (historical single-strand);
   the legacy key `windings_per_phase` is accepted as a serde alias.
-- `padding_m` defaults to `0.0`.
 
 ### 3.3 Derived-geometry accessors
 
@@ -614,11 +612,12 @@ two steps:
   first and rejected: it can cut up to `2·P_e` from the swept range — 36%
   of the configured travel at the app defaults — leaving the mover unable
   to reach the copper ends. An endpoint up to `P_e/2` outside its clamp
-  bound means the array edge may overhang the copper into the end-turn
-  padding by at most `P_e/2`.
-- Defaults (N = 12, P_e = 12 mm, copper region [30, 177] mm in track
-  coords): φ_track = 4 mm, span = 72 mm → **64 → 136 mm**, a 72 mm sweep
-  against the 75 mm configured travel (N = 4 gives 40 → 160 mm on the same
+  bound means the array edge may overhang the copper end by at most
+  `P_e/2` (the out-hanging magnets see no conductors and contribute no
+  force; there is no end padding — kata hrd8 removed it).
+- Defaults (N = 12, P_e = 12 mm, copper region [0, 147] mm in track
+  coords): φ_track = 10 mm, span = 72 mm → **34 → 106 mm**, a 72 mm sweep
+  against the 75 mm configured travel (N = 4 gives 10 → 130 mm on the same
   copper and period).
 - Degenerate (copper shorter than the span, or a clamped range narrower
   than one lattice step): `max` clamps to `min`; the envelope never

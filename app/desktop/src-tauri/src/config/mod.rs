@@ -82,15 +82,6 @@ pub struct LinearMotorConfig {
     pub pcb_thickness_m: f64,
     /// Magnet face to PCB copper clearance [m].
     pub air_gap_m: f64,
-    /// Extra PCB length added BEYOND `active_area_length_m` on each end
-    /// (in the travel direction) to give the end-turn routing room.
-    /// Multi-strand coils need extra x range to fit their parallel
-    /// paths without overlap; without padding the strands collide at
-    /// the y-boundaries. Default 0.0 (no padding; uses the active area
-    /// only). Round 9 — see `docs/adr/0008-phase-layer-round-robin-assignment.md`
-    /// and the new "padding" section in `WaveWindingGenerator::generate_phase`.
-    #[serde(default)]
-    pub padding_m: f64,
     /// Number of parallel serpentine paths per phase on the same layer
     /// ("strands", stacked in the y direction within the board_width).
     /// Each strand uses `board_width_m / strands_per_phase` of the
@@ -101,11 +92,11 @@ pub struct LinearMotorConfig {
     ///
     /// Round 9 motivation: with 1 strand per phase, the user's 3-phase /
     /// 4-layer / 195 mm board only had 33 segments per phase, 132
-    /// total. With `strands_per_phase = 2` and `padding_m = 30 mm` the
-    /// same config produces 66 segments per phase × 3 phases = 198
-    /// segments (50% more copper per phase), with the end-turns routed
-    /// through the padding area and the two strands interleaved so
-    /// they don't cross each other.
+    /// total. With `strands_per_phase = 2` the same config produces 66
+    /// segments per phase × 3 phases = 198 segments (50% more copper per
+    /// phase), with the two strands interleaved so they don't cross each
+    /// other and the end turns routed within the active area (the braid's
+    /// end turns are part of the pattern — there is no end padding).
     #[serde(default = "default_strands_per_phase")]
     pub strands_per_phase: u32,
 
@@ -190,17 +181,13 @@ impl Default for LinearMotorConfig {
             board_width_m: mm(20.0),
             pcb_thickness_m: 0.0016,
             air_gap_m: mm(0.5),
-            // Round 9: padding + multi-strand. These are the new
-            // defaults that the production code path uses for the
-            // MagneticFader reference design. With
-            // `strands_per_phase = 2` and `padding_m = 30 mm`:
+            // Round 9: multi-strand defaults that the production code
+            // path uses for the MagneticFader reference design. With
+            // `strands_per_phase = 2`:
             //
             // - Each phase gets 2 parallel serpentine paths on its
             //   assigned layer (stacked in y, interleaved in x by
             //   `phase_band_pitch / 2`).
-            // - The 30 mm padding gives the strands' offset x positions
-            //   extra room at the ends of the active area for
-            //   routing.
             // - The multi-strand design is single-layer per phase, so
             //   no inter-layer connections, no through-vias, no
             //   buried vias — directly addresses the Bug 17 through-via
@@ -209,7 +196,6 @@ impl Default for LinearMotorConfig {
             // Tests that exercise the single-strand case (e.g. the
             // Round 8 regression tests) override these fields
             // explicitly to keep their assertions stable.
-            padding_m: 0.030,
             strands_per_phase: 2,
             routing_pattern: "infinity-braid".to_string(),
             routing_params: std::collections::HashMap::new(),

@@ -118,9 +118,9 @@ export interface TraceMeasure {
 /**
  * Measure what the routing backend ACTUALLY returned: the trace X extent.
  * The braid floors whole periods, so the measured span is intentionally
- * shorter than the nominal domain (active + 2 × padding) by up to one
- * period — previews and readouts must use THIS, not the configured numbers.
- * Null when no payload exists.
+ * shorter than the nominal domain (the active area, which IS the routing
+ * domain) by up to one period — previews and readouts must use THIS, not
+ * the configured numbers. Null when no payload exists.
  */
 export function measureTrace(
   coils: CoilPathDto | null,
@@ -173,7 +173,7 @@ export function computePreviewGeometry(
     0.001,
   );
   // Fit the painted solids themselves. Do not include synthetic half-gap
-  // padding at either end: that shifts the apparent first-magnet position
+  // margins at either end: that shifts the apparent first-magnet position
   // when the camera is reset, especially for a sidecar-aligned array.
   const magnetStartX = magnets[0]?.x ?? 0;
   const lastMagnet = magnets[magnets.length - 1];
@@ -270,8 +270,8 @@ export function computeMagnetStartX(
   // centre, so the pole sits inside its phase band with the neutral phase
   // flanked symmetrically by the magnets that surround it. Every later bar
   // centre falls on the next B phase-band centre automatically (B zones
-  // repeat every pole pitch). Neither the configured gap nor any edge
-  // padding can move the first solid bar away from the pattern-owned
+  // repeat every pole pitch). Neither the configured gap nor any end
+  // margin can move the first solid bar away from the pattern-owned
   // coordinate.
   if (phaseOrder.length >= 2) {
     const neutral = zoneAt(phaseOrder[1], 0) ?? firstZone(phaseOrder[1], 0);
@@ -809,7 +809,7 @@ export function resolvePoleRegionPhaseSelection(
 /**
  * World-space fit box covering every given zone's x span, bounded to the
  * caller-supplied board y band (`yMin`..`yMax`). Used by the camera fit so
- * reset-view never clips a zone that reaches into routing padding. Returns
+ * reset-view never clips a zone that pokes past the nominal domain. Returns
  * `null` when there are no zones.
  */
 export function computePoleRegionBounds(
@@ -858,7 +858,7 @@ export function bandWidthRowBounds(row: BandWidthRow): ViewportBBox {
  * reset never clips the ruler or band brackets (rows live inside the content
  * box already, but the ruler floats above the magnet strip). Pole-region
  * zones (optional, `regionZones`) are also included bounded to a caller-
- * supplied board y band so a zone reaching into routing padding is not
+ * supplied board y band so a zone poking past the nominal domain is not
  * clipped at reset.
  */
 export function computeOverlayFitBounds(

@@ -101,14 +101,16 @@ impl RoutingPattern for InfinityBraidPattern {
 
         let phases = ctx.phases.max(1) as i64;
         let num_strands = (ctx.param("num_strands", 5.0) as i64).max(2);
-        // Map the unrolled braid domain onto the routing area.
-        let d_tot = ctx.active_area_length_mm + ctx.padding_mm * 2.0;
+        // Map the unrolled braid domain onto the routing area. The routing
+        // domain EQUALS the active area — the braid's end turns are part of
+        // the pattern, there is no end padding.
+        let d_tot = ctx.active_area_length_mm;
         if !d_tot.is_finite() || d_tot <= 0.0 {
             return Err(RoutingError::new(
                 0,
                 "active_area_length_mm",
                 RoutingErrorKind::Generation,
-                "active area plus padding must be finite and greater than zero",
+                "active area must be finite and greater than zero",
             ));
         }
         if !ctx.board_width_mm.is_finite() || ctx.board_width_mm <= 0.0 {
@@ -152,7 +154,7 @@ impl RoutingPattern for InfinityBraidPattern {
                         "active_area_length_mm",
                         RoutingErrorKind::Generation,
                         format!(
-                            "the routable length ({:.3} mm) cannot fit one complete pole-pitched braid period plus its phase/strand interleave ({:.3} mm required); increase active area or padding",
+                            "the routable length ({:.3} mm) cannot fit one complete pole-pitched braid period plus its phase/strand interleave ({:.3} mm required); increase the active area",
                             d_tot,
                             2.0 * pitch - interleave_step
                         ),
@@ -250,13 +252,14 @@ mod tests {
         params.insert("num_strands".to_string(), 5.0);
         params.insert("n_periods".to_string(), 4.0);
         RoutingContext {
-            active_area_length_mm: 600.0,
+            // The routing domain equals the active area (no end padding):
+            // 800 mm so the magnet-aligned tests keep their 65-period math.
+            active_area_length_mm: 800.0,
             board_width_mm: 20.0,
             num_layers: 2,
             phases: 3,
             min_trace_mm: 0.1,
             min_space_mm: 0.1,
-            padding_mm: 100.0,
             expects_continuous: false,
             params,
             // No magnet layout by default: the tests below opt in explicitly.
@@ -322,7 +325,7 @@ mod tests {
 
         // The diamond period length equals the pole pitch and consecutive
         // period grids are spaced by that same pitch.
-        let d_tot = magnet_ctx().active_area_length_mm + magnet_ctx().padding_mm * 2.0;
+        let d_tot = magnet_ctx().active_area_length_mm;
         let n_expected = ((d_tot + 12.0 / (3.0 * 5.0)) / 12.0).floor() - 1.0;
         let period_length: f64 = 12.0;
         assert!((period_length - 12.0).abs() < 1e-9, "period {period_length} mm");
@@ -358,7 +361,7 @@ mod tests {
         let strands = context.param("num_strands", 5.0) as i64;
         let pitch = context.magnet_pitch().unwrap();
         let interleave = pitch / (phases * strands) as f64;
-        let periods = ((context.active_area_length_mm + context.padding_mm * 2.0
+        let periods = ((context.active_area_length_mm
             + interleave)
             / pitch)
             .floor() as i64
@@ -444,7 +447,6 @@ mod tests {
     fn rejects_a_routing_span_shorter_than_one_pole_pitch() {
         let mut short = magnet_ctx();
         short.active_area_length_mm = 5.0;
-        short.padding_mm = 0.0;
         let error = InfinityBraidPattern.generate(&short).unwrap_err();
         assert_eq!(error.kind, RoutingErrorKind::Generation);
         assert!(error.message.contains("cannot fit one complete pole-pitched"));

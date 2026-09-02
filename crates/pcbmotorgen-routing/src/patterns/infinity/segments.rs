@@ -139,7 +139,6 @@ mod tests {
             phases: 3,
             min_trace_mm: 0.1,
             min_space_mm: 0.1,
-            padding_mm: 100.0,
             expects_continuous: false,
             params,
             ..RoutingContext::default()
@@ -188,7 +187,7 @@ mod tests {
         let phases = ctx.phases.max(1) as i64;
         let num_strands = (ctx.param("num_strands", 5.0) as i64).max(2);
         let n_periods = (ctx.param("n_periods", 4.0) as i64).max(1);
-        let d_tot = ctx.active_area_length_mm + ctx.padding_mm * 2.0;
+        let d_tot = ctx.active_area_length_mm;
         let a = ctx.board_width_mm / 2.0;
 
         let o = d_tot / ((n_periods + 1) * num_strands * phases - 1) as f64 * -1.0;

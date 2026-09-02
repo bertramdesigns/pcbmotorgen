@@ -430,7 +430,6 @@ mod tests {
             phases: config.phases,
             min_trace_mm: config.min_trace_m * 1e3,
             min_space_mm: config.min_space_m * 1e3,
-            padding_mm: config.padding_m * 1e3,
             expects_continuous: false,
             params: std::collections::HashMap::new(),
             magnet_pitch_mm: Some(config.magnet_pitch_m * 1e3),

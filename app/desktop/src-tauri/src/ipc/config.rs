@@ -37,11 +37,6 @@ pub struct LinearMotorConfigIpc {
     pub active_area_length_m: f64,
     pub board_width_m: f64,
     pub pcb_thickness_m: f64,
-    /// Round 9: extra PCB length on each end (in travel direction) for
-    /// end-turn routing. Mirrors `LinearMotorConfig::padding_m`. Default
-    /// 0.0 (no padding) — single-strand coils don't need it.
-    #[serde(default)]
-    pub padding_m: f64,
     /// Round 9: number of parallel serpentine paths per phase on the
     /// same layer ("strands", stacked in y). Mirrors
     /// `LinearMotorConfig::strands_per_phase`. Default 1 (the
@@ -129,9 +124,7 @@ impl LinearMotorConfigIpc {
             active_area_length_m: self.active_area_length_m,
             board_width_m: self.board_width_m,
             pcb_thickness_m: self.pcb_thickness_m,
-            // Round 9: padding + multi-strand — pass through to the
-            // core so the writer / preview can use them.
-            padding_m: self.padding_m,
+            // Round 9: multi-strand pass-through to the core.
             strands_per_phase: self.strands_per_phase,
             air_gap_m: self.air_gap_m,
             routing_pattern: self.routing_pattern.clone(),
@@ -165,12 +158,10 @@ impl From<&CoreConfig> for LinearMotorConfigIpc {
             active_area_length_m: c.active_area_length_m,
             board_width_m: c.board_width_m,
             pcb_thickness_m: c.pcb_thickness_m,
-            // Round 9: pass through the new fields. For configs that
-            // pre-date the padding / multi-strand fields, the core
-            // `Default` gives `padding_m: 0.0, strands_per_phase: 1`
-            // (single-strand, no padding) which is the historical
+            // Round 9: pass through the multi-strand field. For configs
+            // that pre-date it, the core `Default` gives
+            // `strands_per_phase: 1` (single strand), the historical
             // behaviour.
-            padding_m: c.padding_m,
             strands_per_phase: c.strands_per_phase,
             magnet_count: c.magnet_count,
             magnet_width_m: c.magnet_dims_m[0],

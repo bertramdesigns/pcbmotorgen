@@ -317,7 +317,7 @@
       <!-- remains the primary visual.                                   -->
       <!-- ============================================================ -->
 
-      <!-- Copper active-area edges (active area start / active area end) — routed traces extend into the end paddings -->
+      <!-- Copper active-area edges (active area start / active area end) = the routing domain bounds -->
       <line
         x1={plot.sx(0)}
         y1={PAD_T}

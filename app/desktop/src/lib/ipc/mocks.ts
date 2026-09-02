@@ -102,27 +102,28 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
  * inside the copper active area (glossary "Travel Envelope"), derived in
  * two steps:
  *   1. Span-aware centre clamp — the centre must keep the whole mover
- *      inside copper: centre ∈ [copper_start + span/2, copper_end − span/2]
+ *      inside copper: centre ∈ [span/2, active_area_length − span/2]
  *      with the glossary "Mover Span" span = N·τ_p (τ_p = P_e/2). The
  *      range WIDENS as N shrinks and has the width of the configured free
- *      travel (travel = copper_length − span) — the range the slider must
- *      sweep.
+ *      travel (travel = active_area_length − span) — the range the slider
+ *      must sweep. The copper active area is the WHOLE track [0,
+ *      active_area_length]: there is no padding offset (kata hrd8).
  *   2. Nearest-rest lattice snapping — each endpoint snaps to the lattice
  *      point NEAREST its clamp bound on the track-frame rest lattice
- *      `x ≡ φ_track (mod P_e)` with φ_track = (copper_start + φ) mod P_e
- *      and φ = (P_e/12 + ((N−1)/2)·τ_p) mod P_e (φ is N-dependent), ties
+ *      `x ≡ φ_track (mod P_e)` with φ_track = φ (copper start 0) and
+ *      φ = (P_e/12 + ((N−1)/2)·τ_p) mod P_e (φ is N-dependent), ties
  *      resolving inward. Each endpoint deviates from its clamp bound by at
  *      most P_e/2, so the sweep stays within one P_e of the configured
  *      travel; an endpoint may sit up to P_e/2 OUTSIDE its bound (array
- *      edge overhangs the copper into the end-turn padding). Inward
- *      snapping (first rest ≥ bound, last rest ≤ bound) was tried first
- *      and rejected: it cut up to 2·P_e from the sweep — 36% of the
- *      configured travel at the app defaults (N=10, P_e=24 mm:
- *      [110, 158] = 48 mm instead of ≈75 mm). Defaults (N=12, τ_p=6 mm →
- *      P_e=12 mm, copper [30,177] mm): the clamp is [66, 141] mm and
- *      φ_track = 4 mm, so min = **64 = 4 + 5·12 mm** and
- *      max = **136 = 4 + 11·12 mm** — a 72 mm sweep against the 75 mm
- *      configured travel. N=4 widens the clamp to [42, 165] mm → 40/160 mm.
+ *      edge overhangs the copper end — the out-hanging magnets see no
+ *      conductors). Inward snapping (first rest ≥ bound, last rest ≤
+ *      bound) was tried first and rejected: it cut up to 2·P_e from the
+ *      sweep — 36% of the configured travel at the app defaults (N=10,
+ *      P_e=24 mm: [80, 128] = 48 mm instead of ≈75 mm). Defaults (N=12,
+ *      τ_p=6 mm → P_e=12 mm, copper [0,147] mm): the clamp is [36, 111] mm
+ *      and φ_track = 10 mm, so min = **34 = 10 + 2·12 mm** and
+ *      max = **106 = 10 + 8·12 mm** — a 72 mm sweep against the 75 mm
+ *      configured travel. N=4 widens the clamp to [12, 135] mm → 10/130 mm.
  * `rest_phase_m` is unchanged: the TRACK-FRAME lattice phase, so the
  * holding-force chart zeros stay aligned to the stable rests. When the
  * copper is shorter than the mover span, or the clamped range is narrower
@@ -144,8 +145,10 @@ export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
     (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
   phi %= P_e;
   if (phi < 0) phi += P_e;
-  const copperRegionStart = c.padding_m;
-  const copperRegionEnd = c.padding_m + c.active_area_length_m;
+  // Copper active area = the whole track [0, active_area_length]; there is
+  // no padding offset (kata hrd8).
+  const copperRegionStart = 0;
+  const copperRegionEnd = c.active_area_length_m;
   // Track-frame rest phase: every stable rest centre ≡ φ_track (mod P_e).
   const phaseTrack = (((copperRegionStart + phi) % P_e) + P_e) % P_e;
   // Span-aware centre clamp: keep the whole array inside the copper.
@@ -198,12 +201,12 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   // header advertised `num_layers` — i.e. "missing layer segments".
   const phases: PhaseCoilDto[] = [];
   // The mock mirrors the real infinity braid: traces (and their pattern-made
-  // pole regions) are routed across the FULL domain (active area + both end
-  // paddings), NOT just the mover span. The mover must have conductors
-  // beneath it for every position along its travel, exactly like the real
-  // backend.
+  // pole regions) are routed across the active area — the whole routing
+  // domain, whose end turns are part of the pattern. The mover must have
+  // conductors beneath it for every position along its travel, exactly like
+  // the real backend.
   const moverSpan = c.magnet_count * c.magnet_pitch_m;
-  const domain = c.active_area_length_m + 2 * c.padding_m;
+  const domain = c.active_area_length_m;
   const width = c.board_width_m;
   const nLayers = Math.max(1, c.num_layers);
   const nConductors = Math.max(2, c.magnet_count * 2);
@@ -314,7 +317,7 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
   }
   const routing_dimensions: RoutingDimensionsDto = {
     active_area_length_m: c.active_area_length_m,
-    total_routing_length_m: c.active_area_length_m + 2 * c.padding_m,
+    total_routing_length_m: c.active_area_length_m,
     board_width_m: c.board_width_m,
     phases: Math.max(1, c.phases),
     magnet_array_span_m: moverSpan,
@@ -322,7 +325,7 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     period_pitch_m: c.routing_pattern === "infinity-braid" ? pole_pitch_m : null,
     period_count:
       c.routing_pattern === "infinity-braid"
-        ? Math.max(1, Math.floor((c.active_area_length_m + 2 * c.padding_m) / pole_pitch_m))
+        ? Math.max(1, Math.floor(c.active_area_length_m / pole_pitch_m))
         : null,
     phase_band_pitch_m,
     phase_clearance_m,
