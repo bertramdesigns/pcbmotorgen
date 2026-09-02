@@ -104,9 +104,11 @@ export interface CoilPathDto {
  * All fields are metres in the active-area frame.
  */
 export interface TravelEnvelopeDto {
-  /** First stable rest position of the array centre (m). */
+  /** Smallest travel limit of the array centre (m): leading array edge
+   *  flush with the copper start (kata 5c7r). */
   min_position_m: number;
-  /** Last stable rest position of the array centre (m). */
+  /** Largest travel limit of the array centre (m): trailing array edge
+   *  flush with the copper end (kata 5c7r). */
   max_position_m: number;
   /** Rest phase φ: every stable rest centre ≡ φ (mod electrical_period_m). */
   rest_phase_m: number;

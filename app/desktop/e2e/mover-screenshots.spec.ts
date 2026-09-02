@@ -18,10 +18,13 @@ import { fileURLToPath } from "node:url";
  * `mockTravelEnvelope` mirrors the Rust `travel_envelope_over_slots` 1:1,
  * so what is captured here is the same endpoint geometry the backend
  * computes. Frontend defaults (N=12, P_e=12 mm, active area 147 mm — the
- * copper active area is the whole track): envelope 34 → 106 mm, span
- * 72 mm, so the drawn strip spans −2 → 70 mm at min and 70 → 142 mm at
- * max (the ≤ P_e/2 nearest-snap overhang shows as the strip poking past
- * the copper band edge).
+ * copper active area is the whole track) under the FLUSH endpoint spec
+ * (kata 5c7r): span 72 mm → envelope 36 → 111 mm, so the drawn strip
+ * spans 0 → 72 mm at min and 75 → 147 mm at max — array edges EXACTLY on
+ * the copper bounds at both endpoints, sweep = configured travel (75 mm)
+ * exactly. (Note: the geometric fallback now equals the envelope limits,
+ * so bounds cannot distinguish envelope arrival — pinned via the readout
+ * values instead.)
  */
 
 const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
@@ -36,13 +39,12 @@ test("capture the mover at the min and max travel endpoints", async ({
   const slider = page.locator(SLIDER).first();
   await slider.waitFor({ state: "visible", timeout: 15_000 });
 
-  // Wait for the travel envelope to arrive (mock IPC, debounced). The
-  // geometric fallback bounds [span/2, active − span/2] are already
-  // non-degenerate, so range width alone cannot distinguish them; the
-  // envelope-installed sweep at the pinned defaults is 72 mm (34 → 106),
-  // vs the 75 mm fallback range. The readout prints the sweep width.
+  // Wait for the debounced preview/envelope stream to settle. Under the
+  // flush endpoint spec (kata 5c7r) the geometric fallback equals the
+  // envelope limits, so the sweep width (75 mm at defaults) cannot
+  // distinguish them — the readout pins below carry the assertion instead.
   const readout = page.locator(READOUT).first();
-  await expect(readout).toContainText("/ 72.0 mm", { timeout: 10_000 });
+  await expect(readout).toContainText("/ 75.0 mm", { timeout: 10_000 });
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -76,8 +78,9 @@ test("capture the mover at the min and max travel endpoints", async ({
     });
   };
 
-  // Frontend defaults: envelope 34 → 106 mm, span 72 mm → strip −2 → 70 at
-  // min, 70 → 142 at max (nearest-snap overhang: kata xb16 pins).
-  await shoot("min", "-2.0 - 70.0 mm");
-  await shoot("max", "70.0 - 142.0 mm");
+  // Frontend defaults, flush spec (kata 5c7r): envelope 36 → 111 mm,
+  // span 72 mm → strip 0 → 72 mm at min, 75 → 147 mm at max — array
+  // edges EXACTLY on the copper bounds, sweep = configured travel.
+  await shoot("min", "0.0 - 72.0 mm");
+  await shoot("max", "75.0 - 147.0 mm");
 });

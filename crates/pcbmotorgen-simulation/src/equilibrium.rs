@@ -12,15 +12,19 @@
 //! and every stable rest position satisfies x ≡ φ (mod P_e).
 //!
 //! The travel envelope ([`travel_envelope_over_slots`]) exposes the slider
-//! endpoints as the FIRST and LAST STABLE REST POSITION inside the copper
-//! active area — the glossary "Travel Envelope" (see that function's docs).
+//! endpoints as the span-aware FLUSH limits of the copper active area —
+//! the array edges sit exactly on the copper bounds at the endpoints
+//! (kata 5c7r; see that function's docs). The stable rests themselves are
+//! reported via `rest_phase_m` and marked on the holding-force chart.
 
-/// Stable-equilibrium travel envelope of the mover array centre (metres).
+/// Travel envelope of the mover array centre (metres).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TravelEnvelope {
-    /// First stable rest position of the array centre [m].
+    /// Smallest travel limit of the array centre [m]: leading array edge
+    /// flush with the copper start.
     pub min_position_m: f64,
-    /// Last stable rest position of the array centre [m] (≥ min).
+    /// Largest travel limit of the array centre [m] (≥ min): trailing
+    /// array edge flush with the copper end.
     pub max_position_m: f64,
     /// Rest phase φ: every stable rest centre ≡ φ (mod electrical_period_m).
     pub rest_phase_m: f64,
@@ -71,110 +75,44 @@ pub fn rest_phase_m(electrical_period_m: f64, magnet_count: u32) -> f64 {
     phase
 }
 
-/// Tolerance for lattice snapping [m]: one nanometre — many orders of
-/// magnitude above f64 representation noise at metre-scale positions
-/// (~1e-16 m) and far below any engineering significance (µm scale).
-const LATTICE_SNAP_EPS_M: f64 = 1e-9;
-
-/// Smallest point of the lattice `phase + k·period` (k ∈ ℤ) that is ≥ `x`.
+/// Travel envelope of the mover array centre, anchored to the stator copper
+/// region.
 ///
-/// The adjustment loop guards against float rounding stepping a full period
-/// too far when `x` lands (within [`LATTICE_SNAP_EPS_M`]) exactly on the
-/// lattice: a quotient that is mathematically an integer but nudged to
-/// e.g. 3.000…4 would otherwise `ceil` to 4.
-#[must_use]
-fn lattice_ceil(x: f64, phase: f64, period: f64) -> f64 {
-    let mut point = phase + ((x - phase) / period).ceil() * period;
-    while point - period >= x - LATTICE_SNAP_EPS_M {
-        point -= period;
-    }
-    point
-}
-
-/// Largest point of the lattice `phase + k·period` (k ∈ ℤ) that is ≤ `x`.
+/// Glossary-normative spec (2026-09-02, kata 5c7r; supersedes the xb16
+/// rest-snapped revisions): the Travel Envelope is the SPAN-AWARE FLUSH
+/// CLAMP of the copper active area —
 ///
-/// Mirror-image float guard of [`lattice_ceil`].
-#[must_use]
-fn lattice_floor(x: f64, phase: f64, period: f64) -> f64 {
-    let mut point = phase + ((x - phase) / period).floor() * period;
-    while point + period <= x + LATTICE_SNAP_EPS_M {
-        point += period;
-    }
-    point
-}
-
-/// Lattice point of `phase + k·period` (k ∈ ℤ) closest to `x`.
+///   `centre ∈ [copper_start + span/2, copper_end − span/2]`
 ///
-/// Ties (x exactly half a period between two lattice points, or exactly on
-/// the lattice) resolve to `prefer_higher` — callers pass `true` for the
-/// lower envelope endpoint (inward = larger) and `false` for the upper
-/// endpoint (inward = smaller), so an exact tie always keeps the array
-/// inside the span-aware clamp. Float-noised quotients are handled by the
-/// [`lattice_ceil`]/[`lattice_floor`] guards, which collapse to `x` itself
-/// when it already sits on the lattice.
-#[must_use]
-fn lattice_nearest(x: f64, phase: f64, period: f64, prefer_higher: bool) -> f64 {
-    let below = lattice_floor(x, phase, period);
-    let above = lattice_ceil(x, phase, period);
-    let d_below = x - below;
-    let d_above = above - x;
-    if (d_above - d_below).abs() <= LATTICE_SNAP_EPS_M {
-        if prefer_higher { above } else { below }
-    } else if d_above < d_below {
-        above
-    } else {
-        below
-    }
-}
-
-/// Stable-equilibrium travel envelope anchored to the stator copper region.
+/// with the glossary "Mover Span" `span = N · τ_p` (τ_p = P_e/2). At the
+/// lower limit the array's leading edge sits exactly on the copper start;
+/// at the upper limit the trailing edge sits exactly on the copper end.
+/// The endpoints are MECHANICAL LIMITS, not stable rest positions: the
+/// swept range equals the configured free travel EXACTLY
+/// (`travel = copper_length − span`), and the mover may hold position
+/// between rests (a closed-loop drive compensates the non-zero
+/// fixed-excitation force there).
 ///
-/// Glossary-normative spec (2026-09-02, kata xb16; nearest-snap revision
-/// same day after field verification): the Travel Envelope is "the span of
-/// valid mover positions between the FIRST and LAST STABLE REST POSITION
-/// inside the copper active area". The endpoints are derived in two steps:
+/// History: the endpoints were originally rest-snapped onto the stable-rest
+/// lattice (kata xb16, inward then nearest snap). Both variants fought the
+/// flush geometry — inward lost up to 2·P_e of travel (36% at the app
+/// defaults), nearest left the array overhanging the copper start at min
+/// and short of the copper end at max (field-observed as "a bit short on
+/// the max and a bit too far on the min"). Since kata hrd8 removed the
+/// padding offset, `active_area_length = span + travel` holds exactly and
+/// the flush clamp realizes the configured travel with zero overhang —
+/// verified visually with the screenshot tooling (kata 8tc4).
 ///
-/// 1. **Span-aware centre clamp** — the array centre must keep the whole
-///    mover inside copper: `centre ∈ [copper_start + span/2, copper_end −
-///    span/2]` with the glossary "Mover Span" `span = N · τ_p`
-///    (τ_p = P_e/2). By construction this range has the width of the
-///    configured free travel (`travel = copper_length − span`, glossary
-///    "Travel Envelope") — the range the slider MUST sweep.
-/// 2. **Nearest-rest lattice snapping** — endpoints must be STABLE rest
-///    positions, i.e. on the track-frame lattice
-///    `x ≡ φ_track (mod P_e)` with
-///    `φ_track = (copper_region_start + φ) mod P_e` (φ the baseline rest
-///    phase, see [`rest_phase_m`]). Each endpoint snaps to the lattice
-///    point NEAREST its clamp bound (ties resolve inward, see
-///    [`lattice_nearest`]), deviating by at most `P_e/2` per endpoint.
-///    Inward snapping (first rest ≥ lower bound, last rest ≤ upper bound)
-///    was tried first and rejected: it can cut up to `2·P_e` from the
-///    swept range — 36% of the configured travel at the app defaults —
-///    leaving the mover unable to reach the copper ends. With nearest
-///    snapping the swept range stays within `P_e` of the configured
-    ///    travel, and an endpoint may sit up to `P_e/2` OUTSIDE its clamp
-    ///    bound: the array edge then overhangs the copper end by at most
-    ///    `P_e/2` — the out-hanging magnets see no conductors and simply
-    ///    contribute no force (there is no end padding; kata hrd8 removed
-    ///    it — the copper active area is the whole track).
-    ///
-    /// Degenerate behavior (copper region shorter than the mover span, or a
-    /// clamped range narrower than one lattice step): `max` is clamped to
-    /// `min`, so the envelope never inverts (max ≥ min). The array necessarily
-    /// overhangs the copper at that single rest position.
-    ///
-    /// Worked default example (P_e = 12 mm, N = 12, copper region [0, 147] mm
-    /// in track coords): φ = (P_e/12 + (11/2)·τ_p) mod P_e = 10 mm, so
-    /// φ_track = (0 + 10) mod 12 = 10 mm; span = 12·6 mm = 72 mm gives a
-    /// centre range [36, 111] mm; the lattice {…, 34, 46, 58, …} mm snaps the
-    /// endpoints to **min = 34 mm, max = 106 mm** — a 72 mm sweep against the
-    /// 75 mm configured travel (the inward snap gave 46 → 106 mm, only 60 mm).
-    /// Unlike the pre-xb16 coil-capture convention, the endpoints DEPEND on N
-    /// (N = 4 gives 10 → 130 mm on the same copper and period).
+/// Degenerate behavior (copper region shorter than the mover span): the
+/// clamped range inverts, so `max` is clamped to `min` — the envelope
+/// never inverts, and the array necessarily overhangs the copper at that
+/// single position.
 ///
-/// `rest_phase_m` is unchanged: the TRACK-FRAME lattice phase
-/// `(copper_region_start + φ) mod P_e`, so the holding-force chart's zero
-/// markers stay aligned to the stable rests.
+/// `rest_phase_m` is unchanged: the track-frame lattice phase
+/// `(copper_region_start + φ) mod P_e` (φ the baseline rest phase, see
+/// [`rest_phase_m`]), so the holding-force chart's zero markers stay
+/// aligned to the stable rests — which remain on the `x ≡ φ (mod P_e)`
+/// lattice even though the slider endpoints generally do not.
 #[must_use]
 pub fn travel_envelope_over_slots(
     electrical_period_m: f64,
@@ -197,19 +135,11 @@ pub fn travel_envelope_over_slots(
     // Glossary "Mover Span": N · τ_p (centre-of-first-magnet to one pitch
     // past the last magnet).
     let span = f64::from(magnet_count) * period / 2.0;
-    // Span-aware centre clamp: keep the whole array inside the copper.
-    let lower = copper_region_start_m + span / 2.0;
-    let upper = copper_region_end_m - span / 2.0;
-    // Lattice snapping: endpoints must be stable rest positions — the
-    // lattice point NEAREST each clamp bound (ties inward), deviating by
-    // at most P_e/2 per endpoint. Inward snapping (first rest ≥ lower,
-    // last rest ≤ upper) was rejected in field verification: it cuts up
-    // to 2·P_e from the swept range and breaks the travel contract
-    // travel = copper_length − span (kata xb16, nearest-snap revision).
-    let min = lattice_nearest(lower, phase_track, period, true);
-    let max = lattice_nearest(upper, phase_track, period, false);
-    // Degenerate (copper shorter than the span, or range narrower than
-    // one lattice step): never inverted.
+    // Span-aware flush clamp: the array edges sit exactly on the copper
+    // bounds at the endpoints (kata 5c7r — no lattice snapping).
+    let min = copper_region_start_m + span / 2.0;
+    let max = copper_region_end_m - span / 2.0;
+    // Degenerate (copper shorter than the span): never inverted.
     let max = if max < min { min } else { max };
     TravelEnvelope {
         min_position_m: min,
@@ -257,153 +187,121 @@ mod tests {
     // or max move, these tests fail — change them only alongside the spec.
     // ------------------------------------------------------------------
 
-    /// Defaults (N = 12, P_e = 12 mm, copper [0, 147] mm in track coords),
-    /// per the function doc's worked example: φ = 10 mm → φ_track = 10 mm;
-    /// span = 12·6 = 72 mm → centre range [36, 111] mm; lattice
-    /// {…, 34, 46, 58, …} → **min = 34 mm, max = 106 mm** (nearest snap:
-    /// 36 → 34 is 2 mm away vs 46 at 10; 111 → 106 is 5 mm away vs 118 at
-    /// 7). Each endpoint deviates from its clamp bound by ≤ P_e/2 = 6 mm:
-    /// leading edge 34 − 36 = −2 mm overhangs the copper start by 2 mm
-    /// (out-hanging magnets see no conductors), trailing edge 106 + 36 =
-    /// 142 mm ≤ 147 mm. Sweep = 72 mm against the 75 mm configured travel.
+    // ------------------------------------------------------------------
+    // travel_envelope_over_slots — glossary travel envelope (kata 5c7r)
+    //
+    // These pins are the PRODUCT REFERENCE for the slider endpoints:
+    // flush, span-aware travel limits — the array edges sit exactly on
+    // the copper bounds (glossary "Travel Envelope", decision 2026-09-02,
+    // supersedes the xb16 rest-snapped revisions). Every value below was
+    // verified numerically before pinning. If min or max move, these
+    // tests fail — change them only alongside the spec.
+    // ------------------------------------------------------------------
+
+    /// Defaults (N = 12, P_e = 12 mm, copper [0, 147] mm in track coords):
+    /// span = 12·6 = 72 mm → flush clamp **min = 36 mm, max = 111 mm** —
+    /// leading edge 36 − 36 = 0 mm exactly on the copper start, trailing
+    /// edge 111 + 36 = 147 mm exactly on the copper end. Sweep = 75 mm =
+    /// the configured travel EXACTLY. The endpoints are limits, not rest
+    /// positions: rest_phase_m = 10 mm still reports where the stable
+    /// rests (force-chart zeros) live.
     #[test]
-    fn twelve_pole_defaults_pin_34_to_106_mm() {
+    fn twelve_pole_defaults_pin_flush_36_to_111_mm() {
         let env = travel_envelope_over_slots(12.0 * MM, 12, 0.0, 147.0 * MM);
-        assert!((env.min_position_m - 34.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - 106.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 36.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 111.0 * MM).abs() < 1e-12);
         assert!((env.rest_phase_m - 10.0 * MM).abs() < 1e-12);
         assert!((env.electrical_period_m - 12.0 * MM).abs() < 1e-12);
-        // Nearest-snap deviation bound: each endpoint sits within P_e/2 of
-        // its span-aware clamp bound (−2 ≥ 0 − 6; 142 ≤ 147 + 6).
+        // Flush contract: array edges exactly on the copper bounds.
         let span = 72.0 * MM; // N · τ_p
-        let period = 12.0 * MM;
-        assert!(env.min_position_m - span / 2.0 >= 0.0 - period / 2.0);
-        assert!(env.max_position_m + span / 2.0 <= 147.0 * MM + period / 2.0);
+        assert!((env.min_position_m - span / 2.0).abs() < 1e-12);
+        assert!((env.max_position_m + span / 2.0 - 147.0 * MM).abs() < 1e-12);
     }
 
-    /// Travel contract (kata xb16 field-verification fix): the swept range
-    /// approximates the configured free travel `copper_length − span`
-    /// (glossary "Travel Envelope") within one lattice step P_e. The
-    /// rejected inward snap lost 15 mm of 75 mm here.
+    /// Travel contract (kata 5c7r): the swept range equals the configured
+    /// free travel `copper_length − span` EXACTLY — the failed xb16
+    /// rest-snapped variants lost up to 2·P_e (inward) or left a
+    /// ±P_e/2 endpoint bias (nearest).
     #[test]
-    fn sweep_approximates_configured_travel() {
+    fn sweep_equals_configured_travel_exactly() {
         for (n, p_e) in [(4_u32, 12.0), (6, 12.0), (12, 12.0), (12, 18.0), (10, 24.0)] {
             let env = travel_envelope_over_slots(p_e * MM, n, 0.0, 147.0 * MM);
             let travel = 147.0 * MM - f64::from(n) * p_e * MM / 2.0;
             let sweep = env.max_position_m - env.min_position_m;
             assert!(
-                (sweep - travel).abs() <= p_e * MM,
+                (sweep - travel).abs() < 1e-12,
                 "N={n} P_e={p_e}: sweep {sweep:.6} vs travel {travel:.6}"
             );
         }
     }
 
-    /// Real app defaults regression (kata xb16 field report): N = 10,
-    /// P_e = 24 mm (τ_p = 12 mm), copper [0, 195] mm → span = 120 mm,
-    /// centre clamp [60, 135] mm, φ = (2 + 4.5·12) mod 24 = 56 mm →
-    /// φ_track = (0 + 56) mod 24 = 8 mm → lattice {…, 56, 80, …, 104,
-    /// 128, 152, …}. Nearest snap: **min = 56 mm** (4 mm from the bound,
-    /// vs 80 at 20 mm), **max = 128 mm** (7 mm vs 17 mm) — a 72 mm sweep
-    /// against the 75 mm configured travel. The rejected inward snap gave
-    /// [80, 128] = 48 mm, cutting 36% of the user's travel (the reported
-    /// "slider bounds far too short" bug).
+    /// Real app defaults regression: N = 10, P_e = 24 mm (τ_p = 12 mm),
+    /// copper [0, 195] mm → span = 120 mm → flush clamp **[60, 135] mm** —
+    /// strip 0 → 120 mm at min, 75 → 195 mm at max, sweep = 75 mm = the
+    /// configured travel exactly (kata hrd8 geometry; the reported
+    /// "short on max / too far on min" bias is gone). rest_phase 8 mm.
     #[test]
-    fn app_defaults_pin_nearest_snap_56_to_128_mm() {
+    fn app_defaults_pin_flush_60_to_135_mm() {
         let env = travel_envelope_over_slots(24.0 * MM, 10, 0.0, 195.0 * MM);
-        assert!((env.min_position_m - 56.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - 128.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 60.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 135.0 * MM).abs() < 1e-12);
         assert!((env.rest_phase_m - 8.0 * MM).abs() < 1e-12);
     }
 
-    /// Endpoints DEPEND on N (the xb16 fix — pre-xb16 they were fixed
-    /// coil-capture offsets). N = 4: φ = 1 + (3/2)·6 = 10 mm → φ_track =
-    /// (0 + 10) mod 12 = 10 mm (same lattice as N = 12); span = 24 mm →
-    /// centre range [12, 135] mm → **min = 10 mm, max = 130 mm**. With
-    /// small N the slider now reaches near the track ends.
+    /// Endpoints DEPEND on N. N = 4: span = 24 mm → flush clamp
+    /// **[12, 135] mm** on the copper [0, 147] mm. With small N the
+    /// slider reaches near the track ends.
     #[test]
     fn four_pole_endpoints_depend_on_magnet_count() {
         let env = travel_envelope_over_slots(12.0 * MM, 4, 0.0, 147.0 * MM);
-        assert!((env.min_position_m - 10.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - 130.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 12.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 135.0 * MM).abs() < 1e-12);
         assert!((env.rest_phase_m - 10.0 * MM).abs() < 1e-12);
     }
 
-    /// N = 6: φ = 1 + (5/2)·6 = 16 mm → φ_track = (0 + 16) mod 12 =
-    /// 4 mm (its own lattice {…, 16, 28, …}); span = 36 mm → centre
-    /// range [18, 129] mm → **min = 16 mm, max = 124 mm**. Different
-    /// endpoints AND different phase from both N = 4 and N = 12.
+    /// N = 6: span = 36 mm → flush clamp **[18, 129] mm**; its rest phase
+    /// differs from both N = 4 and N = 12 (φ = 16 mm → 4 mm mod 12).
     #[test]
     fn six_pole_endpoints_depend_on_magnet_count() {
         let env = travel_envelope_over_slots(12.0 * MM, 6, 0.0, 147.0 * MM);
-        assert!((env.min_position_m - 16.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - 124.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 18.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 129.0 * MM).abs() < 1e-12);
         assert!((env.rest_phase_m - 4.0 * MM).abs() < 1e-12);
     }
 
-    /// Endpoints scale with P_e through BOTH the span clamp and the lattice
-    /// phase (φ itself depends on P_e: x_peak = P_e/12, τ_p = P_e/2).
-    /// N = 12, P_e = 18 mm: x_peak = 1.5 mm, φ = (1.5 + 49.5) mod 18 =
-    /// 15 mm → φ_track = (0 + 15) mod 18 = 15 mm; span = 108 mm → centre
-    /// range [54, 93] mm; lattice {…, 51, 69, …, 87, 105, …} →
-    /// **min = 51 mm, max = 87 mm** (nearest snap; the inward snap gave
-    /// 69 → 87, only 18 mm of the 39 mm configured travel).
+    /// Endpoints scale with P_e through the span (τ_p = P_e/2).
+    /// N = 12, P_e = 18 mm: span = 108 mm → flush clamp **[54, 93] mm**;
+    /// rest phase 15 mm.
     #[test]
     fn endpoints_scale_with_electrical_period() {
         let env = travel_envelope_over_slots(18.0 * MM, 12, 0.0, 147.0 * MM);
-        assert!((env.min_position_m - 51.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - 87.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 54.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 93.0 * MM).abs() < 1e-12);
         assert!((env.rest_phase_m - 15.0 * MM).abs() < 1e-12);
     }
 
-    /// Degenerate (kata xb16): copper [0, 10] mm is far shorter than the
-    /// N = 24 span (144 mm), so the clamped centre range [72, −34] mm is
-    /// inverted. min = nearest lattice point to 72 mm on the φ_track =
-    /// 10 mm lattice = **70 mm** (2 mm away, vs 82 mm at 10 mm), and max
-    /// clamps to min: never inverted, even though the array necessarily
-    /// overhangs the copper at that single rest position (documented
+    /// Degenerate: copper [0, 10] mm is far shorter than the N = 24 span
+    /// (144 mm), so the flush clamp [72, −34] mm inverts → max clamps to
+    /// min: **[72, 72] mm**, never inverted (the array necessarily
+    /// overhangs the copper at that single position — documented
     /// degenerate behavior).
     #[test]
     fn narrow_copper_region_clamps_max_to_min() {
         let env = travel_envelope_over_slots(12.0 * MM, 24, 0.0, 10.0 * MM);
-        assert!((env.min_position_m - 70.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 72.0 * MM).abs() < 1e-12);
         assert!((env.max_position_m - env.min_position_m).abs() < 1e-12);
     }
 
-    /// Degenerate variant (kata xb16): the clamped centre range [36, 38.5]
-    /// mm (N = 12, copper [0, 74.5] mm) is NON-empty but narrower than
-    /// one lattice step (P_e = 12 mm). Both bounds snap to the same
-    /// nearest rest — 34 mm (36 is 2 mm from it, 38.5 is 4.5 mm) — so the
-    /// envelope collapses to the single rest position **34 mm**. It sits
-    /// 2 mm below the lower clamp bound: the array overhangs the copper
-    /// start by 2 mm, bounded by P_e/2.
+    /// Degenerate variant: the clamp [36, 38.5] mm (N = 12, copper
+    /// [0, 74.5] mm) is non-empty but narrower than one electrical
+    /// period. With no lattice snapping the range is kept as-is:
+    /// **[36, 38.5] mm** (the endpoints are limits, not rests — no
+    /// reason to collapse them).
     #[test]
-    fn degenerate_range_snaps_both_bounds_to_one_rest() {
+    fn degenerate_narrow_range_is_kept_as_is() {
         let env = travel_envelope_over_slots(12.0 * MM, 12, 0.0, 74.5 * MM);
-        assert!((env.min_position_m - 34.0 * MM).abs() < 1e-12);
-        assert!((env.max_position_m - env.min_position_m).abs() < 1e-12);
-    }
-
-    /// Exact lattice hit on the UPPER bound: with copper length 166 mm ≡
-    /// (φ + span/2) (mod P_e), the upper bound lands exactly on the
-    /// φ_track = 10 mm lattice and max must equal it to within a femtometre
-    /// — the float guard must not step to a neighbouring lattice point
-    /// (bit-exact equality of the subtraction order is not required; the
-    /// lattice point and the clamp bound may differ by 1 ulp).
-    /// N = 4: span/2 = 12 mm → **min = 10 mm, max = 154 mm** (trailing
-    /// edge at exactly 166 mm); N = 12: span/2 = 36 mm → **min = 34 mm,
-    /// max = 130 mm**. The LOWER bound can never be an exact hit:
-    /// span/2 − φ ≡ P_e/6 (mod P_e) for every N, so min is always one
-    /// sixth period above the lattice.
-    #[test]
-    fn exact_upper_lattice_hit_is_preserved() {
-        // N = 4: upper = 166 − 12 = 154 mm = 10 + 12·12 mm.
-        let env = travel_envelope_over_slots(12.0 * MM, 4, 0.0, 166.0 * MM);
-        assert!((env.max_position_m - (166.0 * MM - 12.0 * MM)).abs() < 1e-15);
-        assert!((env.min_position_m - 10.0 * MM).abs() < 1e-12);
-        // N = 12: upper = 166 − 36 = 130 mm = 10 + 10·12 mm.
-        let env = travel_envelope_over_slots(12.0 * MM, 12, 0.0, 166.0 * MM);
-        assert!((env.max_position_m - (166.0 * MM - 36.0 * MM)).abs() < 1e-15);
-        assert!((env.min_position_m - 34.0 * MM).abs() < 1e-12);
+        assert!((env.min_position_m - 36.0 * MM).abs() < 1e-12);
+        assert!((env.max_position_m - 38.5 * MM).abs() < 1e-12);
     }
 
     #[test]
