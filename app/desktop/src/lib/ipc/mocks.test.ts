@@ -181,6 +181,33 @@ describe("mockCoils", () => {
   });
 });
 
+describe("mockCoils per-slot metrics", () => {
+  it("reports the pinned braid reference values for the infinity braid", () => {
+    const c = makeConfig();
+    const d = mockCoils(c).routing_dimensions!;
+    expect(d.slot_count).toBe(975);
+    expect(d.slot_pitch_m).toBeCloseTo(6.1538e-4, 12);
+    expect(d.interleave_step_m).toBeCloseTo(8.0e-4, 12);
+    // A slot houses ONE active leg: the per-band slot width is distinct from
+    // (and much smaller than) the whole-bundle band width.
+    expect(d.phase_band_widths.length).toBeGreaterThan(0);
+    for (const band of d.phase_band_widths) {
+      expect(band.slot_width_m).toBeCloseTo(1.1662e-4, 12);
+      expect(band.slot_width_m!).toBeLessThan(band.band_width_m);
+    }
+  });
+
+  it("leaves pattern-declared slot metrics null without a leg grid", () => {
+    const c = makeConfig({ routing_pattern: "serpentine" });
+    const d = mockCoils(c).routing_dimensions!;
+    expect(d.slot_count).toBeNull();
+    expect(d.slot_pitch_m).toBeNull();
+    expect(d.interleave_step_m).toBeNull();
+    // Per-band slot width is trace-geometry derived, not leg-grid derived.
+    expect(d.phase_band_widths[0].slot_width_m).not.toBeNull();
+  });
+});
+
 describe("mockForceSweep", () => {
   it("returns arrays sized to n_positions with a sensible mean/peak ordering", () => {
     const c = makeConfig({ n_positions: 25 });

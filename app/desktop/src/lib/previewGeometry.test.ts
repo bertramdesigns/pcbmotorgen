@@ -298,6 +298,7 @@ function band(
     trace_spacing_m: 0.0002,
     angle_rad: Math.PI / 2,
     band_width_m: width,
+    slot_width_m: null,
     max_band_width_m: max,
     margin_m: margin,
   };
