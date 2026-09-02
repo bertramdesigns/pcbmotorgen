@@ -336,8 +336,8 @@ pub async fn compute_power_budget(
 /// `estimate_for_config()` method, which splits `config.friction_n`
 /// proportionally based on the default bearing type (PTE-lined).
 /// Cogging is always 0 for coreless motors (PRODUCT_GOALS §4.A) — the
-/// estimator's proportional split assigns cogging a fraction of the total,
-/// but this is overridden to 0 for coreless topologies.
+/// estimator no longer allocates any cogging fraction (kata zt1r); the
+/// explicit 0 below keeps the IPC contract independent of estimator internals.
 #[tauri::command]
 pub async fn compute_friction(config: LinearMotorConfigIpc) -> Result<FrictionBudgetIpc, String> {
     let core = config.to_core();
