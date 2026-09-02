@@ -456,6 +456,19 @@ Trace length is a conservative analytical estimate
 `ρ/(w·t)`; `R_thermal = 15 °C/W`; burst 0.1 s with 10% voltage droop for
 capacitor sizing; efficiency at `0.10 m/s` rated velocity.
 
+The **continuous (thermal) chain is RMS-referenced**, per the glossary
+("Thermal Resistance & Power Dissipation"): `P_loss = I_rms² · R_phase`
+with `I_rms = I_peak/√2` for sinusoidal drive (`max_current_a` is the PEAK
+phase current). This feeds `continuous_power_w`, `temperature_rise_c`
+(= `P_loss · R_thermal`), and the efficiency chain
+(`p_elec = V_supply · I_rms` at the rated operating point).
+
+The **burst / capacitor-sizing chain stays PEAK-referenced**: the burst is
+a short transient (0.1 s) at full instantaneous current, so
+`burst_power_w = phases · i_burst² · R_phase` and `capacitor_required_uf`
+use `i_burst = I_peak · peak_force_n/target_force_n` (peak, guarded for
+`target_force_n ≤ 0`).
+
 ### 8.3 `FrictionEstimator`
 
 ```rust

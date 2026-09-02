@@ -113,7 +113,9 @@ pub struct SimulationInput {
     pub spacing_ratio: f64,
 
     // --- Drive electronics ---
-    /// Peak phase current [A].
+    /// Peak phase current [A]. The power model derives
+    /// `I_rms = I_peak/√2` from this for continuous (thermal) loss;
+    /// burst loss and capacitor sizing remain peak-referenced.
     pub max_current_a: f64,
     /// Drive electronics supply voltage [V].
     pub supply_voltage_v: f64,
