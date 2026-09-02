@@ -42,6 +42,8 @@ The relationship between linear velocity ($v$) and electrical excitation frequen
 
 $$f_e = \frac{v}{2 \tau_p}$$
 
+_Forward-looking_: $f_e$ is not yet derived from velocity anywhere in the toolchain; the only frequency input is the skin-depth drive frequency (see SPEC.md, "Out of Scope (Forward-Looking)").
+
 - **Electrical Period ($P_e$)**: Length of one full 360° electrical cycle along the travel axis:
 
 $$P_e = 2 \tau_p$$
@@ -77,11 +79,15 @@ $$F = N \cdot B \cdot I \cdot L_{active} \cdot \sin(\theta_e) = K_f \cdot I$$
 
 where $N$ is the number of active conductors cutting the field per phase (per slot in slotted machines), $B$ is flux density, $I$ is phase current, $L_{active}$ is active trace length within the magnetic field, and $\theta_e$ is the electrical phase angle.
 
+_Forward-looking_: $K_f$ as a first-class output is not implemented — force is evaluated from the Lorentz law per coil and no $K_f$ result is exposed (see SPEC.md, "Out of Scope (Forward-Looking)").
+
 - **Back EMF ($V_{emf}$)**: Counter-electromotive force voltage induced across the stator coils by the moving magnetic field:
 
 $$V_{emf} = K_e \cdot v$$
 
 where $K_e$ is the back-EMF constant (in $\text{V}/(\text{m/s})$) and $v$ is linear velocity. In SI units, $K_e \approx K_f$.
+
+_Forward-looking_: $V_{emf}$ and $K_e$ are not implemented; the simulation crate produces no back-EMF outputs (see SPEC.md, "Out of Scope (Forward-Looking)").
 
 - **Detent Force (Cogging Force)**: Passive magnetic attraction between mover magnets and ferromagnetic structures in slotted stators when de-energized. Measured as positional force ripple; zero in coreless/slotless topologies. "Cogging" is an accepted alias; prefer "detent" in user-facing labels.
 - **Thrust Ripple**: Periodic variation of the commanded thrust along travel caused by commutation and winding geometry (spatial period on the order of the phase-band pitch). Distinct from detent force: thrust ripple exists when energized; detent force exists when de-energized.
@@ -110,13 +116,13 @@ $$I_C = I_{peak} \sin\left(\theta_e - \frac{4\pi}{3}\right)$$
 _General per-coil offset law_: a coil displaced spatially by $\Delta x$ from the reference coil carries an electrical phase shift of $\pi \cdot \Delta x / \tau_p$. Coils spaced one phase-band pitch apart ($\Delta x = \tau_p/\text{phases}$) therefore run a $\pi \cdot \tau_{band}/\tau_p$ offset — $60°$ for the default 3-phase 1:1 layout. The classic $120°$ balanced law above corresponds to coils spaced $2\tau_p/3$. Whether the per-phase current is $\sin$ or $\cos$ of $\theta_e$ is a reference-frame (d-axis alignment) convention, not a physics difference.
 - **FOC (Field-Oriented Control)**: Sinusoidal commutation scheme that regulates the phase-current vector orthogonal to the rotor field (the q-axis) to maximize thrust per ampere; the concrete realization of the commutation law above.
 
-- **Full Step**: Drive mode operating at maximum alternating phase currents, advancing the mover by one full pole pitch ($\tau_p$) per control state change.
-- **Half Step**: Interleaved drive mode alternating between single-phase and dual-phase energization to double spatial resolution ($\frac{\tau_p}{2}$) per step cycle.
+- **Full Step**: Drive mode operating at maximum alternating phase currents, advancing the mover by one full pole pitch ($\tau_p$) per control state change. _Forward-looking: not implemented (see SPEC.md, "Out of Scope")._
+- **Half Step**: Interleaved drive mode alternating between single-phase and dual-phase energization to double spatial resolution ($\frac{\tau_p}{2}$) per step cycle. _Forward-looking: not implemented (see SPEC.md, "Out of Scope")._
 - **Microstepping**: Pulse-width modulation (PWM) drive technique using continuous sine/cosine current vectors to sub-divide full steps into micro-increments, maximizing positional resolution and suppressing resonance. Microstep resolution displacement ($\Delta x$) is defined by:
 
 $$\Delta x = \frac{\tau_p}{N_{microsteps}}$$
 
-where $N_{microsteps}$ is the division factor per electrical cycle.
+where $N_{microsteps}$ is the division factor per electrical cycle. _Forward-looking_: step-mode drive math and displacement readouts are not implemented (see SPEC.md, "Out of Scope (Forward-Looking)").
 
 _Drive-mode vs fixed-excitation note_: step modes re-commutate the phase currents as the mover advances (full step re-anchors every $\tau_p$). The travel envelope and holding-force charts instead model **fixed excitation** (one constant current vector), whose stable rest positions recur every $P_e = 2\tau_p$. Both views are correct; do not mix their displacement figures.
 

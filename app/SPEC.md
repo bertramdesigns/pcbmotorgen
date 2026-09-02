@@ -27,6 +27,15 @@ Using the tool should let the user understand the following:
 
 - **One-Way Pipeline**: The workflow is stateless and strictly one-way (User Input $\to$ Optimization $\to$ KiCad IPC Write). There is no "read-from-board and edit" sync loop.
 
+### Out of Scope (Forward-Looking)
+
+The following glossary-normative kinematics are **documented but intentionally unimplemented** anywhere in the app or sub-crates (decision recorded 2026-09-02, kata `mspc`). They remain in the glossary as normative definitions for future work; no simulation or UI currently computes or displays them:
+
+- **Back-EMF** ($V_{emf} = K_e \cdot v$) — no induced-voltage outputs exist.
+- **Force constant** ($K_f$) as a first-class result — force is evaluated from the Lorentz law directly; $K_f$ is not exposed.
+- **Electrical frequency** ($f_e = v / (2\tau_p)$) derived from velocity — `drive_frequency_hz` is a skin-depth input only.
+- **Step modes** (full / half / microstep) — no step-mode drive math or displacement readouts; the travel-envelope and holding-force charts model fixed excitation only.
+
 ---
 
 ## UI
