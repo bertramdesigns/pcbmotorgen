@@ -27,7 +27,7 @@ It is always possible to access API documentation for consumed crate using:
 - `@pcbmotorgen-routing-docs`
 - `@pcbmotorgen-export-docs`
 
-All high level definitions for the project exist in `README.md` and `SPEC.md`
+All high level definitions for the project exist in `README.md` and `SPEC.md`. A detailed glossary of terms for linear motors exists in `@pcb-linear-motor-reference-glossary`.
 
 ### Issue/work tracking & Kata
 
@@ -98,3 +98,4 @@ You coordinate execution tasks by delegating to the appropriate specialized suba
 - **Branch Partitioning:** Before beginning work, a new branch must be made if on `main`. Each feature must be developed on an isolated feature branch (e.g. `desktop/feat/ui-overhaul`, `desktop/chore/docs-cleanup`) and lands via a separate PR. Ensure the PR is properly documented. Squash-merge on approval.
 - **Kata Gate:** Kata is the system of record for intent. Before beginning any work, search first: run `kata list`. If no open issue matches the work, create one with `kata create` and add the relevant domain label (`desktop` / `simulation` / `export` / `design`). When the work happens on a dedicated branch, stamp it once: `kata meta set <ref> work.branch <branch>`. Before ending the session, either `kata close <ref> --done` with a message and evidence, or `kata label add <ref> needs-review` plus a comment describing what remains. Never `kata delete` or `kata purge` without explicit user authorization.
 - **Parallel Verification Gate:** `cargo test --workspace` must be green.
+- **Merging:** Rebase and merge, do not squash and merge.

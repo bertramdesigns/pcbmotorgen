@@ -19,3 +19,4 @@ __pycache__/
 .ref
 *pcbBraid/
 .kata.local.toml
+_TODO.md
