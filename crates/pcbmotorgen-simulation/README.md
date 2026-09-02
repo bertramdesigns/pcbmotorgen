@@ -147,8 +147,9 @@ code path; the tests document this explicitly.
 - the plain alternating magnet array (magnet counts, B-field polarity);
 - B-field 1D and 2D grid sampling (row-major `BFieldSample2D`);
 - conductor meshing, Lorentz force integration, commutation phase laws
-  (1:1 and 4:5 Vernier), the 3-point FOC polarity + alignment self-calibration
-  guard, ripple statistics;
+  (1:1 and 4:5 Vernier offsets, the balanced-120° special case, and the
+  thrust-vs-tilt 90°-rule optimality sweep), the 3-point FOC polarity +
+  alignment self-calibration guard, ripple statistics;
 - stackup, power, friction, and height estimators;
 - Python-oracle cross-validation vectors.
 
