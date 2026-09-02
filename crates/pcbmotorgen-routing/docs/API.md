@@ -402,19 +402,19 @@ existing SI/meter frontend DTO names for compatibility.
     "leg_grid": { "slot_count": 975, "strands_per_leg": 5 }
   },
   "dimensions": {
-    "active_area_length_mm": 195.0,
-    "total_routing_length_mm": 255.0,
+    "active_area_length_mm": 800.0,
+    "total_routing_length_mm": 800.0,
     "board_width_mm": 20.0,
     "phases": 3,
     "magnet_array_span_mm": 120.0,
     "pole_pitch_mm": 12.0,
     "period_pitch_mm": 12.0,
-    "period_count": 20,
+    "period_count": 65,
     "phase_band_pitch_mm": 4.0,
     "phase_clearance_mm": 0.127,
     "max_phase_band_width_mm": 3.873,
     "slot_count": 975,
-    "slot_pitch_mm": 0.2,
+    "slot_pitch_mm": 0.8205128205128205,
     "interleave_step_mm": 0.8,
     "phase_band_widths": [
       {
@@ -533,7 +533,8 @@ Without a declared grid all three fields stay `null` and the phase-band
 metrics work exactly as before. A malformed declaration (zero slot or strand
 count) degrades to `null` rather than failing generation. The bundled
 infinity braid declares its actual leg grid: `slot_count = periods × phases ×
-strands` (65 × 3 × 5 = 975 for the 600 mm / 12 mm-pole-pitch reference) and
+strands` (65 × 3 × 5 = 975 for the 800 mm / 12 mm-pole-pitch reference
+fixture, which hosts 65 complete 12 mm periods) and
 `strands_per_leg = num_strands`; each braid strand remains a single-trace leg,
 so its per-record `slot_width_mm` is the single-leg width.
 
@@ -567,8 +568,8 @@ assert_eq!(phase_band_width_from_trace_geometry_mm(4, 0.2, 0.15, 45_f64.to_radia
 // Top-down: tau_p = 12 mm, 3 phases, g_phase = 0
 assert_eq!(max_phase_band_width_from_pole_pitch_mm(12.0, 3, 0.0)?, 4.0);
 
-// True slot pitch: L_stator = 600 mm, 975 declared slots
-assert_eq!(slot_pitch_from_leg_grid_mm(600.0, 975)?, 600.0 / 975.0);
+// True slot pitch: L_stator = 800 mm (reference fixture active area), 975 slots
+assert_eq!(slot_pitch_from_leg_grid_mm(800.0, 975)?, 800.0 / 975.0);
 ```
 
 Public helpers: `pcbmotorgen_routing::phase_band_width_from_trace_geometry_mm(...)`,
