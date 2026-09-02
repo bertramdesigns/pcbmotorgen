@@ -95,9 +95,6 @@ pub struct SimulationInput {
     pub pcb_thickness_m: f64,
     /// Magnet face to PCB copper clearance [m].
     pub air_gap_m: f64,
-    /// Extra PCB length added BEYOND `active_area_length_m` on each end.
-    #[serde(default)]
-    pub padding_m: f64,
     /// Number of parallel strands (serpentine paths) per phase on the same
     /// layer. Distinct from a winding: a winding (coil) is one complete
     /// conductive loop. Legacy key `windings_per_phase` is accepted as a
@@ -164,7 +161,6 @@ impl Default for SimulationInput {
             board_width_m: mm(20.0),
             pcb_thickness_m: 0.0016,
             air_gap_m: mm(0.5),
-            padding_m: 0.030,
             strands_per_phase: 2,
             phases: 3,
             spacing_ratio: 1.0,
@@ -264,7 +260,6 @@ mod tests {
             "board_width_m": 0.020,
             "pcb_thickness_m": 0.0016,
             "air_gap_m": 0.0005,
-            "padding_m": 0.0,
             "windings_per_phase": 3,
             "phases": 3,
             "spacing_ratio": 1.0,

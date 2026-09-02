@@ -34,7 +34,7 @@
 
   <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Total X extent of the routed PCB traces (first to last segment point), measured from the returned payload. The braid floors whole periods, so this can sit up to one period below the configured domain (active area + 2 × end padding).">PCB trace total (X)</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Total X extent of the routed PCB traces (first to last segment point), measured from the returned payload. The braid floors whole periods, so this can sit up to one period below the active-area length (the routing domain equals the active area).">PCB trace total (X)</dt>
       <dd class="font-mono text-xs text-emerald-300">
         {(measuredTraceLengthMm ?? config.trace_total_length_mm).toFixed(1)} mm
         {#if measuredTraceLengthMm !== null}
@@ -43,7 +43,7 @@
       </dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Copper active region inside the end paddings (mover span + travel)">Active copper region</dt>
+      <dt class="truncate text-[10px] text-slate-500" title="Copper active region (mover span + travel)">Active copper region</dt>
       <dd class="font-mono text-xs text-sky-200">{config.active_area_length_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">

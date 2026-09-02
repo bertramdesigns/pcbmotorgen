@@ -450,8 +450,8 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 /// `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`), deviating by ≤ P_e/2 per endpoint
 /// so the sweep approximates the configured travel
 /// (`travel = copper_length − span`). Defaults
-/// (N = 12, P_e = 12 mm, copper region [30, 177] mm in track coords):
-/// **64 → 136 mm**; the endpoints DEPEND on N (N = 4 gives 40 → 160 mm).
+/// (N = 12, P_e = 12 mm, copper region [0, 147] mm in track coords):
+/// **34 → 106 mm**; the endpoints DEPEND on N (N = 4 gives 10 → 130 mm).
 /// If the copper cannot host the span, max clamps to min (never
 /// inverted). The UI clamps its position slider to
 /// [min_position_m, max_position_m].
@@ -462,9 +462,10 @@ pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvel
     // P_e = 2 × pole pitch (SimulationInput.magnet_pitch_m is the
     // centre-to-centre pole pitch).
     let electrical_period_m = 2.0 * sim.magnet_pitch_m;
-    let ctx = core.routing_context();
-    let copper_region_start_m = ctx.padding_mm * 0.001;
-    let copper_region_end_m = (ctx.padding_mm + ctx.active_area_length_mm) * 0.001;
+    // The copper active area is the whole track: [0, active_area_length].
+    // There is no padding offset (kata hrd8 removed the padding feature).
+    let copper_region_start_m = 0.0;
+    let copper_region_end_m = sim.active_area_length_m;
     Ok(TravelEnvelopeIpc::from(
         pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots(
             electrical_period_m,

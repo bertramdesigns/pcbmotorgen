@@ -32,7 +32,6 @@ impl LinearMotorConfig {
             phases: self.phases.max(1),
             min_trace_mm: self.min_trace_m * 1e3,
             min_space_mm: self.min_space_m * 1e3,
-            padding_mm: self.padding_m * 1e3,
             expects_continuous: false,
             params: self.routing_params.clone(),
             // Magnet layout: lets patterns align their repeating unit to the
@@ -66,7 +65,6 @@ impl LinearMotorConfig {
             board_width_m: self.board_width_m,
             pcb_thickness_m: self.pcb_thickness_m,
             air_gap_m: self.air_gap_m,
-            padding_m: self.padding_m,
             strands_per_phase: self.strands_per_phase,
             phases: self.phases,
             spacing_ratio: self.spacing_ratio,

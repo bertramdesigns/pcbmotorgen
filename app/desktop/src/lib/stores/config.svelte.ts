@@ -29,20 +29,7 @@ export class ConfigStore {
   desired_travel_mm = $state(75);
   active_area_width_mm = $state(20);
 
-  // --- Round 9: padding + multi-strand (defaults match the Rust core) -
-  // These are the new defaults that the production code path uses
-  // for the MagneticFader reference design. With
-  // `strands_per_phase = 2` and `padding_mm = 30`:
-  //
-  // - Each phase gets 2 parallel serpentine paths on its assigned
-  //   layer (stacked in y, interleaved in x).
-  // - The 30 mm padding gives the strands' offset x positions extra
-  //   room at the ends of the active area for routing.
-  // - The multi-strand design is single-layer per phase, so no
-  //   inter-layer connections, no through-vias, no buried vias —
-  //   directly addresses the Bug 17 through-via short-circuit
-  //   symptom the user reported in Round 8.
-  padding_mm = $state(30);
+  // --- Multi-strand (default matches the Rust core) ---
   strands_per_phase = $state(2);
 
   // --- Magnet array (mm) -------------------------------------------------
@@ -146,12 +133,10 @@ export class ConfigStore {
   /**
    * Total X extent of the routed PCB traces: the first-to-last segment-point
    * span returned by the routing backend. The braid routes across the active
-   * area PLUS both end paddings (end-turn room), so this is the dimension
-   * the coil preview actually draws — keep every preview sized by THIS.
+   * area (its end turns are part of the pattern), so this is the dimension
+   * the coil preview draws — keep every preview sized by THIS.
    */
-  trace_total_length_mm = $derived(
-    this.active_area_length_mm + 2 * this.padding_mm,
-  );
+  trace_total_length_mm = $derived(this.active_area_length_mm);
   travel_mm = $derived(this.active_area_length_mm - this.mover_span_mm);
   /** Vernier slot-pitch ratio. No longer user-adjustable in the UI — pinned
    *  to the standard 1:1 and passed to the backend untouched. */
@@ -289,8 +274,6 @@ export class ConfigStore {
       active_area_length_m: mm(this.active_area_length_mm),
       board_width_m: mm(this.active_area_width_mm),
       pcb_thickness_m: mm(this.pcb_thickness_mm),
-      // Round 9: padding + multi-strand pass-through to the core.
-      padding_m: mm(this.padding_mm),
       strands_per_phase: this.strands_per_phase,
 
       magnet_count: this.magnet_count,

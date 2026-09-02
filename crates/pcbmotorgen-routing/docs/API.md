@@ -119,7 +119,6 @@ boundary.
   "phases": 3,
   "min_trace_mm": 0.127,
   "min_space_mm": 0.127,
-  "padding_mm": 30.0,
   "expects_continuous": false,
   "params": { "num_strands": 5 },
   "magnet_pitch_mm": 12.0,
@@ -135,7 +134,6 @@ boundary.
 | `phases` | `u32` | Electrical phase count. |
 | `min_trace_mm` | `f64` | Minimum manufacturable trace width [mm]. |
 | `min_space_mm` | `f64` | Minimum trace-to-trace clearance [mm]. |
-| `padding_mm` | `f64` | Extra PCB length per end for routing [mm]. |
 | `expects_continuous` | `bool` | Whether the pattern declares end→start continuity per (layer, net), driving the validator continuity check. |
 | `params` | `{string → number}` | Pattern-specific user-editable parameters. |
 | `magnet_pitch_mm` | `f64?` | Pole pitch, centre-to-centre North/South distance (`tau_p`), when the mover layout is known [mm]. |
@@ -264,7 +262,7 @@ only where the parameter explicitly says so.
 **Deriving vs declaring.** Parameters that are derived from the board must be
 computed **inside** the pattern and must **NOT** be exposed as parameters.
 Example: the infinity braid's amplitude `A = board_width / 2` and total length
-`D = active_area + 2·padding` come from the context. Only genuinely independent
+`D = active_area` (the routing domain equals the active area — there is no end padding) come from the context. Only genuinely independent
 user knobs (strand count, period count, angles…) should be declared.
 Out-of-range user values are rejected before generation with a helpful error,
 e.g. `Strands per period = 1 is below the minimum 2 for pattern "infinity-braid"`.
@@ -327,7 +325,7 @@ never sanitised.** Rules:
   rejected.
 - **Non-empty** — the result must contain at least one segment, curve, or via.
 - **Finite** — every coordinate must be finite (`NaN`/`Inf` rejected).
-- **Bounds** — x within `[0, active_area_length_mm + 2·padding_mm]` and y within
+- **Bounds** — x within `[0, active_area_length_mm]` (the routing domain equals the active area) and y within
   `[0, board_width_mm]` (inclusive, with a `1e-6` epsilon so exact-boundary
   coordinates pass).
 - **Layer range** — `layer` / `from_layer` / `to_layer` inside `[0, num_layers)`.
@@ -435,7 +433,7 @@ existing SI/meter frontend DTO names for compatibility.
 | Dimension field | Type | Meaning |
 | --- | --- | --- |
 | `active_area_length_mm` | `f64` | Active copper length from the context [mm]. |
-| `total_routing_length_mm` | `f64` | Active length plus both padding ends [mm]. |
+| `total_routing_length_mm` | `f64` | Active length — the routing domain equals the active area [mm]. |
 | `board_width_mm` | `f64` | Across-board width used for the braid angle [mm]. |
 | `phases` | `u32` | Phase count used for the phase-band calculation. |
 | `magnet_array_span_mm` | `f64?` | Full mover magnet-array span [mm], when supplied. |
@@ -718,7 +716,7 @@ Python runner smoke test (from the repository root):
 ```bash
 python3 crates/pcbmotorgen-export/scripts/pattern_runners/example_runner.py --metadata
 python3 crates/pcbmotorgen-export/scripts/pattern_runners/example_runner.py \
-  < <(printf '%s\n' '{"active_area_length_mm":120.0,"board_width_mm":20.0,"phases":3,"num_layers":2,"min_trace_mm":0.127,"min_space_mm":0.127,"padding_mm":0,"expects_continuous":false,"params":{}}')
+  < <(printf '%s\n' '{"active_area_length_mm":120.0,"board_width_mm":20.0,"phases":3,"num_layers":2,"min_trace_mm":0.127,"min_space_mm":0.127,"expects_continuous":false,"params":{}}')
 ```
 
 The package has no Python dependency for normal Rust builds; Python is only

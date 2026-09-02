@@ -172,7 +172,7 @@ pub fn register_python_runner(
 /// pitch is reported, but it is not presented as magnet-aligned because there
 /// is no pole pitch to compare it with.
 fn infinity_period(ctx: &RoutingContext) -> (Option<f64>, Option<u32>) {
-    let total = ctx.active_area_length_mm + 2.0 * ctx.padding_mm;
+    let total = ctx.active_area_length_mm;
     if let Some(pole_pitch) = ctx.magnet_pitch() {
         let phases = ctx.phases.max(1) as f64;
         let strands = ctx.param("num_strands", 5.0).max(2.0);

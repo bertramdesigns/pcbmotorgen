@@ -29,10 +29,11 @@
   // along the travel axis.
   //
   // Everything is drawn in the ROUTING/DOMAIN frame — the same frame the
-  // coil canvas uses: x = 0 is the left edge of the routed traces, the
-  // copper active region starts one end-padding in. The board length is
-  // the MEASURED trace span when a payload exists (the braid floors whole
-  // periods, so it is shorter than the nominal domain).
+  // coil canvas uses: x = 0 is the left edge of the routed traces and of
+  // the copper active region — the routing domain equals the active area.
+  // The board length is the MEASURED trace span when a payload exists
+  // (the braid floors whole periods, so it is shorter than the nominal
+  // domain).
   // ====================================================================
   const ISO_W = 220;
   const ISO_H = 220;
@@ -79,8 +80,8 @@
     return {
       boardX0: boardStartMm,
       boardL: boardLengthMm,
-      // Copper active region inside the end paddings (domain frame).
-      activeX0: config.padding_mm,
+      // Copper active region (domain frame).
+      activeX0: 0,
       activeL: config.active_area_length_mm,
       W: config.active_area_width_mm,
       pcbT,
@@ -100,9 +101,8 @@
   let isoStatorBox = $derived(
     isoBoxPath(isoGeom.boardX0, 0, 0, isoGeom.boardL, isoGeom.W, isoGeom.pcbT, isoCenter.cx, isoCenter.cy, project),
   );
-  // Flat outline of the copper ACTIVE region on the PCB top face: shows how
-  // the end paddings extend beyond the copper (the mover stops here, not at
-  // the board edge).
+  // Flat outline of the copper ACTIVE region on the PCB top face: the
+  // mover's strip stays within this region at both travel endpoints.
   let isoActiveBox = $derived(
     isoBoxPath(isoGeom.activeX0, 0, isoGeom.pcbT, isoGeom.activeL, isoGeom.W, 0.01, isoCenter.cx, isoCenter.cy, project),
   );

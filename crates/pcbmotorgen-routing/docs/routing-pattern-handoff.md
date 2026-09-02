@@ -52,7 +52,6 @@ on the concrete core `LinearMotorConfig` — this snapshot is the entire world.
   "phases": 3,
   "min_trace_mm": 0.127,
   "min_space_mm": 0.127,
-  "padding_mm": 30.0,
   "expects_continuous": false,
   "params": { "num_strands": 5 },
   "magnet_pitch_mm": 12.0,
@@ -68,7 +67,6 @@ on the concrete core `LinearMotorConfig` — this snapshot is the entire world.
 | `phases`               | `u32`               | Electrical phase count.                              |
 | `min_trace_mm`         | `f64`               | Minimum manufacturable trace width [mm].             |
 | `min_space_mm`         | `f64`               | Minimum trace-to-trace clearance [mm].               |
-| `padding_mm`           | `f64`               | Extra PCB length per end for routing [mm].           |
 | `expects_continuous`   | `bool`              | Whether the validator enforces end→start continuity per (layer, net). |
 | `params`               | `{string → number}` | Pattern-specific user-editable parameters.           |
 | `magnet_pitch_mm`      | `f64?`              | Pole pitch, when the mover layout is known [mm].     |
@@ -190,7 +188,7 @@ complete validated pattern output.
 | Dimension field | Type | Meaning |
 | --- | --- | --- |
 | `active_area_length_mm` | `f64` | Active copper length from the context [mm]. |
-| `total_routing_length_mm` | `f64` | Active length plus both padding ends [mm]. |
+| `total_routing_length_mm` | `f64` | Active length — the routing domain equals the active area [mm]. |
 | `board_width_mm` | `f64` | Across-board width used for the braid angle [mm]. |
 | `magnet_array_span_mm` | `f64?` | Full mover magnet-array span [mm], when supplied. |
 | `pole_pitch_mm` | `f64?` | Centre-to-centre adjacent North/South pole pitch (`tau_p`) [mm]. |
@@ -293,7 +291,7 @@ All outputs — whatever their source — pass the same strict-shape
 written, previewed, or simulated. Key rules:
 
 - every coordinate finite (`NaN`/`Inf` rejected),
-- coordinates inside `[0, active_area_length_mm + 2·padding_mm]` × `[0, board_width_mm]`,
+- coordinates inside `[0, active_area_length_mm]` (the routing domain equals the active area) × `[0, board_width_mm]`,
   with a DFM clearance guard against board edges,
 - `layer`/`from_layer`/`to_layer` inside `[0, num_layers)`,
 - segments non-degenerate (nonzero length), arcs non-degenerate,

@@ -39,7 +39,8 @@ impl Validator {
             ));
         }
 
-        let x_max = ctx.active_area_length_mm + ctx.padding_mm * 2.0;
+        // The routing domain EQUALS the active area — there is no end padding.
+        let x_max = ctx.active_area_length_mm;
         let board_width = ctx.board_width_mm;
         // A tiny epsilon so coordinates sitting exactly on the boundary pass.
         let eps = 1e-6;
@@ -168,7 +169,7 @@ fn check_point(
             field,
             RoutingErrorKind::OutOfBounds,
             format!(
-                "x = {:.3} mm outside the routing area [0, {:.3} mm] — extend padding_mm or fix the pattern",
+                "x = {:.3} mm outside the routing area [0, {:.3} mm] — the routing domain equals the active area; fix the pattern",
                 p.x,
                 x_max
             ),
@@ -317,7 +318,6 @@ mod tests {
             phases: 3,
             min_trace_mm: 0.1,
             min_space_mm: 0.1,
-            padding_mm: 0.0,
             expects_continuous: false,
             params: HashMap::new(),
             ..RoutingContext::default()

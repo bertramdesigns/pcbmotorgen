@@ -123,7 +123,6 @@ json.dump(out, sys.stdout)
             phases: 3,
             min_trace_mm: 0.1,
             min_space_mm: 0.1,
-            padding_mm: 0.0,
             expects_continuous: false,
             params: HashMap::new(),
             ..RoutingContext::default()
@@ -158,7 +157,6 @@ json.dump(out, sys.stdout)
             phases: 3,
             min_trace_mm: 0.1,
             min_space_mm: 0.1,
-            padding_mm: 0.0,
             expects_continuous: false,
             params: HashMap::new(),
             ..RoutingContext::default()

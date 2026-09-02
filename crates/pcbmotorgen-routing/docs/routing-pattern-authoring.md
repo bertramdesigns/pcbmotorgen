@@ -141,7 +141,7 @@ Declare `parameters` inside the `--metadata` block (shown above). Each dict maps
 
 Parameters that are **derived from the board** must be computed **inside** the
 pattern and must **NOT** be exposed as parameters. Example: the infinity braid's
-amplitude `A = board_width / 2` and total length `D = active_area + 2·padding`
+amplitude `A = board_width / 2` and total length `D = active_area` (the routing domain equals the active area)
 come from the context. Only genuinely independent user knobs (strand count,
 period count, angles…) should be declared. Out-of-range user values are rejected
 by the routing crate: `float` below `min` gives _"…is below the minimum … for
@@ -191,7 +191,7 @@ the generic report can use that value as `N`; otherwise it reports one trace.
 containing:
 
 - **Non-finite** coordinates (NaN/Inf).
-- **Out-of-bounds** x/y outside `active_area + 2·padding` × `board_width`.
+- **Out-of-bounds** x/y outside `active_area` × `board_width` (the routing domain equals the active area).
 - **Bad layer** index `≥ num_layers`; a via with `from_layer == to_layer`.
 - **Degenerate** zero-length segments or collapsed arcs.
 - **Bad net** (empty or non-ASCII label).

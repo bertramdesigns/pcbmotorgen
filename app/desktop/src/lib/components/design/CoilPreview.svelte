@@ -598,11 +598,11 @@
     ctx.fill();
     ctx.stroke();
 
-    // Active-copper band (always on): the copper region inside the end
-    // paddings — the span the mover actually travels over. Shows WHY the
-    // magnet strip stops one padding short of the board edge at max travel.
+    // Active-copper band (always on): the copper active area — the full
+    // routing domain the traces route across (the braid's end turns are
+    // part of the pattern). The mover travels over this whole span.
     {
-      const ax = config.padding_mm / 1000;
+      const ax = 0;
       const aw = config.active_area_length_mm / 1000;
       if (aw > 0 && ax + aw <= g.boardRect.x + g.boardRect.w) {
         const ay = g.boardRect.y;

@@ -66,7 +66,8 @@ pub struct PhaseBandWidth {
 pub struct RoutingDimensions {
     /// Active-area length supplied by the board context [mm].
     pub active_area_length_mm: f64,
-    /// Total routable length, including both end paddings [mm].
+    /// Total routable length [mm]. The routing domain equals the active
+    /// area — there is no end padding.
     pub total_routing_length_mm: f64,
     /// Board width perpendicular to travel [mm].
     pub board_width_mm: f64,
@@ -191,7 +192,7 @@ impl RoutingDimensions {
         }
 
         let phases = ctx.phases.max(1);
-        let total_length = ctx.active_area_length_mm + 2.0 * ctx.padding_mm;
+        let total_length = ctx.active_area_length_mm;
         let pole_pitch_mm = match ctx.magnet_pitch_mm {
             Some(pitch) => {
                 if !pitch.is_finite() || pitch <= 0.0 {
@@ -344,12 +345,6 @@ fn validate_context_dimensions(ctx: &RoutingContext) -> Result<(), RoutingError>
             "board width must be finite and greater than zero",
         ));
     }
-    if !ctx.padding_mm.is_finite() || ctx.padding_mm < 0.0 {
-        return Err(dimension_error(
-            "context.padding_mm",
-            "padding must be finite and non-negative",
-        ));
-    }
     if !ctx.min_trace_mm.is_finite() || ctx.min_trace_mm <= 0.0 {
         return Err(dimension_error(
             "context.min_trace_mm",
@@ -411,7 +406,6 @@ mod tests {
             phases: 3,
             min_trace_mm: 0.2,
             min_space_mm: 0.15,
-            padding_mm: 30.0,
             magnet_pitch_mm: Some(12.0),
             params: HashMap::from([("num_strands".to_string(), 4.0)]),
             ..RoutingContext::default()

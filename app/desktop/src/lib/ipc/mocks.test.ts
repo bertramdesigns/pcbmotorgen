@@ -27,7 +27,6 @@ function makeConfig(overrides: Partial<LinearMotorConfig> = {}): LinearMotorConf
     active_area_length_m: 0.195,
     board_width_m: 0.02,
     pcb_thickness_m: 0.0016,
-    padding_m: 0.03,
     strands_per_phase: 2,
     magnet_count: 10,
     magnet_width_m: 0.01,
@@ -113,13 +112,13 @@ describe("mockCoils", () => {
   });
 
   it("emits representative pole regions (one per phase per pole pitch)", () => {
-    const c = makeConfig(); // active_area 0.195, padding 0.03, pitch 0.012
+    const c = makeConfig(); // active_area 0.195, pitch 0.012
     const regions = mockCoils(c).routing_dimensions!.pole_regions;
     expect(regions.length).toBeGreaterThan(0);
-    // Mirrors the infinity braid: regions tile the FULL routing domain
-    // (active area + 2 × padding), one per phase per pole pitch.
+    // Mirrors the infinity braid: regions tile the routing domain — which
+    // EQUALS the active area (no end padding) — one per phase per pole pitch.
     const regionsPerPhase = Math.floor(
-      (c.active_area_length_m + 2 * c.padding_m) / c.magnet_pitch_m,
+      c.active_area_length_m / c.magnet_pitch_m,
     );
     expect(regionsPerPhase).toBeGreaterThan(0);
     expect(regions).toHaveLength(regionsPerPhase * c.phases);
@@ -144,7 +143,6 @@ describe("mockCoils", () => {
       magnet_width_m: 0.0045,
       magnet_gap_m: 0.0015,
       active_area_length_m: 0.147,
-      padding_m: 0.03,
     });
     const coils = mockCoils(c);
     const g = computePreviewGeometry(coils, {
@@ -152,10 +150,10 @@ describe("mockCoils", () => {
       magnet_width_mm: 4.5,
       magnet_gap_mm: 1.5,
     });
-    // Traces (and the board panel) span the full routing domain: the active
-    // area plus BOTH end paddings — the mover must have coils beneath it at
+    // Traces (and the board panel) span the routing domain, which EQUALS the
+    // active area (no end padding) — the mover must have coils beneath it at
     // every travel position, exactly like the real infinity braid.
-    expect(g.contentBox.maxX).toBeCloseTo(0.147 + 2 * 0.03);
+    expect(g.contentBox.maxX).toBeCloseTo(0.147);
 
     const magnets = computeMagnets(
       { magnet_count: 12, magnet_width_mm: 4.5, magnet_gap_mm: 1.5 },
@@ -164,11 +162,23 @@ describe("mockCoils", () => {
     const travelM = 0.075;
     const restMin = magnets[0].x;
     const restMax = magnets[magnets.length - 1].x + 4.5 / 1000;
-    // At rest AND at the far end of travel the strip stays on the board.
+    // EXACT FIT (kata hrd8): the copper active area is the whole routing
+    // domain and active_area = span + travel, so the drawn board fits the
+    // swept strip with zero slack.
+    expect(g.contentBox.maxX).toBeCloseTo(0.147);
+    expect(restMax - restMin + travelM).toBeCloseTo(0.147);
+    // The drawn (pattern-anchored) rest strip starts on the board.
     expect(restMin).toBeGreaterThanOrEqual(0);
-    expect(restMax + travelM).toBeLessThanOrEqual(g.contentBox.maxX);
-    // The strip covers exactly one travel length of movement.
-    expect(restMax - restMin).toBeCloseTo(0.072);
+    // Sweeping the strip across the mock ENVELOPE (nearest-snap spec) keeps
+    // it within the domain up to the documented ≤ P_e/2 per-endpoint
+    // overhang (out-hanging magnets see no conductors).
+    const env = mockTravelEnvelope(c);
+    const spanM = restMax - restMin;
+    const stripStartAtMin = env.min_position_m - spanM / 2;
+    const stripEndAtMax = env.max_position_m + spanM / 2;
+    const halfPeriod = 2 * c.magnet_pitch_m / 2;
+    expect(stripStartAtMin).toBeGreaterThanOrEqual(-halfPeriod);
+    expect(stripEndAtMax).toBeLessThanOrEqual(g.contentBox.maxX + halfPeriod);
   });
 });
 
@@ -275,55 +285,56 @@ describe("mockTravelEnvelope", () => {
   // Nearest-snapped, span-aware convention (kata xb16, mirroring the Rust
   // `travel_envelope_over_slots`): endpoints are the first/last stable rest
   // positions of the array CENTRE inside copper — centre clamp
-  // [copper_start + span/2, copper_end − span/2] with span = N·τ_p, each
-  // endpoint snapped to the NEAREST point on x ≡ φ_track (mod P_e) (ties
-  // inward), deviating by ≤ P_e/2 per endpoint so the sweep approximates
-  // the configured travel. Endpoints therefore DEPEND on N (they widen as N
-  // shrinks); rest_phase_m is the track-frame phase (padding + φ) mod P_e.
-  it("defaults (N=12, P_e=12 mm, copper [30,177]) span 64 → 136 mm", () => {
+  // [span/2, active − span/2] with span = N·τ_p (the copper active area is
+  // the whole track [0, active]: no padding, kata hrd8), each endpoint
+  // snapped to the NEAREST point on x ≡ φ_track (mod P_e) (ties inward),
+  // deviating by ≤ P_e/2 per endpoint so the sweep approximates the
+  // configured travel. Endpoints therefore DEPEND on N (they widen as N
+  // shrinks); rest_phase_m is the track-frame phase φ mod P_e.
+  it("defaults (N=12, P_e=12 mm, copper [0,147]) span 34 → 106 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
     expect(env.electrical_period_m).toBeCloseTo(0.012, 12);
-    // φ_track = 4 mm lattice: clamp [66, 141] mm → min = nearest to 66 =
-    // 4 + 5·12 = 64 mm (2 mm away vs 76 at 10 mm), max = 4 + 11·12 =
-    // 136 mm (5 mm away vs 148 at 7 mm). Sweep 72 mm vs travel 75 mm.
-    expect(env.min_position_m).toBeCloseTo(0.064, 12);
-    expect(env.max_position_m).toBeCloseTo(0.136, 12);
-    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
-  });
-
-  it("N=4 widens the envelope to 40 → 160 mm on the same φ_track = 4 mm lattice", () => {
-    const env = mockTravelEnvelope(
-      makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
-    );
-    // Clamp [42, 165] mm → min = nearest to 42 = 4 + 3·12 = 40 mm,
-    // max = 4 + 13·12 = 160 mm.
-    expect(env.min_position_m).toBeCloseTo(0.040, 12);
-    expect(env.max_position_m).toBeCloseTo(0.160, 12);
-    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
-  });
-
-  it("N=6 endpoints 46 → 154 mm; track-frame phase (30+16) mod 12 = 10 mm", () => {
-    const env = mockTravelEnvelope(
-      makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
-    );
-    // φ_track = 10 mm lattice; clamp [48, 159] mm → min = 10 + 3·12 = 46 mm,
-    // max = 10 + 12·12 = 154 mm.
-    expect(env.min_position_m).toBeCloseTo(0.046, 12);
-    expect(env.max_position_m).toBeCloseTo(0.154, 12);
+    // φ_track = 10 mm lattice: clamp [36, 111] mm → min = nearest to 36 =
+    // 10 + 2·12 = 34 mm (2 mm away vs 46 at 10 mm), max = 10 + 8·12 =
+    // 106 mm (5 mm away vs 118 at 7 mm). Sweep 72 mm vs travel 75 mm.
+    expect(env.min_position_m).toBeCloseTo(0.034, 12);
+    expect(env.max_position_m).toBeCloseTo(0.106, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
   });
 
+  it("N=4 widens the envelope to 10 → 130 mm on the same φ_track = 10 mm lattice", () => {
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
+    );
+    // Clamp [12, 135] mm → min = nearest to 12 = 10 + 0·12 = 10 mm,
+    // max = 10 + 10·12 = 130 mm.
+    expect(env.min_position_m).toBeCloseTo(0.010, 12);
+    expect(env.max_position_m).toBeCloseTo(0.130, 12);
+    expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
+  });
+
+  it("N=6 endpoints 16 → 124 mm; track-frame phase φ mod 12 = 4 mm", () => {
+    const env = mockTravelEnvelope(
+      makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
+    );
+    // φ_track = 4 mm lattice; clamp [18, 129] mm → min = 4 + 1·12 = 16 mm,
+    // max = 4 + 10·12 = 124 mm.
+    expect(env.min_position_m).toBeCloseTo(0.016, 12);
+    expect(env.max_position_m).toBeCloseTo(0.124, 12);
+    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
+  });
+
   it("clamps max to min when the copper region cannot host the envelope", () => {
-    // Copper [30, 40] mm is far shorter than the N=24 span (144 mm): the
-    // clamped centre range [102, −32] mm is inverted, so both endpoints
-    // snap to min = nearest φ_track = 4 mm lattice point to 102 mm
-    // (100 mm — 2 mm away vs 112 at 10 mm).
+    // Copper [0, 10] mm is far shorter than the N=24 span (144 mm): the
+    // clamped centre range [72, −34] mm is inverted, so both endpoints
+    // snap to min = nearest φ_track = 10 mm lattice point to 72 mm
+    // (70 mm — 2 mm away vs 82 at 10 mm).
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
     );
-    expect(env.min_position_m).toBeCloseTo(0.100, 12);
+    expect(env.min_position_m).toBeCloseTo(0.070, 12);
     expect(env.max_position_m).toBeCloseTo(env.min_position_m, 12);
   });
 });
