@@ -70,7 +70,8 @@ pub struct PhaseCoilIpc {
 /// pole pitch; the backend reports that condition and does not alter geometry.
 ///
 /// This is the full coil-side conductor bundle width (a phase band), NOT a
-/// single-slot width: a slot houses one active leg.
+/// single-slot width: a slot houses one active leg. The single-leg track
+/// width is reported separately as `slot_width_m`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PhaseBandWidthIpc {
@@ -81,6 +82,10 @@ pub struct PhaseBandWidthIpc {
     pub trace_spacing_m: f64,
     pub angle_rad: f64,
     pub band_width_m: f64,
+    /// Width of the track space housing ONE active leg of this band
+    /// (`w_t / sin(theta)` for a single-trace leg). Distinct from the bundle
+    /// width `band_width_m`.
+    pub slot_width_m: Option<f64>,
     pub max_band_width_m: Option<f64>,
     pub margin_m: Option<f64>,
 }
@@ -103,6 +108,15 @@ pub struct RoutingDimensionsIpc {
     pub phase_band_pitch_m: Option<f64>,
     pub phase_clearance_m: f64,
     pub max_phase_band_width_m: Option<f64>,
+    /// Total active leg slots declared by the pattern's leg grid, when known.
+    pub slot_count: Option<u32>,
+    /// True slot pitch `tau_s = active_area_length_m / slot_count` from the
+    /// declared leg grid. Distinct from `phase_band_pitch_m`.
+    pub slot_pitch_m: Option<f64>,
+    /// Effective leg pitch of braided/slotless patterns:
+    /// `pole_pitch_m / (phases x strands)`. Braided patterns have no physical
+    /// slots — this is the equivalent leg-pitch model.
+    pub interleave_step_m: Option<f64>,
     pub phase_band_widths: Vec<PhaseBandWidthIpc>,
     #[serde(default)]
     pub pole_regions: Vec<PoleRegionIpc>,
@@ -131,6 +145,9 @@ impl Default for RoutingDimensionsIpc {
             phase_band_pitch_m: None,
             phase_clearance_m: 0.0,
             max_phase_band_width_m: None,
+            slot_count: None,
+            slot_pitch_m: None,
+            interleave_step_m: None,
             phase_band_widths: Vec::new(),
             pole_regions: Vec::new(),
         }
@@ -255,6 +272,7 @@ impl PhaseBandWidthIpc {
             trace_spacing_m: band.trace_spacing_mm * MM_TO_M,
             angle_rad: band.angle_rad,
             band_width_m: band.band_width_mm * MM_TO_M,
+            slot_width_m: band.slot_width_mm.map(|v| v * MM_TO_M),
             max_band_width_m: band.max_band_width_mm.map(|v| v * MM_TO_M),
             margin_m: band.margin_mm.map(|v| v * MM_TO_M),
         }
@@ -275,6 +293,9 @@ impl RoutingDimensionsIpc {
             phase_band_pitch_m: dimensions.phase_band_pitch_mm.map(|v| v * MM_TO_M),
             phase_clearance_m: dimensions.phase_clearance_mm * MM_TO_M,
             max_phase_band_width_m: dimensions.max_phase_band_width_mm.map(|v| v * MM_TO_M),
+            slot_count: dimensions.slot_count,
+            slot_pitch_m: dimensions.slot_pitch_mm.map(|v| v * MM_TO_M),
+            interleave_step_m: dimensions.interleave_step_mm.map(|v| v * MM_TO_M),
             phase_band_widths: dimensions
                 .phase_band_widths
                 .iter()
@@ -327,6 +348,9 @@ mod tests {
             phase_band_pitch_mm: Some(4.0),
             phase_clearance_mm: 0.127,
             max_phase_band_width_mm: Some(3.873),
+            slot_count: Some(975),
+            slot_pitch_mm: Some(0.8),
+            interleave_step_mm: Some(0.8),
             phase_band_widths: vec![],
             pole_regions: vec![CorePoleRegion {
                 phase: "A".to_string(),
@@ -335,10 +359,31 @@ mod tests {
                 end: pcbmotorgen_routing::Point::new(12.0, 10.0),
             }],
         };
+        // Per-band conversion includes the single-leg slot width (mm -> m).
+        let band = CorePhaseBandWidth {
+            layer: 0,
+            net: "A".to_string(),
+            trace_count: 5,
+            trace_width_mm: 0.127,
+            trace_spacing_mm: 0.127,
+            angle_rad: 1.030377,
+            band_width_mm: 1.333,
+            slot_width_mm: Some(0.148),
+            max_band_width_mm: Some(3.873),
+            margin_mm: Some(2.54),
+        };
+        let band_wire = PhaseBandWidthIpc::from_core(&band);
+        assert_eq!(band_wire.band_width_m, 0.001333);
+        assert_eq!(band_wire.slot_width_m, Some(0.000148));
+        assert_eq!(band_wire.margin_m, Some(0.00254));
+
         let wire = RoutingDimensionsIpc::from_core(&dimensions);
         assert_eq!(wire.active_area_length_m, 0.195);
         assert_eq!(wire.pole_pitch_m, Some(0.012));
         assert_eq!(wire.phase_clearance_m, 0.000127);
+        assert_eq!(wire.slot_count, Some(975));
+        assert_eq!(wire.slot_pitch_m, Some(0.0008));
+        assert_eq!(wire.interleave_step_m, Some(0.0008));
         assert_eq!(wire.pole_regions.len(), 1);
         assert_eq!(wire.pole_regions[0].phase, "A");
         assert_eq!(wire.pole_regions[0].pole_index, 2);

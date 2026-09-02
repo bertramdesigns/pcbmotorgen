@@ -435,6 +435,7 @@ mod tests {
             magnet_pitch_mm: Some(config.magnet_pitch_m * 1e3),
             magnet_array_span_mm: Some(config.magnet_array_span_m() * 1e3),
             coil_span_mm: Some(config.magnet_array_span_m() * 1e3),
+            phase_clearance_mm: None,
         };
         pcbmotorgen_routing::generate_coils_from_context(&ctx, "infinity-braid")
     }

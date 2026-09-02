@@ -116,6 +116,8 @@ The canonical geometry document. Every element carries its own `layer` and
 | `segments[]`     | segment   | Straight traces: `start`/`end` points `{x, y}`, `layer`, `net`, `is_active`. |
 | `curves[]`       | curve     | Rounded corners / arcs — quadratic Bézier `start → mid → end`. `mid` is the control point on the arc (matches KiCad `(arc start mid end)`). |
 | `vias[]`         | via       | Inter-layer connections: `position`, `from_layer`, `to_layer`, `net`. |
+| `pole_regions[]` | region    | Optional pattern-defined phase/pole-pitch regions.                |
+| `leg_grid`       | `object?` | Optional pattern-declared leg grid `{ slot_count, strands_per_leg? }` — the equivalent slot model of the generated active legs; drives the host's per-slot metrics. Additive; omit when the pattern has no regular leg grid. |
 
 `is_active` distinguishes **force-producing conductors** (`true`) from
 **end-turn connectors** (`false`).
@@ -195,19 +197,25 @@ complete validated pattern output.
 | `period_pitch_mm` | `f64?` | Pattern repeat pitch [mm]; exact pole pitch for magnet-aware infinity braid. |
 | `period_count` | `u32?` | Complete repeat periods emitted, when known. |
 | `phase_band_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
-| `phase_clearance_mm` | `f64` | `g_phase`, currently the core minimum spacing rule [mm]. |
+| `phase_clearance_mm` | `f64` | Explicit inter-phase clearance `g_phase` from the context; falls back to the context's `min_space_mm` when unset [mm]. |
 | `max_phase_band_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
+| `slot_count` | `u32?` | Total active leg slots declared by the pattern's leg grid, when declared. |
+| `slot_pitch_mm` | `f64?` | True slot pitch `tau_s = L_stator / N_slots` from the declared leg grid [mm]. |
+| `interleave_step_mm` | `f64?` | Effective leg pitch of braided slotless patterns, `tau_p / (phases × strands)` [mm]. |
 | `phase_band_widths` | array | Per-active `(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries for each phase and pole pitch [mm]. |
 
 Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
 (`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), `band_width_mm`, the
-top-down maximum, and `margin_mm`.
+single-leg `slot_width_mm` (`w_t / sin(theta)` — a slot houses one active leg,
+never the bundle), the top-down maximum, and `margin_mm`.
 
 `pole_pitch_mm` is the centre-to-centre distance between adjacent North and
 South poles (`tau_p`), not the physical magnet width. `phase_band_pitch_mm` is
 the ideal phase-band pitch `tau_p / phases`; it is separate from the conductor
-band width in each `phase_band_widths[]` record.
+band width in each `phase_band_widths[]` record, and separate from the true
+slot pitch `slot_pitch_mm` (see the routing API reference §10.2 for the
+pattern-declared `leg_grid` that drives the per-slot fields).
 
 `pole_regions[]` is the authoritative region interface for magnet/pole
 placement. It is deliberately emitted by the pattern rather than inferred by

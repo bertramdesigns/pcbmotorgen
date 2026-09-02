@@ -87,6 +87,28 @@ pub struct PoleRegion {
     pub end: Point,
 }
 
+/// Pattern-declared leg grid: the equivalent slot model of the pattern's
+/// generated active legs (glossary "Slot" — a slot houses ONE active leg).
+///
+/// Patterns whose active legs populate a regular grid declare it here so the
+/// host can report true per-slot quantities (`slot_count`, `slot_pitch_mm`,
+/// `interleave_step_mm`) alongside the phase-band metrics. The declaration is
+/// optional metadata; a pattern without a regular leg grid (or a legacy
+/// payload) omits it and the derived slot fields stay `None`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LegGrid {
+    /// Total number of active leg slots the pattern declares along the stator
+    /// track (`N_slots` in `tau_s = L_stator / N_slots`).
+    pub slot_count: u32,
+    /// Number of parallel strands the pattern interleaves per leg-grid
+    /// position (the braid's `num_strands`). Used to derive the effective leg
+    /// pitch `interleave_step_mm = tau_p / (phases × strands_per_leg)`. For
+    /// braided slotless patterns each strand is its own active leg, so the
+    /// per-record `slot_width_mm` stays the single-trace width.
+    #[serde(default)]
+    pub strands_per_leg: Option<u32>,
+}
+
 /// The complete geometry a routing pattern produces for a board.
 ///
 /// All elements carry their own `layer` and `net` — the pattern owns layer
@@ -103,6 +125,10 @@ pub struct RoutingResult {
     /// Pattern-defined pole regions, one entry per phase and pole pitch.
     #[serde(default)]
     pub pole_regions: Vec<PoleRegion>,
+    /// Optional pattern-declared leg grid (equivalent slot model of the
+    /// generated active legs). Additive; absent for legacy payloads.
+    #[serde(default)]
+    pub leg_grid: Option<LegGrid>,
 }
 
 impl Default for RoutingResult {
@@ -113,6 +139,7 @@ impl Default for RoutingResult {
             curves: Vec::new(),
             vias: Vec::new(),
             pole_regions: Vec::new(),
+            leg_grid: None,
         }
     }
 }
@@ -146,6 +173,26 @@ mod tests {
         let json = r#"{"segments": [], "curves": [], "vias": []}"#;
         let r: RoutingResult = serde_json::from_str(json).expect("valid result JSON");
         assert_eq!(r.format_version, FORMAT_VERSION);
+    }
+
+    #[test]
+    fn absent_leg_grid_defaults_to_none_and_declared_grid_round_trips() {
+        // Legacy payloads without the additive `leg_grid` field deserialize.
+        let json = r#"{"segments": [], "curves": [], "vias": []}"#;
+        let r: RoutingResult = serde_json::from_str(json).expect("legacy result JSON");
+        assert_eq!(r.leg_grid, None);
+
+        let declared = RoutingResult {
+            leg_grid: Some(LegGrid {
+                slot_count: 975,
+                strands_per_leg: Some(5),
+            }),
+            ..RoutingResult::default()
+        };
+        let json = serde_json::to_string(&declared).expect("serialize");
+        assert!(json.contains("\"slot_count\":975"));
+        let back: RoutingResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, declared);
     }
 
     #[test]

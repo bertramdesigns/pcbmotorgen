@@ -25,6 +25,12 @@ pub struct RoutingContext {
     /// Minimum manufacturable trace width [mm].
     pub min_trace_mm: f64,
     /// Minimum trace-to-trace clearance [mm].
+    ///
+    /// Also the default inter-phase clearance: when
+    /// [`RoutingContext::phase_clearance_mm`] is `None`, `min_space_mm` is used
+    /// as `g_phase` in the top-down phase-band equation. That fallback is
+    /// intentional and documented (docs/API.md §10.1) — it is never a silent
+    /// reuse of an unrelated rule.
     pub min_space_mm: f64,
     /// Whether the pattern declares that its conductors are continuous (end→
     /// start connect within a tolerance) so the validator checks continuity.
@@ -49,6 +55,16 @@ pub struct RoutingContext {
     /// plugin/runner JSON compatibility. Both are populated together.
     #[serde(default)]
     pub coil_span_mm: Option<f64>,
+    /// Explicit inter-phase clearance `g_phase` [mm] used by the top-down
+    /// phase-band equation (`max_phase_band_width = tau_p / phases - g_phase`)
+    /// and reported as `RoutingDimensions.phase_clearance_mm`.
+    ///
+    /// This is an explicit INPUT, not a derived quantity. When `None` it falls
+    /// back to [`RoutingContext::min_space_mm`] — a documented compatibility
+    /// fallback for contexts that do not distinguish the phase-to-phase gap
+    /// from the trace-to-trace clearance (docs/API.md §10.1).
+    #[serde(default)]
+    pub phase_clearance_mm: Option<f64>,
 }
 
 impl RoutingContext {
