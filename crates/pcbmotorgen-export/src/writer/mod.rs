@@ -46,7 +46,8 @@ pub(crate) const TYPE_URL_PREFIX: &str = "type.googleapis.com";
 /// coils straddle x = 0 (active area runs from
 /// `-active_area_length_mm / 2` to `+active_area_length_mm / 2`). Y coordinates
 /// are passed through unchanged — the board is already centered on y = 0,
-/// and y in `[0, board_width_mm / 2]` is the "active" half of the coil.
+/// and the coil set spans the full board width, y ∈
+/// `[-board_width_mm / 2, +board_width_mm / 2]`.
 ///
 /// This is a **pure function** — no socket I/O. It produces a list of
 /// `google.protobuf.Any`-wrapped items ready for `CreateItems`.

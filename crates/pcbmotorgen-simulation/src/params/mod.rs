@@ -40,9 +40,9 @@ fn default_num_layers() -> u32 {
     4
 }
 
-/// Default value for `windings_per_phase` when the field is absent during
+/// Default value for `strands_per_phase` when the field is absent during
 /// serde deserialisation. 1 = the historical single-strand behaviour.
-fn default_windings_per_phase() -> u32 {
+fn default_strands_per_phase() -> u32 {
     1
 }
 
@@ -55,7 +55,10 @@ fn default_windings_per_phase() -> u32 {
 #[serde(rename_all = "snake_case")]
 pub enum BearingType {
     PlasticChannel,
-    PteLined,
+    /// PTFE (Teflon)-lined bearing surface. Legacy wire value `"pte_lined"`
+    /// (typo) is accepted as a serde alias.
+    #[serde(alias = "pte_lined")]
+    PtfeLined,
     BallBearing,
 }
 
@@ -66,7 +69,7 @@ pub enum BearingType {
 /// Simulation inputs for a coreless linear PCB motor (flying mover).
 ///
 /// All quantities in SI units. `active_area_length_m` is the primary INPUT;
-/// `travel` is derived: `active_area_length - coil_span`.
+/// `travel` is derived: `active_area_length − magnet array span`.
 ///
 /// This is the standalone-crate counterpart of the old monolithic
 /// `LinearMotorConfig`, restricted to exactly the fields the simulation
@@ -95,14 +98,18 @@ pub struct SimulationInput {
     /// Extra PCB length added BEYOND `active_area_length_m` on each end.
     #[serde(default)]
     pub padding_m: f64,
-    /// Number of parallel serpentine paths per phase on the same layer.
-    #[serde(default = "default_windings_per_phase")]
-    pub windings_per_phase: u32,
+    /// Number of parallel strands (serpentine paths) per phase on the same
+    /// layer. Distinct from a winding: a winding (coil) is one complete
+    /// conductive loop. Legacy key `windings_per_phase` is accepted as a
+    /// serde alias.
+    #[serde(default = "default_strands_per_phase", alias = "windings_per_phase")]
+    pub strands_per_phase: u32,
 
     // --- Coil ---
     /// Number of electrical phases.
     pub phases: u32,
-    /// Vernier slot pitch spacing ratio. 1.0 = standard 1:1.
+    /// Vernier phase-band spacing ratio (applied phase-band pitch / ideal
+    /// phase-band pitch τ_p/phases). 1.0 = standard 1:1.
     pub spacing_ratio: f64,
 
     // --- Drive electronics ---
@@ -158,7 +165,7 @@ impl Default for SimulationInput {
             pcb_thickness_m: 0.0016,
             air_gap_m: mm(0.5),
             padding_m: 0.030,
-            windings_per_phase: 2,
+            strands_per_phase: 2,
             phases: 3,
             spacing_ratio: 1.0,
             max_current_a: 1.0,
@@ -242,6 +249,42 @@ mod tests {
         }"#;
         let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
         assert_eq!(cfg.num_layers, 4, "num_layers must default to 4 when absent");
-        assert!(cfg.windings_per_phase >= 1);
+        assert!(cfg.strands_per_phase >= 1);
+    }
+
+    #[test]
+    fn test_serde_legacy_windings_per_phase_alias() {
+        // The legacy wire key `windings_per_phase` must still deserialize.
+        let json = r#"{
+            "active_area_length_m": 0.195,
+            "magnet_dims_m": [0.010, 0.010, 0.004],
+            "magnet_count": 10,
+            "magnet_pitch_m": 0.012,
+            "magnet_remanence_t": 1.35,
+            "board_width_m": 0.020,
+            "pcb_thickness_m": 0.0016,
+            "air_gap_m": 0.0005,
+            "padding_m": 0.0,
+            "windings_per_phase": 3,
+            "phases": 3,
+            "spacing_ratio": 1.0,
+            "max_current_a": 1.0,
+            "supply_voltage_v": 5.0,
+            "min_trace_m": 0.000127,
+            "min_space_m": 0.000127,
+            "min_via_drill_m": 0.0002,
+            "min_via_annular_ring_m": 0.0001,
+            "max_layers": 12,
+            "drive_frequency_hz": 500.0,
+            "max_temperature_rise_c": 20.0,
+            "target_force_n": 0.5,
+            "peak_force_n": 1.0,
+            "friction_n": 0.05,
+            "carriage_mass_kg": 0.015,
+            "max_accel_m_s2": 2.0,
+            "capacitor_bank_uf": 1000.0
+        }"#;
+        let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(cfg.strands_per_phase, 3, "legacy alias must map to strands_per_phase");
     }
 }

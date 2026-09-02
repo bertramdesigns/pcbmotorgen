@@ -30,7 +30,7 @@ _vias_, each carrying its own `layer` and `net`.
   is never silently patched.
 
 The host may wrap the validated result in a `RoutingReport`. That report adds
-pole-pitch and slot-width dimensions for the application and magnet-pattern
+pole-pitch and phase-band width dimensions for the application and magnet-pattern
 calculator; it does **not** change the strict plugin output shape.
 
 ---
@@ -147,9 +147,9 @@ period count, angles…) should be declared. Out-of-range user values are reject
 by the routing crate: `float` below `min` gives _"…is below the minimum … for
 pattern "…""_.
 
-### Slot-width and pole-pitch handoff
+### Phase-band width and pole-pitch handoff
 
-Do not add `slot_width_mm` or `pole_pitch_mm` as duplicated user parameters. The
+Do not add `band_width_mm` or `pole_pitch_mm` as duplicated user parameters. The
 host computes these dimensions from the board context and returned active
 geometry so they cannot drift away from the active area or magnet layout.
 
@@ -162,8 +162,8 @@ max(w_s) = tau_p / phases - g_phase
 
 `theta` is measured from the x/travel axis, `tau_p` is centre-to-centre
 North/South pole pitch, and `g_phase` is the core's minimum spacing rule. A
-`SlotWidth` record includes the exact `N`, `w_t`, `s`, `theta`, calculated
-`slot_width_mm`, maximum, and margin. A negative margin is returned as a DFM
+`PhaseBandWidth` record includes the exact `N`, `w_t`, `s`, `theta`, calculated
+`band_width_mm`, maximum, and margin. A negative margin is returned as a DFM
 diagnostic; the host never modifies plugin coordinates.
 
 Patterns own pole-region semantics as well as trace geometry. Return one

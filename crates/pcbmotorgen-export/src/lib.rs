@@ -261,7 +261,7 @@ pub fn phase_coils_to_dxf(
                 end: pcbmotorgen_routing::Point::new(arc.end.0, arc.end.1),
                 layer: coil.layer_idx,
                 net: net.clone(),
-                is_active: false, // corner arcs are end-turn curves
+                is_active: arc.is_active,
             });
         }
 

@@ -98,17 +98,19 @@ pub struct CoilPreviewLayerIpc {
 /// Dry-run summary of what `write_coils_to_board` would produce.
 ///
 /// Returned by `preview_coils`. Contains the per-layer tally and the
-/// topology label. Pre-condition warnings are *not* included here — the
-/// UI calls `validate_write_preconditions` separately for those. The full
-/// `PhaseCoil` geometry is *not* carried on the wire here either — the
-/// UI calls `generate_coils` separately if it needs the raw segments.
+/// routing-pattern id that produced the coil set. Pre-condition warnings
+/// are *not* included here — the UI calls `validate_write_preconditions`
+/// separately for those. The full `PhaseCoil` geometry is *not* carried on
+/// the wire here either — the UI calls `generate_coils` separately if it
+/// needs the raw segments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CoilPreviewIpc {
     pub num_layers: u32,
-    /// Topology label — `"serpentine" | "sine_wave" | "concentrated" |
-    /// "rhombic" | "spiral"`. Matches the core's `topology_label()` output.
-    pub topology: String,
+    /// Routing pattern id that produced the coil set (e.g.
+    /// `"infinity-braid"`). Mirrors the export crate's `CoilPreview`
+    /// `pattern_id` (formerly `topology`).
+    pub pattern_id: String,
     pub layers: Vec<CoilPreviewLayerIpc>,
     pub total_tracks: u32,
     pub total_vias: u32,
@@ -117,8 +119,8 @@ pub struct CoilPreviewIpc {
 impl CoilPreviewIpc {
     /// Convert a core `CoilPreview` to the IPC wire format.
     ///
-    /// Note: `p.topology` is already a `String` (set by the core's
-    /// `topology_label()`), so we just clone it — no enum match needed.
+    /// Note: `p.pattern_id` is already a `String` (the resolved routing
+    /// pattern id), so we just clone it — no enum match needed.
     /// The core's `CoilPreview` does not carry a `warnings` field; the UI
     /// calls `validate_write_preconditions` separately for those.
     pub fn from_core(p: &pcbmotorgen_export::CoilPreview) -> Self {
@@ -134,7 +136,7 @@ impl CoilPreviewIpc {
             .collect();
         Self {
             num_layers: p.num_layers,
-            topology: p.topology.clone(),
+            pattern_id: p.pattern_id.clone(),
             layers,
             total_tracks: p.total_tracks,
             total_vias: p.total_vias,

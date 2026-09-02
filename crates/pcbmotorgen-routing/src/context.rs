@@ -35,16 +35,20 @@ pub struct RoutingContext {
     pub params: HashMap<String, f64>,
     /// Magnetic pole pitch [mm] (`magnet_width + magnet_gap`) of the mover the
     /// stator serves. This is the centre-to-centre distance between adjacent
-    /// north and south poles (`tau_p` in the slot-width equations). Optional
-    /// so patterns that do not care about the magnet layout stay decoupled;
-    /// patterns that DO use it can align their repeating unit (e.g. the
-    /// braid's diamond period) to the pole pitch and regenerate geometry when
-    /// the magnet pattern changes.
+    /// north and south poles (`tau_p` in the phase-band width equations).
+    /// Optional so patterns that do not care about the magnet layout stay
+    /// decoupled; patterns that DO use it can align their repeating unit (e.g.
+    /// the braid's diamond period) to the pole pitch and regenerate geometry
+    /// when the magnet pattern changes.
     #[serde(default)]
     pub magnet_pitch_mm: Option<f64>,
     /// Full span of the mover's magnet array [mm] (`magnet_count × pitch`).
     /// Together with `magnet_pitch_mm` lets a pattern derive how many repeating
-    /// units cover the mover (e.g. braid periods over the coil span).
+    /// units cover the mover (e.g. braid periods over the magnet-array span).
+    #[serde(default)]
+    pub magnet_array_span_mm: Option<f64>,
+    /// Legacy alias for [`RoutingContext::magnet_array_span_mm`], retained for
+    /// plugin/runner JSON compatibility. Both are populated together.
     #[serde(default)]
     pub coil_span_mm: Option<f64>,
 }
@@ -66,8 +70,19 @@ impl RoutingContext {
         self.magnet_pitch()
     }
 
-    /// Resolved mover span [mm] when the magnet layout was provided.
+    /// Resolved mover magnet-array span [mm] when the magnet layout was
+    /// provided.
+    pub fn magnet_array_span(&self) -> Option<f64> {
+        self.magnet_array_span_mm.or(self.coil_span_mm)
+    }
+
+    /// Resolved mover magnet-array span [mm] when the magnet layout was
+    /// provided.
+    ///
+    /// Legacy alias for [`RoutingContext::magnet_array_span`], retained for
+    /// plugin/runner compatibility.
+    #[deprecated(since = "0.5.0", note = "use `magnet_array_span()` instead")]
     pub fn coil_span(&self) -> Option<f64> {
-        self.coil_span_mm.filter(|s| *s > 0.0)
+        self.magnet_array_span()
     }
 }

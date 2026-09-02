@@ -11,7 +11,7 @@ use crate::RoutingPattern;
 
 /// Generate a validated [`RoutingReport`] for the given context and pattern
 /// id.  The report contains the canonical geometry plus the calculated
-/// pole/slot dimensions used to hand the traces off to magnet-pattern code.
+/// pole/phase-band dimensions used to hand the traces off to magnet-pattern code.
 pub fn generate_routing_report(ctx: &RoutingContext, id: &str) -> Result<RoutingReport, String> {
     validate_routing_params(id, &ctx.params)?;
 

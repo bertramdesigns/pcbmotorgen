@@ -6,7 +6,7 @@ use crate::params::{BearingType, FrictionBudget, SimulationInput};
 pub fn mu_bearing(bt: BearingType) -> f64 {
     match bt {
         BearingType::PlasticChannel => 0.25,
-        BearingType::PteLined => 0.12,
+        BearingType::PtfeLined => 0.12,
         BearingType::BallBearing => 0.003,
     }
 }
@@ -29,7 +29,7 @@ pub struct FrictionEstimator {
 impl Default for FrictionEstimator {
     fn default() -> Self {
         Self {
-            bearing_type: BearingType::PteLined,
+            bearing_type: BearingType::PtfeLined,
             ffc_conductor_count: 26,
             has_wiper_contact: false,
             normal_force_n: 0.0,
@@ -66,11 +66,15 @@ impl FrictionEstimator {
 
         let bearing_fraction = match self.bearing_type {
             BearingType::PlasticChannel => 0.70,
-            BearingType::PteLined => 0.55,
+            BearingType::PtfeLined => 0.55,
             BearingType::BallBearing => 0.25,
         };
         let cable_fraction = 0.20;
         let wiper_fraction = if self.has_wiper_contact { 0.10 } else { 0.0 };
+        // The 5% cogging allocation is a conservative friction-budget
+        // placeholder; physical detent (cogging) force is zero for
+        // coreless/slotless topologies (glossary). The app path overrides
+        // cogging_n to 0.
         let cogging_fraction = 0.05;
 
         let total_fraction =
@@ -123,7 +127,7 @@ mod tests {
     #[test]
     fn test_mu_bearing_values() {
         assert_eq!(mu_bearing(BearingType::PlasticChannel), 0.25);
-        assert_eq!(mu_bearing(BearingType::PteLined), 0.12);
+        assert_eq!(mu_bearing(BearingType::PtfeLined), 0.12);
         assert_eq!(mu_bearing(BearingType::BallBearing), 0.003);
     }
 
@@ -145,7 +149,7 @@ mod tests {
     #[test]
     fn test_estimate_with_wiper() {
         let est = FrictionEstimator {
-            bearing_type: BearingType::PteLined,
+            bearing_type: BearingType::PtfeLined,
             ffc_conductor_count: 0,
             has_wiper_contact: true,
             normal_force_n: 0.0,

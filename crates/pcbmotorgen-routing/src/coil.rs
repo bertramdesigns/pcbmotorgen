@@ -47,12 +47,16 @@ impl CoilSegment {
         )
     }
 
-    /// True if the segment is vertical (active conductor).
+    /// True if the segment is parallel to the board-width (y) axis.
+    ///
+    /// NOTE: for the bundled braid pattern, active conductors are diagonal; do
+    /// not use verticality to infer active vs end-turn.
     pub fn is_vertical(&self, tol: f64) -> bool {
         (self.end.0 - self.start.0).abs() < tol
     }
 
-    /// True if the segment is horizontal (end-turn).
+    /// True if the segment is parallel to the travel (x) axis
+    /// (end-turn connector in straight-sided patterns).
     pub fn is_horizontal(&self, tol: f64) -> bool {
         (self.end.1 - self.start.1).abs() < tol
     }

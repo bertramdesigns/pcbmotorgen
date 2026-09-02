@@ -15,7 +15,7 @@ pub struct ForceResult {
     pub force_x_n: Vec<f64>,
     /// Total Y (lateral) force at each position [N].
     pub force_y_n: Vec<f64>,
-    /// Total Z (normal, pull-out) force at each position [N].
+    /// Total Z (normal, magnet-attraction) force at each position [N].
     pub force_z_n: Vec<f64>,
     /// Per-phase X thrust [N] — flat vec of `n_positions × n_phases`.
     pub per_phase_force_x: Vec<f64>,
@@ -76,7 +76,7 @@ mod tests {
             force_z_n: vec![0.0, 0.0, 0.0],
             per_phase_force_x: vec![0.0; 3],
             n_phases: 1,
-            commutation: CommutationMode::MaxTorque,
+            commutation: CommutationMode::MaxThrust,
             current_a: 1.0,
         };
         // mean = 10, max = 12, min = 8, ripple = (12-8)/10 * 100 = 40%
@@ -93,7 +93,7 @@ mod tests {
             force_z_n: vec![0.0],
             per_phase_force_x: vec![],
             n_phases: 0,
-            commutation: CommutationMode::MaxTorque,
+            commutation: CommutationMode::MaxThrust,
             current_a: 1.0,
         };
         assert!(result.ripple_pct() == 0.0);

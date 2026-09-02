@@ -238,7 +238,7 @@ pub fn preview_coils(coils: &[PhaseCoil], num_layers: u32)
 
 pub struct CoilPreview {
     pub num_layers: u32,
-    pub topology: String,
+    pub pattern_id: String,
     pub layers: Vec<CoilPreviewLayer>,
     pub total_tracks: u32,
     pub total_vias: u32,

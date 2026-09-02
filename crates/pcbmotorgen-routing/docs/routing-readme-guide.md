@@ -49,7 +49,7 @@ Keep the distinction clear:
 - plugins emit strict `RoutingResult` geometry only;
 - the host validates that result; and
 - `RoutingReport` / the `generate_coils.routing_dimensions` sidecar carries
-  pole pitch and slot-width data calculated from the same context.
+  pole pitch and phase-band width data calculated from the same context.
 
 Do not tell plugin authors to emit a report envelope from Python. That would
 break the strict runner parser. Update the Rust sidecar calculation and this
@@ -64,7 +64,7 @@ When the package exposes a motor-design quantity, include:
 - the direction used for any angle; and
 - one numerical example that can be checked by hand.
 
-For slot width the README must keep both views together:
+For phase-band width the README must keep both views together:
 
 ```text
 w_s = (N * w_t + (N - 1) * s) / sin(theta)
@@ -111,7 +111,7 @@ This avoids duplicating the complete ABI and JSON schema in several places.
 6. Search for stale names or units:
 
    ```bash
-   rg "coil_topology|single-layer|slot_width|pole_pitch|RoutingResult" \
+   rg "coil_topology|single-layer|phase_band_width|pole_pitch|RoutingResult" \
      README.md crates/pcbmotorgen-routing docs app/src app/src-tauri
    ```
 
@@ -145,7 +145,7 @@ List only independent user knobs. Explain which dimensions are derived from
 the context rather than copied into parameters.
 
 ## Motor dimensions
-State how pole pitch, phase-band pitch, slot width, trace angle, and any
+State how pole pitch, phase-band pitch, phase-band width, trace angle, and any
 pattern period are calculated. Include the equations and units.
 
 ## Build and install

@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use super::enums::CommutationModeIpc;
 use crate::config::LinearMotorConfig as CoreConfig;
 
-/// Default value for `windings_per_phase` when the field is absent during
+/// Default value for `strands_per_phase` when the field is absent during
 /// serde deserialisation. Matches the core's `LinearMotorConfig::default()`.
-fn default_windings_per_phase() -> u32 {
+fn default_strands_per_phase() -> u32 {
     1
 }
 
@@ -39,15 +39,15 @@ pub struct LinearMotorConfigIpc {
     pub pcb_thickness_m: f64,
     /// Round 9: extra PCB length on each end (in travel direction) for
     /// end-turn routing. Mirrors `LinearMotorConfig::padding_m`. Default
-    /// 0.0 (no padding) — single-strand windings don't need it.
+    /// 0.0 (no padding) — single-strand coils don't need it.
     #[serde(default)]
     pub padding_m: f64,
     /// Round 9: number of parallel serpentine paths per phase on the
     /// same layer ("strands", stacked in y). Mirrors
-    /// `LinearMotorConfig::windings_per_phase`. Default 1 (the
+    /// `LinearMotorConfig::strands_per_phase`. Default 1 (the
     /// historical single-strand behaviour).
-    #[serde(default = "default_windings_per_phase")]
-    pub windings_per_phase: u32,
+    #[serde(default = "default_strands_per_phase", alias = "windings_per_phase")]
+    pub strands_per_phase: u32,
 
     pub magnet_count: u32,
     pub magnet_width_m: f64,
@@ -56,7 +56,9 @@ pub struct LinearMotorConfigIpc {
     /// Gap between adjacent magnets along the travel axis [m]. Derived
     /// (`pitch - width`) but kept on the wire for UI clarity.
     pub magnet_gap_m: f64,
-    /// Pole pitch τ_p = magnet_width + magnet_gap [m] (PRODUCT_GOALS §3.D).
+    /// Magnet pitch (mechanical) = magnet_width + magnet_gap [m]. For the
+    /// alternating (non-Halbach) array this equals the magnetic pole pitch
+    /// τ_p: adjacent magnets are consecutive opposite poles.
     pub magnet_pitch_m: f64,
 
     pub magnet_remanence_t: f64,
@@ -130,7 +132,7 @@ impl LinearMotorConfigIpc {
             // Round 9: padding + multi-strand — pass through to the
             // core so the writer / preview can use them.
             padding_m: self.padding_m,
-            windings_per_phase: self.windings_per_phase,
+            strands_per_phase: self.strands_per_phase,
             air_gap_m: self.air_gap_m,
             routing_pattern: self.routing_pattern.clone(),
             routing_params: self.routing_params.clone(),
@@ -165,11 +167,11 @@ impl From<&CoreConfig> for LinearMotorConfigIpc {
             pcb_thickness_m: c.pcb_thickness_m,
             // Round 9: pass through the new fields. For configs that
             // pre-date the padding / multi-strand fields, the core
-            // `Default` gives `padding_m: 0.0, windings_per_phase: 1`
+            // `Default` gives `padding_m: 0.0, strands_per_phase: 1`
             // (single-strand, no padding) which is the historical
             // behaviour.
             padding_m: c.padding_m,
-            windings_per_phase: c.windings_per_phase,
+            strands_per_phase: c.strands_per_phase,
             magnet_count: c.magnet_count,
             magnet_width_m: c.magnet_dims_m[0],
             magnet_cross_width_m: c.magnet_dims_m[1],
@@ -200,7 +202,7 @@ impl From<&CoreConfig> for LinearMotorConfigIpc {
             carriage_mass_kg: c.carriage_mass_kg,
             max_accel_m_s2: c.max_accel_m_s2,
             capacitor_bank_uf: c.capacitor_bank_uf,
-            commutation: CommutationModeIpc::MaxTorque,
+            commutation: CommutationModeIpc::MaxThrust,
             n_positions: 50,
             meshing: 20,
             name: c.name.clone(),
@@ -219,9 +221,12 @@ impl From<&CoreConfig> for LinearMotorConfigIpc {
 #[serde(rename_all = "snake_case")]
 pub struct ConfigDerivedIpc {
     pub pole_pitch_m: f64,
-    pub coil_span_m: f64,
+    /// Mover magnet-array span [m]: magnet_count × pole pitch (see glossary;
+    /// end-to-end physical span is one inter-magnet gap shorter).
+    pub magnet_array_span_m: f64,
     pub travel_m: f64,
-    pub slot_pitch_m: f64,
+    /// Vernier-adjusted phase-band pitch [m]: (pole_pitch / phases) × spacing_ratio.
+    pub phase_band_pitch_m: f64,
     /// Vernier rest offset [m] — phase offset between a coil center and the
     /// nearest pole center. Zero for 1:1 spacing, positive for Vernier ratios.
     pub rest_offset_m: f64,
@@ -239,9 +244,9 @@ impl ConfigDerivedIpc {
     pub fn from_core(c: &CoreConfig) -> Self {
         Self {
             pole_pitch_m: c.pole_pitch_m(),
-            coil_span_m: c.coil_span_m(),
+            magnet_array_span_m: c.magnet_array_span_m(),
             travel_m: c.travel_m(),
-            slot_pitch_m: c.slot_pitch_m(),
+            phase_band_pitch_m: c.phase_band_pitch_m(),
             rest_offset_m: c.rest_offset_m(),
             magnet_gap_m: c.magnet_gap_m(),
             min_via_pad_m: c.min_via_pad_m(),

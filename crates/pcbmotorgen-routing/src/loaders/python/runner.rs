@@ -137,7 +137,7 @@ json.dump(out, sys.stdout)
                 crate::Validator::validate(&r, &ctx, false).expect("runner shape validates");
                 let dimensions = crate::RoutingDimensions::from_result(&r, &ctx)
                     .expect("runner dimensions calculate");
-                assert_eq!(dimensions.slot_widths.len(), 1);
+                assert_eq!(dimensions.phase_band_widths.len(), 1);
                 assert!(dimensions.pole_pitch_mm.is_none());
             }
             Err(e) => panic!("unexpected parse failure: {e}"),

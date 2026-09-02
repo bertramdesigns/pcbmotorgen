@@ -151,7 +151,7 @@ pub struct TravelEnvelopeIpc {
     pub max_position_m: f64,
     /// Rest phase φ [m].
     pub rest_phase_m: f64,
-    /// Electrical period P_e (slot/electrical pitch) [m].
+    /// Electrical period P_e = 2 × pole pitch (one full 360° electrical cycle) [m].
     pub electrical_period_m: f64,
 }
 

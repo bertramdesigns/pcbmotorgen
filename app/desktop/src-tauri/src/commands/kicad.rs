@@ -275,7 +275,7 @@ pub async fn validate_write_preconditions(
 /// Preview the coil geometry that WOULD be written (no IPC, no KiCad
 /// roundtrip). Pure dry-run: builds the same `PhaseCoil` set the writer
 /// would produce, and returns a per-layer tally (phase count, track count,
-/// via count) plus a `topology` label and any pre-condition warnings.
+/// via count) plus the routing `pattern_id` and any pre-condition warnings.
 ///
 /// The full `PhaseCoil` geometry is *not* carried on the wire here — the
 /// UI calls `generate_coils` separately if it needs the raw segments.

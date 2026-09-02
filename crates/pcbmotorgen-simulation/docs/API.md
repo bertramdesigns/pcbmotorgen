@@ -74,7 +74,7 @@ buildings inputs by hand — never write a bare millimetre number as metres.
 
 `SimulationInput` (`crate::params::SimulationInput`) is the full set of inputs,
 all in SI units. `active_area_length_m` is the **primary input**; `travel` is
-derived as `active_area_length - coil_span`.
+derived as `active_area_length − the magnet array span`.
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,7 +91,9 @@ pub struct SimulationInput {
     pub pcb_thickness_m: f64,           // substrate thickness [m]
     pub air_gap_m: f64,                 // magnet face → copper clearance [m]
     pub padding_m: f64,                 // extra PCB length per end [m] (serde default 0)
-    pub windings_per_phase: u32,        // parallel serpentine paths per phase (default 1)
+    pub strands_per_phase: u32,         // parallel strands (serpentine paths) per phase
+                                        // (default 1; legacy key `windings_per_phase`
+                                        // accepted as a serde alias)
 
     // Coil
     pub phases: u32,
@@ -134,27 +136,28 @@ Validation rejects (first error wins): non-positive or non-3-tuple magnet dims,
 `remanence ∉ (0, 2.5]`, `phases < 1`, `spacing_ratio ∉ (0, 2]`, non-positive
 current / voltage / trace / space / via sizes, negative air gap, odd or < 2
 layer counts, `num_layers > max_layers`, non-positive drive /
-temperature / active-length / board-width bounds, `active_area_length ≤ coil_span`
-(zero travel), negative padding, `windings_per_phase < 1` or footprint violation,
-and the force / mass / accel / capacitor targets.
+temperature / active-length / board-width bounds, `active_area_length ≤ the
+magnet array span` (zero travel), negative padding, `strands_per_phase < 1` or
+footprint violation, and the force / mass / accel / capacitor targets.
 
 ### 3.2 Serde defaults (backward compatibility)
 
 - `num_layers` defaults to **4** when absent (legacy JSON payloads).
-- `windings_per_phase` defaults to **1** when absent (historical single-strand).
+- `strands_per_phase` defaults to **1** when absent (historical single-strand);
+  the legacy key `windings_per_phase` is accepted as a serde alias.
 - `padding_m` defaults to `0.0`.
 
 ### 3.3 Derived-geometry accessors
 
 | Method | Value |
 | --- | --- |
-| `coil_span_m()` | `magnet_count × magnet_pitch` [m] |
-| `travel_m()` | `active_area_length − coil_span` [m] |
+| `magnet_array_span_m()` | `magnet_count × magnet_pitch` — mover magnet array span [m] |
+| `travel_m()` | `active_area_length − magnet array span` [m] |
 | `active_length_m()` | `active_area_length_m` [m] |
 | `pole_pitch_m()` | `magnet_pitch_m` [m] |
-| `slot_pitch_m()` | `(pole_pitch / phases) × spacing_ratio` [m] |
+| `phase_band_pitch_m()` | `(pole_pitch / phases) × spacing_ratio` [m] |
 | `rest_offset_m()` | vernier rest offset, clamped `[0, pole_pitch]` [m] |
-| `magnet_gap_m()` | `magnet_pitch − magnet_width` [m] |
+| `magnet_gap_m()` | `magnet_pitch − magnet_width` — inter-magnet gap along the travel axis, distinct from the motor air gap `air_gap_m` [m] |
 | `min_via_pad_m()` | `via_drill + 2 × annular_ring` [m] |
 | `acceleration_force_n()` | `carriage_mass × max_accel` [N] |
 | `minimum_drive_force_n()` | `friction × SAFETY_MARGIN` (1.3) [N] |
@@ -163,7 +166,9 @@ and the force / mass / accel / capacitor targets.
 
 ```rust
 #[serde(rename_all = "snake_case")]
-pub enum BearingType { PlasticChannel, PteLined, BallBearing }
+pub enum BearingType { PlasticChannel, PtfeLined, BallBearing }
+// PtfeLined (PTFE, Teflon-lined) — legacy wire value "pte_lined" (typo) is
+// accepted as a serde alias so old payloads still deserialize.
 ```
 
 The magnet array is **always** the plain alternating arrangement (Halbach and
@@ -291,7 +296,7 @@ forces (`F_mover = −F_stator`).
 pub struct ForceEvaluator {
     pub n_positions: usize,              // sweep size (default 50)
     pub meshing: usize,                  // sub-segment density (default 20)
-    pub commutation: CommutationMode,    // default MaxTorque
+    pub commutation: CommutationMode,    // default MaxThrust
     pub layer_z_m: f64,                  // conductor-plane Z [m] (default 0)
     // phase_shift + calibrated are private (set by the self-calibration guard)
 }
@@ -330,17 +335,18 @@ per-coil offset).
 ```rust
 #[serde(rename_all = "snake_case")]
 pub enum CommutationMode {
-    MaxTorque,    // sinusoidal FOC, cos-based (default)
+    MaxThrust,    // sinusoidal FOC drive maximizing thrust, cos-based (default);
+                  // wire value "max_thrust" (renamed from "max_torque")
     PhaseAOnly,   // only Phase A at peak current; B, C = 0
 }
 ```
 
-`MaxTorque` current law (`cos` recommended because `B_z ∝ cos(π(x−p)/τ)`):
+`MaxThrust` current law (`cos` because `B_z ∝ cos(π(x−p)/τ)`):
 
 ```text
 θ_e        = 2π·p / (2τ_p) + phase_shift
 I_p(p)     = I_pk · cos(θ_e − p · phase_offset)
-phase_off  = π · τ_slot / τ_p
+phase_off  = π · τ_s / τ_p     (τ_s = phase-band pitch)
 ```
 
 For the default 3-phase config `phase_offset = π/3` (60°), giving
@@ -356,7 +362,7 @@ pub struct ForceResult {
     pub positions_m: Vec<f64>,       // mover positions [m]
     pub force_x_n: Vec<f64>,         // thrust [N] (mover)
     pub force_y_n: Vec<f64>,         // lateral [N]
-    pub force_z_n: Vec<f64>,         // normal / pull-out [N]
+    pub force_z_n: Vec<f64>,         // normal / magnet-attraction [N]
     pub per_phase_force_x: Vec<f64>, // flat n_positions × n_phases [N]
     pub n_phases: usize,
     pub commutation: CommutationMode,
@@ -453,7 +459,7 @@ capacitor sizing; efficiency at `0.10 m/s` rated velocity.
 ### 8.3 `FrictionEstimator`
 
 ```rust
-pub fn mu_bearing(bt: BearingType) -> f64;   // PlasticChannel 0.25, PteLined 0.12, BallBearing 0.003
+pub fn mu_bearing(bt: BearingType) -> f64;   // PlasticChannel 0.25, PtfeLined 0.12, BallBearing 0.003
 
 pub struct FrictionEstimator {
     pub bearing_type: BearingType,
@@ -578,28 +584,33 @@ so every stable rest centre satisfies `x ≡ φ (mod P_e)` with
 pub struct TravelEnvelope {
     pub min_position_m: f64,      // slider min (coil-capture) [m]
     pub max_position_m: f64,      // slider max (coil-capture) [m] (≥ min)
-    pub rest_phase_m: f64,        // track-frame lattice phase (slot_start + φ) mod P_e
-    pub electrical_period_m: f64, // P_e
+    pub rest_phase_m: f64,        // track-frame lattice phase (copper_region_start + φ) mod P_e
+    pub electrical_period_m: f64, // P_e = 2 × pole pitch (one full 360° electrical cycle)
 }
 
 pub fn baseline_electrical_angle() -> f64;                // π/6
 pub fn baseline_field_peak_m(electrical_period_m) -> f64; // P_e/12
 pub fn rest_phase_m(electrical_period_m, magnet_count) -> f64;
 pub fn travel_envelope_over_slots(electrical_period_m, magnet_count,
-                                  slot_start_m, slot_end_m) -> TravelEnvelope;
+                                  copper_region_start_m,
+                                  copper_region_end_m) -> TravelEnvelope;
 ```
 
-The envelope endpoints are COIL-CAPTURE positions anchored to the slot/copper
-region in track coordinates, scaling with the electrical period only
+The envelope endpoints are COIL-CAPTURE positions anchored to the stator
+copper region in track coordinates, scaling with the electrical period only
 (independent of N):
 
-- `min = slot_start + (2/3)·P_e` — first coil captures the first pole at
-  electrical 240° (Phase A@120°, Phase B@0°, Phase C@240°).
-- `max = slot_end − (3/4)·P_e` — last coil captured at the 270° complement.
-- Defaults (P_e = 12 mm, slots [30, 177] mm in track coords): **38 → 168 mm**.
-- `rest_phase_m` is the TRACK-FRAME phase `(slot_start + φ) mod P_e` (= 4 mm
-  for the defaults), so holding-force zero markers align to the stable rests.
-- A slot region narrower than the envelope clamps `max` to `min` (degenerate).
+- `min = copper_region_start + (2/3)·P_e` — first coil captures the first pole
+  at electrical 240° (Phase A@120°, Phase B@0°, Phase C@240°).
+- `max = copper_region_end − (3/4)·P_e` — last coil captured at the 270°
+  complement.
+- Defaults (P_e = 12 mm, copper region [30, 177] mm in track coords):
+  **38 → 168 mm**.
+- `rest_phase_m` is the TRACK-FRAME phase `(copper_region_start + φ) mod P_e`
+  (= 4 mm for the defaults), so holding-force zero markers align to the
+  stable rests.
+- A copper region narrower than the envelope clamps `max` to `min`
+  (degenerate).
 
 Exposed to the desktop UI as the `travel_envelope` command
 (`TravelEnvelopeIpc`).

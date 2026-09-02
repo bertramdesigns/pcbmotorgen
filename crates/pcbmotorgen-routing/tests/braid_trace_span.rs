@@ -10,7 +10,7 @@ use pcbmotorgen_routing::{generate_routing_report, RoutingContext};
 use std::collections::HashMap;
 
 /// App reference defaults: 147 mm active area, 30 mm end paddings,
-/// τ_p = 6 mm pole pitch, 72 mm coil span, 3 phases, 4 layers.
+/// τ_p = 6 mm pole pitch, 72 mm magnet-array span, 3 phases, 4 layers.
 fn reference_context() -> RoutingContext {
     RoutingContext {
         active_area_length_mm: 147.0,
@@ -21,9 +21,10 @@ fn reference_context() -> RoutingContext {
         min_space_mm: 0.127,
         padding_mm: 30.0,
         expects_continuous: true,
-        params: HashMap::new(), // pattern defaults (num_strands = 2)
+        params: HashMap::new(), // pattern defaults (num_strands = 5; 2 is only the minimum)
         magnet_pitch_mm: Some(6.0),
-        coil_span_mm: Some(72.0),
+        magnet_array_span_mm: Some(72.0),
+        coil_span_mm: None,
     }
 }
 

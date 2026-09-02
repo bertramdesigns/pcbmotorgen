@@ -12,12 +12,13 @@ impl LinearMotorConfig {
     // --- Derived geometry (single source of truth lives in the simulation
     // crate — the parent delegates, it does not duplicate the arithmetic) ---
 
-    /// Full span of the mover's magnet array [m]: `magnet_count × magnet_pitch`.
-    pub fn coil_span_m(&self) -> f64 {
-        self.to_simulation().coil_span_m()
+    /// Mover magnet-array span [m]: magnet_count × magnet_pitch.
+    pub fn magnet_array_span_m(&self) -> f64 {
+        self.to_simulation().magnet_array_span_m()
     }
 
-    /// Derived center-to-center travel [m]: `active_area_length - coil_span`.
+    /// Derived center-to-center travel [m]:
+    /// `active_area_length - magnet_array_span`.
     pub fn travel_m(&self) -> f64 {
         self.to_simulation().travel_m()
     }
@@ -32,9 +33,9 @@ impl LinearMotorConfig {
         self.to_simulation().pole_pitch_m()
     }
 
-    /// Coil slot pitch = (pole_pitch / phases) × spacing_ratio [m].
-    pub fn slot_pitch_m(&self) -> f64 {
-        self.to_simulation().slot_pitch_m()
+    /// Vernier-adjusted phase-band pitch = (pole_pitch / phases) × spacing_ratio [m].
+    pub fn phase_band_pitch_m(&self) -> f64 {
+        self.to_simulation().phase_band_pitch_m()
     }
 
     /// Vernier rest offset: phase offset between a coil center and the
@@ -75,12 +76,12 @@ impl LinearMotorConfig {
             "LinearMotorConfig: {name}\n\
              \x20 Active area len:  {active:.1} mm\n\
              \x20 Travel (derived): {travel:.1} mm\n\
-             \x20 Coil span:        {span:.1} mm\n\
+             \x20 Magnet arr. span: {span:.1} mm\n\
              \x20 Magnet:          {count}× {w:.0}×{l:.0}×{h:.0} mm  Br={br:.2} T\n\
              \x20 Arrangement:     alternating poles\n\
              \x20 Coil topology:   {topo}\n\
              \x20 Pole pitch:      {pp:.1} mm\n\
-             \x20 Slot pitch:      {sp:.2} mm  ({phases}-phase)\n\
+             \x20 Phase-band pitch: {sp:.2} mm  ({phases}-phase)\n\
              \x20 Air gap:         {ag:.2} mm\n\
              \x20 Board width:     {bw:.1} mm\n\
              \x20 Target force:    {tf:.0} mN / {pk:.0} mN peak\n\
@@ -95,7 +96,7 @@ impl LinearMotorConfig {
             name = name,
             active = self.active_area_length_m * 1e3,
             travel = self.travel_m() * 1e3,
-            span = self.coil_span_m() * 1e3,
+            span = self.magnet_array_span_m() * 1e3,
             count = self.magnet_count,
             w = self.magnet_dims_m[0] * 1e3,
             l = self.magnet_dims_m[1] * 1e3,
@@ -103,7 +104,7 @@ impl LinearMotorConfig {
             br = self.magnet_remanence_t,
             topo = topo_label,
             pp = self.pole_pitch_m() * 1e3,
-            sp = self.slot_pitch_m() * 1e3,
+            sp = self.phase_band_pitch_m() * 1e3,
             phases = self.phases,
             ag = self.air_gap_m * 1e3,
             bw = self.board_width_m * 1e3,
@@ -167,10 +168,10 @@ mod tests {
     }
 
     #[test]
-    fn test_slot_pitch_three_phase() {
+    fn test_phase_band_pitch_three_phase() {
         let cfg = default_config();
         let expected = cfg.magnet_pitch_m / 3.0;
-        assert!((cfg.slot_pitch_m() - expected).abs() < 1e-12);
+        assert!((cfg.phase_band_pitch_m() - expected).abs() < 1e-12);
     }
 
     #[test]
@@ -202,16 +203,16 @@ mod tests {
     }
 
     #[test]
-    fn test_coil_span() {
+    fn test_magnet_array_span() {
         let cfg = default_config();
         let expected = cfg.magnet_count as f64 * cfg.magnet_pitch_m;
-        assert!((cfg.coil_span_m() - expected).abs() < 1e-12);
+        assert!((cfg.magnet_array_span_m() - expected).abs() < 1e-12);
     }
 
     #[test]
     fn test_travel() {
         let cfg = default_config();
-        let expected = cfg.active_area_length_m - cfg.coil_span_m();
+        let expected = cfg.active_area_length_m - cfg.magnet_array_span_m();
         assert!((cfg.travel_m() - expected).abs() < 1e-12);
     }
 

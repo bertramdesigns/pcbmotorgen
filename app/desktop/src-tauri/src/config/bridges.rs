@@ -38,7 +38,8 @@ impl LinearMotorConfig {
             // Magnet layout: lets patterns align their repeating unit to the
             // pole pitch so the traces regenerate when the magnets change.
             magnet_pitch_mm: Some(self.magnet_pitch_m * 1e3),
-            coil_span_mm: Some(self.coil_span_m() * 1e3),
+            magnet_array_span_mm: Some(self.magnet_array_span_m() * 1e3),
+            coil_span_mm: Some(self.magnet_array_span_m() * 1e3),
         }
     }
 
@@ -66,7 +67,7 @@ impl LinearMotorConfig {
             pcb_thickness_m: self.pcb_thickness_m,
             air_gap_m: self.air_gap_m,
             padding_m: self.padding_m,
-            windings_per_phase: self.windings_per_phase,
+            strands_per_phase: self.strands_per_phase,
             phases: self.phases,
             spacing_ratio: self.spacing_ratio,
             max_current_a: self.max_current_a,
