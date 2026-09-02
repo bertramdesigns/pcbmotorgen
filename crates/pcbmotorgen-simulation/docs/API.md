@@ -582,8 +582,8 @@ so every stable rest centre satisfies `x ≡ φ (mod P_e)` with
 
 ```rust
 pub struct TravelEnvelope {
-    pub min_position_m: f64,      // slider min (coil-capture) [m]
-    pub max_position_m: f64,      // slider max (coil-capture) [m] (≥ min)
+    pub min_position_m: f64,      // first stable rest position [m]
+    pub max_position_m: f64,      // last stable rest position [m] (≥ min)
     pub rest_phase_m: f64,        // track-frame lattice phase (copper_region_start + φ) mod P_e
     pub electrical_period_m: f64, // P_e = 2 × pole pitch (one full 360° electrical cycle)
 }
@@ -596,21 +596,28 @@ pub fn travel_envelope_over_slots(electrical_period_m, magnet_count,
                                   copper_region_end_m) -> TravelEnvelope;
 ```
 
-The envelope endpoints are COIL-CAPTURE positions anchored to the stator
-copper region in track coordinates, scaling with the electrical period only
-(independent of N):
+The envelope endpoints are the glossary-normative FIRST/LAST STABLE REST
+POSITION inside the copper active area (kata xb16, 2026-09-02), derived in
+two steps:
 
-- `min = copper_region_start + (2/3)·P_e` — first coil captures the first pole
-  at electrical 240° (Phase A@120°, Phase B@0°, Phase C@240°).
-- `max = copper_region_end − (3/4)·P_e` — last coil captured at the 270°
-  complement.
-- Defaults (P_e = 12 mm, copper region [30, 177] mm in track coords):
-  **38 → 168 mm**.
+- **Span-aware centre clamp**: `centre ∈ [copper_region_start + span/2,
+  copper_region_end − span/2]` with the glossary "Mover Span"
+  `span = N · τ_p` (τ_p = P_e/2).
+- **Lattice snapping**: endpoints are stable rest positions on the
+  track-frame lattice `x ≡ (copper_region_start + φ) mod P_e`:
+  `min` = smallest lattice point ≥ the lower clamp bound, `max` = largest
+  lattice point ≤ the upper clamp bound. The endpoints DEPEND on N.
+- Defaults (N = 12, P_e = 12 mm, copper region [30, 177] mm in track
+  coords): φ_track = 4 mm, span = 72 mm → **76 → 136 mm** (N = 4 gives
+  52 → 160 mm on the same copper and period).
+- Degenerate (no lattice point between the clamped bounds — copper shorter
+  than the span, or too short for one lattice step past the lower bound):
+  `max` clamps to `min` (nearest lattice point ≥ the lower bound); the
+  envelope never inverts, but the array may overhang the copper at that
+  single rest position.
 - `rest_phase_m` is the TRACK-FRAME phase `(copper_region_start + φ) mod P_e`
   (= 4 mm for the defaults), so holding-force zero markers align to the
   stable rests.
-- A copper region narrower than the envelope clamps `max` to `min`
-  (degenerate).
 
 Exposed to the desktop UI as the `travel_envelope` command
 (`TravelEnvelopeIpc`).

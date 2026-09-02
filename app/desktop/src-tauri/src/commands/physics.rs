@@ -440,14 +440,17 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 /// Stable-equilibrium travel envelope of the mover array centre under the
 /// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
 ///
-/// Product reference convention: the endpoints are COIL-CAPTURE positions
-/// anchored to the stator copper region — min = copper_region_start +
-/// (2/3)·P_e, max = copper_region_end − (3/4)·P_e, with P_e = 2 × pole pitch.
-/// Defaults (P_e = 12 mm, copper region [30, 177] mm in track coords):
-/// **38 → 168 mm**. The track-frame lattice phase is
-/// `(copper_region_start + φ) mod P_e`, φ the baseline rest phase
-/// `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`. The UI clamps
-/// its position slider to [min_position_m, max_position_m].
+/// Glossary-normative spec (kata xb16, 2026-09-02): the endpoints are the
+/// FIRST and LAST STABLE REST POSITION inside the copper active area — a
+/// span-aware centre clamp (`centre ∈ [copper_start + span/2, copper_end −
+/// span/2]`, glossary "Mover Span" span = N · τ_p, τ_p = P_e/2) intersected
+/// with the stable-rest lattice `x ≡ (copper_start + φ) mod P_e` (φ the
+/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`). Defaults
+/// (N = 12, P_e = 12 mm, copper region [30, 177] mm in track coords):
+/// **76 → 136 mm**; the endpoints DEPEND on N (N = 4 gives 52 → 160 mm).
+/// If no stable rest fits the clamped range, max clamps to min (never
+/// inverted). The UI clamps its position slider to
+/// [min_position_m, max_position_m].
 #[tauri::command]
 pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {
     let core = config.to_core();
