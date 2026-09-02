@@ -29,6 +29,31 @@ Using the tool should let the user understand the following:
 
 ---
 
+## Linear Geometry & Motion Model
+
+There is **no padding offset** in the motor model: the copper coils are the
+active copper area. The defined red/blue per-phase zones span the total
+active pole regions, and the active copper area is exactly
+$[0, \text{active\_area\_length}]$.
+
+- **Routing domain = active area.** The routing crate lays out traces over
+  exactly the active copper length (braid end turns included) — there is no
+  separate PCB margin parameter.
+- **Travel envelope = flush span-aware clamp.** The mover centre range is
+  $[\text{span}/2,\ \text{active\_area\_length} - \text{span}/2]$ exactly:
+  at the endpoints the magnet array edges sit exactly on the copper bounds,
+  and the sweep equals the configured travel exactly
+  ($\text{travel} = \text{active\_area\_length} - \text{span}$).
+- **Endpoints are mechanical limits, not stable rests.** Stable rest
+  positions come from the rest lattice ($x \equiv \varphi \pmod{P_e}$,
+  reported as `rest_phase_m` + `electrical_period_m`) and drive the
+  holding-force chart zeros; the mover may hold position between rests.
+- **Verification tooling.** `pnpm shot:mover` (app/desktop) captures the
+  running app at the slider min and max (full view + mover strip canvas)
+  with the mover-extent readout pinned per endpoint.
+
+---
+
 ## UI
 
 The application adopts a single, highly integrated, state-contained **Dashboard**. This dashboard features:
