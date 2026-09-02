@@ -139,13 +139,13 @@ export function measureTrace(
  * shared by the canvas overlay, the iso view, the design reflection AND the
  * position readouts. The strip is centred on the MotionStore's clamped
  * position (absolute track coordinates), so drawn edges always equal
- * position ± coil_span/2 and every printed number agrees with every pixel.
+ * position ± mover_span/2 and every printed number agrees with every pixel.
  */
 export function stripBoundsDomainMm(
-  config: PreviewConfigLike,
+  config: PreviewConfigLike & { mover_span_mm: number },
   motion: { clampedPositionMm: number },
 ): { startMm: number; endMm: number } {
-  const half = config.coil_span_mm / 2;
+  const half = config.mover_span_mm / 2;
   return {
     startMm: motion.clampedPositionMm - half,
     endMm: motion.clampedPositionMm + half,
@@ -225,13 +225,14 @@ export function computeUniqueLayers(
 
 /** First solid-magnet x position for the preview.
  *
- * The slot start/end boundaries come from the pattern-owned `pole_regions`
- * sidecar (the routing crate's authoritative phase/pole geometry): each
- * region spans one pole pitch for one phase, and the phases are interleaved
- * by `pole_pitch / phases`. At rest the FIRST magnet bar's CENTRE is anchored
- * to the neutral (second-phase) slot centre, so each pole sits symmetrically
- * inside its slot band and every later bar centre lands on the next such slot
- * centre automatically (the regions repeat every pole pitch). The anchor is
+ * The phase-band start/end boundaries come from the pattern-owned
+ * `pole_regions` sidecar (the routing crate's authoritative phase/pole
+ * geometry): each region spans one pole pitch for one phase, and the phases
+ * are interleaved by `pole_pitch / phases`. At rest the FIRST magnet bar's
+ * CENTRE is anchored to the neutral (second-phase) phase-band centre, so
+ * each pole sits symmetrically inside its phase band and every later bar
+ * centre lands on the next such phase-band centre automatically (the regions
+ * repeat every pole pitch). The anchor is
  * kept on the neutral B phase so the poles read A1 positive, B1 neutral and
  * C1/A2 negative — matching the no-overlap three-phase sequence. Pattern-owned
  * pole regions are the authoritative source for those zone centres. When a
@@ -265,12 +266,13 @@ export function computeMagnetStartX(
     zoneAt(phase, poleIndex) ?? zones.find((zone) => zone.phase === phase) ?? null;
   const centreX = (zone: PoleRegionZone): number => (zone.x0 + zone.x1) / 2;
 
-  // Anchor the FIRST magnet bar's CENTRE on the neutral B1 slot centre, so
-  // the pole sits inside its slot band with the neutral phase flanked
-  // symmetrically by the magnets that surround it. Every later bar centre
-  // falls on the next B-slot centre automatically (B zones repeat every
-  // pole pitch). Neither the configured gap nor any edge padding can move
-  // the first solid bar away from the pattern-owned coordinate.
+  // Anchor the FIRST magnet bar's CENTRE on the neutral B1 phase-band
+  // centre, so the pole sits inside its phase band with the neutral phase
+  // flanked symmetrically by the magnets that surround it. Every later bar
+  // centre falls on the next B phase-band centre automatically (B zones
+  // repeat every pole pitch). Neither the configured gap nor any edge
+  // padding can move the first solid bar away from the pattern-owned
+  // coordinate.
   if (phaseOrder.length >= 2) {
     const neutral = zoneAt(phaseOrder[1], 0) ?? firstZone(phaseOrder[1], 0);
     if (neutral) {
@@ -282,8 +284,8 @@ export function computeMagnetStartX(
   }
 
   // Neutral phase absent from a three-phase sidecar: fall back to the
-  // equivalent C1/A2 midpoint (the negative-pole slot centre). The first N
-  // bar centre sits one full pitch before that midpoint.
+  // equivalent C1/A2 midpoint (the negative-pole phase-band centre). The
+  // first N bar centre sits one full pitch before that midpoint.
   if (phaseOrder.length === 3) {
     const c1 = zoneAt(phaseOrder[2], 0);
     const a2 = zoneAt(phaseOrder[0], 1);
@@ -432,7 +434,7 @@ export function computeVisibleArcs(
 }
 
 // ===========================================================================
-// routing_dimensions sidecar overlays: pole-pitch ruler + slot-width rows.
+// routing_dimensions sidecar overlays: pole-pitch ruler + band-width rows.
 //
 // Everything here is PURE (no canvas). The physics for these values lives in
 // `pcbmotorgen-routing`'s `dimensions` module; the frontend only translates
@@ -535,11 +537,13 @@ export function computePolePitchRuler(
   };
 }
 
-/** Effective conductor-band width status for a slot-width row. */
-export type SlotWidthStatus = "over-budget" | "ok" | "no-limit";
+/** Effective conductor-band width status for a band-width row. */
+export type BandWidthStatus = "over-budget" | "ok" | "no-limit";
 
-/** One slot-width diagnostic row, anchored to its matched phase geometry. */
-export interface SlotWidthRow {
+/**
+ * One band-width diagnostic row, anchored to its matched phase geometry.
+ */
+export interface BandWidthRow {
   /** Matched `PhaseCoilDto.phase_idx`. */
   phaseIdx: number;
   /** Sidecar `(layer)` the record was matched on. */
@@ -550,14 +554,19 @@ export interface SlotWidthRow {
   anchorX: number;
   /** Representative y/rail: median active-conductor y + per-row bias (m). */
   y: number;
-  /** Effective conductor-band width `slot_width_m` (m). */
-  slotM: number;
-  /** Top-down limit `max_slot_width_m`, when known (m). */
+  /** Effective conductor-band width `band_width_m` (m). */
+  bandM: number;
+  /** Top-down limit `max_band_width_m`, when known (m). */
   maxM: number | null;
-  /** `maxM - slotM`, when the limit is known (m). */
+  /** `maxM - bandM`, when the limit is known (m). */
   marginM: number | null;
-  status: SlotWidthStatus;
+  status: BandWidthStatus;
 }
+
+/**
+ * @deprecated use BandWidthRow
+ */
+export type SlotWidthRow = BandWidthRow;
 
 function medianValues(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -587,25 +596,25 @@ export function medianActiveY(coil: PhaseCoilDto): number | null {
 }
 
 /**
- * Build the slot-width diagnostic rows by matching each `slot_widths[]`
- * record to its `(layer, phase_name)` PhaseCoilDto. Rows are anchored at the
- * median active-segment x and a median-active y "rail"; they are never placed
- * on an invented physical phase-band boundary. Records that cannot be matched
- * or that carry invalid widths are skipped.
+ * Build the band-width diagnostic rows by matching each
+ * `phase_band_widths[]` record to its `(layer, phase_name)` PhaseCoilDto.
+ * Rows are anchored at the median active-segment x and a median-active y
+ * "rail"; they are never placed on an invented physical phase-band boundary.
+ * Records that cannot be matched or that carry invalid widths are skipped.
  */
-export function computeSlotWidthRows(
+export function computeBandWidthRows(
   coils: CoilPathDto | null,
-  dimensions: Pick<RoutingDimensionsDto, "slot_widths"> | null | undefined,
+  dimensions: Pick<RoutingDimensionsDto, "phase_band_widths"> | null | undefined,
   rowStrideM = 0.001,
-): SlotWidthRow[] {
-  if (!coils || !dimensions?.slot_widths) return [];
+): BandWidthRow[] {
+  if (!coils || !dimensions?.phase_band_widths) return [];
   const byKey = new Map<string, PhaseCoilDto>();
   for (const ph of coils.phases) byKey.set(`${ph.layer_idx}|${ph.phase_name}`, ph);
 
-  const rows: SlotWidthRow[] = [];
-  for (const slot of dimensions.slot_widths) {
-    if (!isValidMetres(slot.slot_width_m)) continue;
-    const phase = byKey.get(`${slot.layer}|${slot.net}`);
+  const rows: BandWidthRow[] = [];
+  for (const band of dimensions.phase_band_widths) {
+    if (!isValidMetres(band.band_width_m)) continue;
+    const phase = byKey.get(`${band.layer}|${band.net}`);
     if (!phase) continue;
     const anchorX = medianActiveX(phase);
     const railY = medianActiveY(phase);
@@ -616,23 +625,23 @@ export function computeSlotWidthRows(
     // finite values so the preview exposes the routing crate's over-budget
     // diagnostic instead of silently turning it into "no limit".
     const maxM =
-      typeof slot.max_slot_width_m === "number" && Number.isFinite(slot.max_slot_width_m)
-        ? slot.max_slot_width_m
+      typeof band.max_band_width_m === "number" && Number.isFinite(band.max_band_width_m)
+        ? band.max_band_width_m
         : null;
     let marginM: number | null = null;
     if (maxM !== null) {
       marginM =
-        typeof slot.margin_m === "number" && Number.isFinite(slot.margin_m)
-          ? slot.margin_m
-          : maxM - slot.slot_width_m;
+        typeof band.margin_m === "number" && Number.isFinite(band.margin_m)
+          ? band.margin_m
+          : maxM - band.band_width_m;
     }
     rows.push({
       phaseIdx: phase.phase_idx,
-      layer: slot.layer,
-      phaseName: slot.net,
+      layer: band.layer,
+      phaseName: band.net,
       anchorX,
       y: railY,
-      slotM: slot.slot_width_m,
+      bandM: band.band_width_m,
       maxM,
       marginM,
       status:
@@ -652,6 +661,17 @@ export function computeSlotWidthRows(
     row.y += (i - (n - 1) / 2) * rowStrideM;
   });
   return rows;
+}
+
+/**
+ * @deprecated use computeBandWidthRows
+ */
+export function computeSlotWidthRows(
+  coils: CoilPathDto | null,
+  dimensions: Pick<RoutingDimensionsDto, "phase_band_widths"> | null | undefined,
+  rowStrideM = 0.001,
+): BandWidthRow[] {
+  return computeBandWidthRows(coils, dimensions, rowStrideM);
 }
 
 // ===========================================================================
@@ -819,11 +839,11 @@ export function polePitchRulerBounds(ruler: PolePitchRuler): ViewportBBox {
   };
 }
 
-/** World-space box a slot-width row occupies (camera-fit input). */
-export function slotWidthRowBounds(row: SlotWidthRow): ViewportBBox {
+/** World-space box a band-width row occupies (camera-fit input). */
+export function bandWidthRowBounds(row: BandWidthRow): ViewportBBox {
   // Include the optional top-down limit too: the canvas draws it as a dashed
   // reference bracket so a generous phase band cannot be clipped at reset.
-  const extentM = Math.max(row.slotM, row.maxM ?? 0);
+  const extentM = Math.max(row.bandM, row.maxM ?? 0);
   const half = Math.max(extentM / 2, 0.0005);
   return {
     minX: row.anchorX - half,
@@ -835,7 +855,7 @@ export function slotWidthRowBounds(row: SlotWidthRow): ViewportBBox {
 
 /**
  * Expand the schematic fit box to cover the active overlays, so the camera
- * reset never clips the ruler or slot brackets (rows live inside the content
+ * reset never clips the ruler or band brackets (rows live inside the content
  * box already, but the ruler floats above the magnet strip). Pole-region
  * zones (optional, `regionZones`) are also included bounded to a caller-
  * supplied board y band so a zone reaching into routing padding is not
@@ -844,14 +864,14 @@ export function slotWidthRowBounds(row: SlotWidthRow): ViewportBBox {
 export function computeOverlayFitBounds(
   base: ViewportBBox,
   ruler: PolePitchRuler | null,
-  rows: readonly SlotWidthRow[],
+  rows: readonly BandWidthRow[],
   regionZones: readonly PoleRegionZone[] = [],
   regionYMin = 0,
   regionYMax = 0,
 ): ViewportBBox {
   const boxes: ViewportBBox[] = [base];
   if (ruler) boxes.push(polePitchRulerBounds(ruler));
-  for (const row of rows) boxes.push(slotWidthRowBounds(row));
+  for (const row of rows) boxes.push(bandWidthRowBounds(row));
   const zoneBox = computePoleRegionBounds(regionZones, regionYMin, regionYMax);
   if (zoneBox) boxes.push(zoneBox);
   return unionBounds(...boxes);
@@ -896,7 +916,7 @@ export function formatMetresMm(v: number): string {
   return `${(v * 1000).toFixed(digits)} mm`;
 }
 
-/** Signed mm formatter for slot margins, e.g. "+0.28 mm" / "-0.10 mm". */
+/** Signed mm formatter for band margins, e.g. "+0.28 mm" / "-0.10 mm". */
 export function formatMarginMm(v: number): string {
   const magnitude = formatMetresMm(Math.abs(v));
   return v < 0 ? `-${magnitude}` : `+${magnitude}`;

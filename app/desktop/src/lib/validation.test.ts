@@ -5,18 +5,18 @@ import { validateDesign, hasErrors, type DesignConfigInput } from "./validation"
 function validConfig(overrides: Partial<DesignConfigInput> = {}): DesignConfigInput {
   return {
     travel_mm: 75,
-    coil_span_mm: 72,
+    mover_span_mm: 72,
     magnet_count: 12,
     magnet_width_mm: 4.5,
     magnet_gap_mm: 1.5,
-    slot_width_mm: 12.0,
+    electrical_pitch_mm: 12.0,
     min_space_mm: 0.127,
     magnet_cross_width_mm: 10,
     active_area_width_mm: 20,
     num_layers: 4,
     max_layers: 12,
     routing_pattern: "infinity-braid",
-    windings_per_phase: 2,
+    strands_per_phase: 2,
     min_trace_mm: 0.127,
     peak_force_n: 1.0,
     target_force_n: 0.5,
@@ -43,19 +43,19 @@ describe("validateDesign", () => {
     expect(ids(validConfig({ magnet_count: 8 }))).not.toContain("magnet-count");
   });
 
-  it("requires a positive slot width", () => {
-    expect(ids(validConfig({ slot_width_mm: 0 }))).toContain("slot-width");
-    expect(ids(validConfig({ slot_width_mm: -1 }))).toContain("slot-width");
+  it("requires a positive electrical pitch", () => {
+    expect(ids(validConfig({ electrical_pitch_mm: 0 }))).toContain("electrical-pitch");
+    expect(ids(validConfig({ electrical_pitch_mm: -1 }))).toContain("electrical-pitch");
   });
 
   it("derives k from the magnet width and rejects it outside [0.50, 1.00]", () => {
-    // 6 mm pole pitch (12 mm slot width): 2 mm / 6 mm = k ≈ 0.33 → error.
+    // 6 mm pole pitch (12 mm electrical pitch): 2 mm / 6 mm = k ≈ 0.33 → error.
     expect(ids(validConfig({ magnet_width_mm: 2 }))).toContain("magnet-fill");
     // 7 mm / 6 mm = k ≈ 1.17 → error.
     expect(ids(validConfig({ magnet_width_mm: 7 }))).toContain("magnet-fill");
     // Degenerate pitch makes k undefined → error.
     expect(
-      ids(validConfig({ slot_width_mm: 0, magnet_width_mm: 4.5 })),
+      ids(validConfig({ electrical_pitch_mm: 0, magnet_width_mm: 4.5 })),
     ).toContain("magnet-fill");
     // 3–6 mm at the 6 mm pole pitch is the allowed band.
     expect(ids(validConfig({ magnet_width_mm: 3 }))).not.toContain("magnet-fill");
@@ -91,11 +91,11 @@ describe("validateDesign", () => {
     );
   });
 
-  it("warns when multi-strand windings cannot fit trace + clearance", () => {
-    const findings = validateDesign(validConfig({ windings_per_phase: 4 }));
+  it("warns when multiple strands cannot fit trace + clearance", () => {
+    const findings = validateDesign(validConfig({ strands_per_phase: 4 }));
     // 20mm / 4 = 5mm per strand — plenty of room
     expect(findings.find((f) => f.id === "strand-clearance")).toBeUndefined();
-    const tight = validateDesign(validConfig({ active_area_width_mm: 0.4, windings_per_phase: 2 }));
+    const tight = validateDesign(validConfig({ active_area_width_mm: 0.4, strands_per_phase: 2 }));
     expect(tight.find((f) => f.id === "strand-clearance")?.level).toBe("warning");
   });
 

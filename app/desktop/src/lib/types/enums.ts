@@ -7,5 +7,5 @@
  * boundary.
  */
 
-/** Comutation strategy used by the force sweep. */
-export type CommutationMode = "max_torque" | "phase_a_only";
+/** Commutation strategy used by the force sweep. */
+export type CommutationMode = "max_thrust" | "phase_a_only";

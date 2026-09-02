@@ -16,7 +16,7 @@ import {
   computeVisibleSegments,
   computePolePitchValue,
   computePolePitchRuler,
-  computeSlotWidthRows,
+  computeBandWidthRows,
   computeOverlayFitBounds,
   computeMoverStripBounds,
   computePoleRegionZones,
@@ -38,7 +38,7 @@ import {
   distanceMm,
   computeMeasureRuler,
 } from "./previewGeometry";
-import type { CoilPathDto, PhaseCoilDto, PoleRegionDto, SlotWidthDto } from "./types";
+import type { CoilPathDto, PhaseCoilDto, PoleRegionDto, PhaseBandWidthDto } from "./types";
 
 /** Default-config-like magnet layout (12 poles, 6 mm pole pitch: P_e/2). */
 const CONFIG = { magnet_count: 12, magnet_width_mm: 4.5, magnet_gap_mm: 1.5 };
@@ -281,15 +281,15 @@ describe("computeVisibleArcs", () => {
 // routing_dimensions sidecar overlays
 // ===========================================================================
 
-/** Build a minimal SlotWidthDto record (the helpers only read the fields we
- *  exercise here). */
-function slot(
+/** Build a minimal PhaseBandWidthDto record (the helpers only read the fields
+ *  we exercise here). */
+function band(
   layer: number,
   net: string,
   width: number,
   max: number | null = null,
   margin: number | null = null,
-): SlotWidthDto {
+): PhaseBandWidthDto {
   return {
     layer,
     net,
@@ -297,8 +297,8 @@ function slot(
     trace_width_m: 0.0002,
     trace_spacing_m: 0.0002,
     angle_rad: Math.PI / 2,
-    slot_width_m: width,
-    max_slot_width_m: max,
+    band_width_m: width,
+    max_band_width_m: max,
     margin_m: margin,
   };
 }
@@ -354,20 +354,20 @@ describe("computePolePitchRuler", () => {
   });
 });
 
-describe("computeSlotWidthRows", () => {
+describe("computeBandWidthRows", () => {
   it("returns [] while the sidecar is missing", () => {
-    expect(computeSlotWidthRows(braidLikeFixture(), null)).toEqual([]);
-    expect(computeSlotWidthRows(null, { slot_widths: [] })).toEqual([]);
+    expect(computeBandWidthRows(braidLikeFixture(), null)).toEqual([]);
+    expect(computeBandWidthRows(null, { phase_band_widths: [] })).toEqual([]);
   });
 
   it("matches each record to its (layer, net) phase coil", () => {
     const coils = braidLikeFixture();
-    const rows = computeSlotWidthRows(coils, {
-      slot_widths: [
-        slot(0, "A", 0.002, 0.004, 0.002),
-        slot(1, "B", 0.003, 0.0025, -0.0005),
-        slot(0, "C", 0.002, null, null),
-        slot(0, "D", 0.002, 0.004, 0.002), // no phase "D" in the fixture
+    const rows = computeBandWidthRows(coils, {
+      phase_band_widths: [
+        band(0, "A", 0.002, 0.004, 0.002),
+        band(1, "B", 0.003, 0.0025, -0.0005),
+        band(0, "C", 0.002, null, null),
+        band(0, "D", 0.002, 0.004, 0.002), // no phase "D" in the fixture
       ],
     });
     expect(rows).toHaveLength(3);
@@ -377,7 +377,7 @@ describe("computeSlotWidthRows", () => {
     expect(a.layer).toBe(0);
     // median active-conductor x for phase A (offset 0, 4 conductors at 0..0.012)
     expect(a.anchorX).toBeCloseTo(0.006);
-    expect(a.slotM).toBeCloseTo(0.002);
+    expect(a.bandM).toBeCloseTo(0.002);
     expect(a.maxM).toBeCloseTo(0.004);
     expect(a.marginM).toBeCloseTo(0.002);
     expect(a.status).toBe("ok");
@@ -394,19 +394,19 @@ describe("computeSlotWidthRows", () => {
 
   it("skips records with invalid slot widths", () => {
     const coils = braidLikeFixture();
-    const rows = computeSlotWidthRows(coils, {
-      slot_widths: [
-        slot(0, "A", 0),
-        slot(0, "A", Number.NaN),
-        slot(0, "A", -0.001),
+    const rows = computeBandWidthRows(coils, {
+      phase_band_widths: [
+        band(0, "A", 0),
+        band(0, "A", Number.NaN),
+        band(0, "A", -0.001),
       ],
     });
     expect(rows).toEqual([]);
   });
 
   it("keeps a finite zero/negative limit visible as an over-budget diagnostic", () => {
-    const rows = computeSlotWidthRows(braidLikeFixture(), {
-      slot_widths: [slot(0, "A", 0.002, 0, -0.002)],
+    const rows = computeBandWidthRows(braidLikeFixture(), {
+      phase_band_widths: [band(0, "A", 0.002, 0, -0.002)],
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].maxM).toBe(0);
@@ -416,8 +416,8 @@ describe("computeSlotWidthRows", () => {
 
   it("stacks matched rows symmetrically around the conductor rail", () => {
     const coils = braidLikeFixture();
-    const rows = computeSlotWidthRows(coils, {
-      slot_widths: [slot(0, "A", 0.002), slot(1, "A", 0.002)],
+    const rows = computeBandWidthRows(coils, {
+      phase_band_widths: [band(0, "A", 0.002), band(1, "A", 0.002)],
     });
     expect(rows).toHaveLength(2);
     // fixture median active y is 0.01 for both layers; stride 1 mm by default.
@@ -463,14 +463,14 @@ describe("computeOverlayFitBounds", () => {
     expect(bounds.minX).toBeLessThanOrEqual(base.minX);
   });
 
-  it("covers slot-row brackets that reach past the content box", () => {
+  it("covers band-row brackets that reach past the content box", () => {
     const row = {
       phaseIdx: 0,
       layer: 0,
       phaseName: "A",
       anchorX: 0.019,
       y: 0.012,
-      slotM: 0.004,
+      bandM: 0.004,
       maxM: null,
       marginM: null,
       status: "no-limit" as const,

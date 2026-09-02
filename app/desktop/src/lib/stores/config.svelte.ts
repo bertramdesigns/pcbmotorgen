@@ -3,7 +3,7 @@
  *
  * Keeps user-facing values in mm (the natural unit for PCB design) and
  * exposes a `toIpc()` builder that converts to the SI LinearMotorConfig
- * expected by the Tauri backend. Derived geometry (pole pitch, coil span,
+ * expected by the Tauri backend. Derived geometry (pole pitch, mover span,
  * travel) is computed with `$derived` so every consumer updates live.
  */
 
@@ -32,7 +32,7 @@ export class ConfigStore {
   // --- Round 9: padding + multi-strand (defaults match the Rust core) -
   // These are the new defaults that the production code path uses
   // for the MagneticFader reference design. With
-  // `windings_per_phase = 2` and `padding_mm = 30`:
+  // `strands_per_phase = 2` and `padding_mm = 30`:
   //
   // - Each phase gets 2 parallel serpentine paths on its assigned
   //   layer (stacked in y, interleaved in x).
@@ -43,7 +43,7 @@ export class ConfigStore {
   //   directly addresses the Bug 17 through-via short-circuit
   //   symptom the user reported in Round 8.
   padding_mm = $state(30);
-  windings_per_phase = $state(2);
+  strands_per_phase = $state(2);
 
   // --- Magnet array (mm) -------------------------------------------------
   /** Number of magnetic poles on the mover (`N_poles`). Even counts are
@@ -66,12 +66,12 @@ export class ConfigStore {
   air_gap_mm = $state(0.5);
 
   // --- Phase-band constraint (mm) ---------------------------------------
-  /** Stator slot/electrical pitch (`P_e`): the length of one full electrical
-   *  cycle (360°). A full cycle contains TWO alternating poles (180° each),
-   *  so the magnetic pole pitch is `pole_pitch = P_e / 2`. The slot
-   *  start/end boundaries themselves come from the routing crate's pole
-   *  regions. */
-  slot_width_mm = $state(12.0);
+  /** Electrical pitch P_e: length of one full electrical cycle (360°) =
+   *  2 × pole pitch. A full cycle contains two alternating poles, so
+   *  pole_pitch_mm = electrical_pitch_mm / 2. NOTE: this is NOT a slot
+   *  dimension — a slot houses one active leg. The per-slot conductor-band
+   *  widths are reported in the Coil Preview diagnostics. */
+  electrical_pitch_mm = $state(12.0);
 
   // --- Coil --------------------------------------------------------------
   /** Routing-pattern id sent to the backend (one of `routing_patterns`). */
@@ -107,7 +107,7 @@ export class ConfigStore {
   capacitor_bank_uf = $state(1000);
 
   // --- Solver -----------------------------------------------------------
-  commutation = $state<CommutationMode>("max_torque");
+  commutation = $state<CommutationMode>("max_thrust");
   n_positions = $state(50);
   meshing = $state(20);
 
@@ -125,9 +125,7 @@ export class ConfigStore {
   // Derived geometry (mm, for the UI)
   // ---------------------------------------------------------------------
 
-  pole_pitch_mm = $derived(this.slot_width_mm / 2);
-  /** Full electrical cycle length (`P_e`) — one cycle spans 2 pole pitches. */
-  electrical_pitch_mm = $derived(this.slot_width_mm);
+  pole_pitch_mm = $derived(this.electrical_pitch_mm / 2);
   /** Upper limit on the magnet X length: a fully-filled pole pitch
    *  (k_fill = 1.0) leaves no inter-pole gap. */
   max_magnet_width_mm = $derived(Math.max(0, this.pole_pitch_mm));
@@ -141,9 +139,10 @@ export class ConfigStore {
   magnet_gap_mm = $derived(
     Math.max(0, this.pole_pitch_mm - this.magnet_width_mm),
   );
-  coil_span_mm = $derived(this.magnet_count * this.pole_pitch_mm);
+  /** Mover magnet-array span: magnet_count × pole pitch. */
+  mover_span_mm = $derived(this.magnet_count * this.pole_pitch_mm);
   /** Active-area length along the travel axis: mover span + desired travel. */
-  active_area_length_mm = $derived(this.coil_span_mm + this.desired_travel_mm);
+  active_area_length_mm = $derived(this.mover_span_mm + this.desired_travel_mm);
   /**
    * Total X extent of the routed PCB traces: the first-to-last segment-point
    * span returned by the routing backend. The braid routes across the active
@@ -153,13 +152,16 @@ export class ConfigStore {
   trace_total_length_mm = $derived(
     this.active_area_length_mm + 2 * this.padding_mm,
   );
-  travel_mm = $derived(this.active_area_length_mm - this.coil_span_mm);
+  travel_mm = $derived(this.active_area_length_mm - this.mover_span_mm);
   /** Vernier slot-pitch ratio. No longer user-adjustable in the UI — pinned
    *  to the standard 1:1 and passed to the backend untouched. */
   spacing_ratio = $derived(1.0);
 
-  /** True when the active area is too short to cover the mover coil span. */
-  is_active_area_invalid = $derived(this.active_area_length_m <= this.coil_span_m);
+  /** True when the active area is too short to cover the mover magnet-array
+   *  span. */
+  is_active_area_invalid = $derived(
+    this.active_area_length_mm <= this.mover_span_mm,
+  );
 
   // --- Magnet-grade reference (loaded from backend at startup) -----------
   /**
@@ -289,7 +291,7 @@ export class ConfigStore {
       pcb_thickness_m: mm(this.pcb_thickness_mm),
       // Round 9: padding + multi-strand pass-through to the core.
       padding_m: mm(this.padding_mm),
-      windings_per_phase: this.windings_per_phase,
+      strands_per_phase: this.strands_per_phase,
 
       magnet_count: this.magnet_count,
       magnet_width_m: mm(this.magnet_width_mm),

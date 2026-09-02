@@ -7,9 +7,11 @@
  *
  * The value is the CENTER of the magnet array in ABSOLUTE TRACK coordinates
  * (the routing/domain frame: routed traces start at ≈ 0, copper begins one
- * end-padding in) — the same frame every preview draws in. Motion is
- * continuous (a coreless PCB motor has no commutation-step snapping), but
- * the slider RANGE endpoints are physics-derived: they come from the backend
+ * end-padding in) — the same frame every preview draws in. Motion input is
+ * continuous: a coreless motor has no detent/cogging force, and the slider
+ * endpoints are stable rest positions spaced one electrical period P_e apart
+ * (full-step commutation would re-anchor every τp). The RANGE endpoints are
+ * physics-derived: they come from the backend
  * travel envelope — the first/last STABLE EQUILIBRIUM rest positions of the
  * array centre under the baseline excitation (IA=+I, IB=0, IC=−I), computed
  * over the MEASURED routed track with the array fully supported (edge rule:
@@ -30,7 +32,7 @@ export class MotionStore {
 
   constructor(private config: ConfigStore) { }
 
-  coilSpanMm = $derived.by(() => this.config.coil_span_mm);
+  moverSpanMm = $derived.by(() => this.config.mover_span_mm);
 
   /** Electrical period P_e (mm): one full 360° cycle = 2 pole pitches. */
   electricalPeriodMm = $derived(this.config.pole_pitch_mm * 2);
@@ -47,14 +49,14 @@ export class MotionStore {
 
   // --- Geometric fallback bounds (array flush inside the routing domain) --
   private geometricMinMm = $derived.by(
-    () => this.config.padding_mm + this.coilSpanMm / 2,
+    () => this.config.padding_mm + this.moverSpanMm / 2,
   );
   private geometricMaxMm = $derived.by(() =>
     Math.max(
       this.geometricMinMm,
       this.config.padding_mm +
         this.config.active_area_length_mm -
-        this.coilSpanMm / 2,
+        this.moverSpanMm / 2,
     ),
   );
 
@@ -79,11 +81,11 @@ export class MotionStore {
 
   /**
    * Mover strip extent (mm) in the DOMAIN frame — centred on the current
-   * position, so the drawn edges always equal position ± coil_span/2 and
+   * position, so the drawn edges always equal position ± mover_span/2 and
    * match every printed number exactly.
    */
-  stripStartMm = $derived(this.clampedPositionMm - this.coilSpanMm / 2);
-  stripEndMm = $derived(this.clampedPositionMm + this.coilSpanMm / 2);
+  stripStartMm = $derived(this.clampedPositionMm - this.moverSpanMm / 2);
+  stripEndMm = $derived(this.clampedPositionMm + this.moverSpanMm / 2);
 
   /** Commit a raw position (slider or number field) into the store. */
   commit(value: number): void {

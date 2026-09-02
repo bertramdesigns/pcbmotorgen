@@ -6,8 +6,8 @@
  * DesignDimensions to remove duplicated derived math.
  */
 
-/** Slot pitch: vernier fraction of the pole pitch per phase. */
-export function slotPitchMm(
+/** Phase-band pitch: vernier fraction of the pole pitch per phase. */
+export function phaseBandPitchMm(
   polePitchMm: number,
   phases: number,
   spacingRatio: number,
@@ -15,7 +15,23 @@ export function slotPitchMm(
   return (polePitchMm / phases) * spacingRatio;
 }
 
-/** Vernier rest offset: the unresolvable remainder of the pole pitch. */
+/**
+ * @deprecated use phaseBandPitchMm
+ */
+export function slotPitchMm(
+  polePitchMm: number,
+  phases: number,
+  spacingRatio: number,
+): number {
+  return phaseBandPitchMm(polePitchMm, phases, spacingRatio);
+}
+
+/**
+ * Vernier rest offset: the unresolvable remainder of the phase-band pitch —
+ * `(τp/phases)(1 − ratio)` is the slice of one phase-band pitch the reduced
+ * vernier ratio leaves unvisited, so rest positions drift by this much per
+ * phase band instead of realigning every pole pitch.
+ */
 export function restOffsetMm(
   polePitchMm: number,
   phases: number,

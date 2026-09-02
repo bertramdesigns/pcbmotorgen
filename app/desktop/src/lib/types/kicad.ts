@@ -95,8 +95,8 @@ export interface CoilPreviewLayer {
 export interface CoilPreview {
   /** Number of layers the writer would iterate over. */
   num_layers: number;
-  /** Routing-pattern id used for this preview, e.g. `"infinity-braid"`. */
-  topology: string;
+  /** Routing-pattern id that produced the coil set. */
+  pattern_id: string;
   /** Per-layer breakdown. */
   layers: CoilPreviewLayer[];
   /** Total track segments across all layers. */

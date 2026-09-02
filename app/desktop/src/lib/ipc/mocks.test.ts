@@ -28,7 +28,7 @@ function makeConfig(overrides: Partial<LinearMotorConfig> = {}): LinearMotorConf
     board_width_m: 0.02,
     pcb_thickness_m: 0.0016,
     padding_m: 0.03,
-    windings_per_phase: 2,
+    strands_per_phase: 2,
     magnet_count: 10,
     magnet_width_m: 0.01,
     magnet_cross_width_m: 0.01,
@@ -58,7 +58,7 @@ function makeConfig(overrides: Partial<LinearMotorConfig> = {}): LinearMotorConf
     carriage_mass_kg: 0.015,
     max_accel_m_s2: 2.0,
     capacitor_bank_uf: 1000,
-    commutation: "max_torque",
+    commutation: "max_thrust",
     n_positions: 50,
     meshing: 20,
     name: null,
@@ -71,7 +71,7 @@ describe("mockConfigDerived", () => {
     const c = makeConfig();
     const d = mockConfigDerived(c);
     expect(d.pole_pitch_m).toBe(c.magnet_pitch_m);
-    expect(d.coil_span_m).toBe(c.magnet_count * c.magnet_pitch_m);
+    expect(d.magnet_array_span_m).toBe(c.magnet_count * c.magnet_pitch_m);
     expect(d.travel_m).toBeCloseTo(c.active_area_length_m - c.magnet_count * c.magnet_pitch_m);
     expect(d.min_via_pad_m).toBe(c.min_via_drill_m + 2 * c.min_via_annular_ring_m);
     expect(d.minimum_drive_force_n).toBe(c.friction_n * 1.3);
@@ -243,7 +243,7 @@ describe("mockPreviewCoils", () => {
     const segsPerLayer = Math.max(2, 4 * 2) * 2 - 1; // 15
     expect(p.total_tracks).toBe(15 * 3 * 2);
     expect(p.total_vias).toBe(0);
-    expect(p.topology).toBe(c.routing_pattern);
+    expect(p.pattern_id).toBe(c.routing_pattern);
   });
 });
 
@@ -275,7 +275,7 @@ describe("mockTravelEnvelope", () => {
   // Coil-capture convention: min = padding + (2/3)·P_e, max =
   // (padding + active) − (3/4)·P_e — endpoints scale with P_e, not N.
   // rest_phase_m is the track-frame phase (padding + φ) mod P_e.
-  it("defaults (P_e=12 mm, slots [30,177]) spans 38 → 168 mm", () => {
+  it("defaults (P_e=12 mm, copper [30,177]) spans 38 → 168 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
@@ -303,8 +303,8 @@ describe("mockTravelEnvelope", () => {
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
   });
 
-  it("clamps max to min when the slot region cannot host the envelope", () => {
-    // Slot [30, 40] mm: min 38, max = max(40−9, 38) = 38 → clamped.
+  it("clamps max to min when the copper region cannot host the envelope", () => {
+    // Copper region [30, 40] mm: min 38, max = max(40−9, 38) = 38 → clamped.
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
     );
