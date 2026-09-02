@@ -597,24 +597,33 @@ pub fn travel_envelope_over_slots(electrical_period_m, magnet_count,
 ```
 
 The envelope endpoints are the glossary-normative FIRST/LAST STABLE REST
-POSITION inside the copper active area (kata xb16, 2026-09-02), derived in
+POSITION inside the copper active area (kata xb16, 2026-09-02;
+nearest-snap revision the same day after field verification), derived in
 two steps:
 
 - **Span-aware centre clamp**: `centre ∈ [copper_region_start + span/2,
   copper_region_end − span/2]` with the glossary "Mover Span"
-  `span = N · τ_p` (τ_p = P_e/2).
-- **Lattice snapping**: endpoints are stable rest positions on the
-  track-frame lattice `x ≡ (copper_region_start + φ) mod P_e`:
-  `min` = smallest lattice point ≥ the lower clamp bound, `max` = largest
-  lattice point ≤ the upper clamp bound. The endpoints DEPEND on N.
+  `span = N · τ_p` (τ_p = P_e/2). By construction this range has the width
+  of the configured free travel (`travel = copper_length − span`) — the
+  range the slider must sweep.
+- **Nearest-rest lattice snapping**: endpoints are stable rest positions on
+  the track-frame lattice `x ≡ (copper_region_start + φ) mod P_e`; each
+  endpoint snaps to the lattice point NEAREST its clamp bound (ties
+  inward), deviating by at most `P_e/2` per endpoint. The endpoints DEPEND
+  on N. Inward snapping (first rest ≥ bound, last rest ≤ bound) was tried
+  first and rejected: it can cut up to `2·P_e` from the swept range — 36%
+  of the configured travel at the app defaults — leaving the mover unable
+  to reach the copper ends. An endpoint up to `P_e/2` outside its clamp
+  bound means the array edge may overhang the copper into the end-turn
+  padding by at most `P_e/2`.
 - Defaults (N = 12, P_e = 12 mm, copper region [30, 177] mm in track
-  coords): φ_track = 4 mm, span = 72 mm → **76 → 136 mm** (N = 4 gives
-  52 → 160 mm on the same copper and period).
-- Degenerate (no lattice point between the clamped bounds — copper shorter
-  than the span, or too short for one lattice step past the lower bound):
-  `max` clamps to `min` (nearest lattice point ≥ the lower bound); the
-  envelope never inverts, but the array may overhang the copper at that
-  single rest position.
+  coords): φ_track = 4 mm, span = 72 mm → **64 → 136 mm**, a 72 mm sweep
+  against the 75 mm configured travel (N = 4 gives 40 → 160 mm on the same
+  copper and period).
+- Degenerate (copper shorter than the span, or a clamped range narrower
+  than one lattice step): `max` clamps to `min`; the envelope never
+  inverts, but the array may overhang the copper at that single rest
+  position.
 - `rest_phase_m` is the TRACK-FRAME phase `(copper_region_start + φ) mod P_e`
   (= 4 mm for the defaults), so holding-force zero markers align to the
   stable rests.
