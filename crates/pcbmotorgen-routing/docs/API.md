@@ -400,7 +400,8 @@ existing SI/meter frontend DTO names for compatibility.
     "segments": [ { "start": { "x": 0.0, "y": 0.0 }, "end": { "x": 0.0, "y": 20.0 }, "layer": 0, "net": "A", "is_active": true } ],
     "curves": [],
     "vias": [],
-    "pole_regions": [ { "phase": "A", "pole_index": 0, "start": { "x": 0.0, "y": 10.0 }, "end": { "x": 12.0, "y": 10.0 } } ]
+    "pole_regions": [ { "phase": "A", "pole_index": 0, "start": { "x": 0.0, "y": 10.0 }, "end": { "x": 12.0, "y": 10.0 } } ],
+    "leg_grid": { "slot_count": 975, "strands_per_leg": 5 }
   },
   "dimensions": {
     "active_area_length_mm": 195.0,
@@ -414,6 +415,9 @@ existing SI/meter frontend DTO names for compatibility.
     "phase_band_pitch_mm": 4.0,
     "phase_clearance_mm": 0.127,
     "max_phase_band_width_mm": 3.873,
+    "slot_count": 975,
+    "slot_pitch_mm": 0.2,
+    "interleave_step_mm": 0.8,
     "phase_band_widths": [
       {
         "layer": 0,
@@ -423,6 +427,7 @@ existing SI/meter frontend DTO names for compatibility.
         "trace_spacing_mm": 0.127,
         "angle_rad": 1.030377,
         "band_width_mm": 1.333,
+        "slot_width_mm": 0.148,
         "max_band_width_mm": 3.873,
         "margin_mm": 2.540
       }
@@ -442,15 +447,19 @@ existing SI/meter frontend DTO names for compatibility.
 | `pole_pitch_mm` | `f64?` | Centre-to-centre adjacent North/South pole pitch (`tau_p`) [mm]. |
 | `period_pitch_mm` | `f64?` | Pattern repeat pitch [mm]; exact pole pitch for the magnet-aware infinity braid. |
 | `period_count` | `u32?` | Complete repeat periods emitted, when known. |
-| `phase_band_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
-| `phase_clearance_mm` | `f64` | `g_phase`, currently the core minimum spacing rule [mm]. |
+| `phase_band_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. Distinct from the true slot pitch `slot_pitch_mm`. |
+| `phase_clearance_mm` | `f64` | Explicit inter-phase clearance `g_phase` from `RoutingContext.phase_clearance_mm`; when the context leaves it unset, the context's `min_space_mm` is used as a documented fallback [mm]. |
 | `max_phase_band_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
+| `slot_count` | `u32?` | Total active leg slots declared by the pattern's leg grid (`N_slots`), when it declares one. |
+| `slot_pitch_mm` | `f64?` | True slot pitch `tau_s = L_stator / N_slots` from the declared leg grid [mm]. |
+| `interleave_step_mm` | `f64?` | Effective leg pitch of braided slotless patterns, `tau_p / (phases × strands)` from the declared leg grid [mm]. |
 | `phase_band_widths` | array | Per-active-`(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries, copied from the result. |
 
 Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
 (`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), the calculated
-`band_width_mm`, the top-down `max_band_width_mm`, and `margin_mm`.
+`band_width_mm`, the glossary-exact single-leg `slot_width_mm`, the top-down
+`max_band_width_mm`, and `margin_mm`.
 Convenience helpers on `RoutingDimensions`: `all_phase_bands_fit()` and
 `pole_to_pole_pitch_mm()`.
 
@@ -464,7 +473,10 @@ w_s = (N * w_t + (N - 1) * s) / sin(theta)
 
 - `N` = `trace_count` — for the bundled infinity braid the `num_strands`
   parameter; for generic patterns the first present parameter among
-  `num_strands`, `trace_count`, `turns`, `windings_per_phase`; otherwise `1`.
+  `num_strands` and `trace_count`; otherwise `1`. Whole-coil counts
+  (`turns`, `windings_per_phase`) are deliberately **not** consulted: they
+  count coil windings, not parallel strands in one bundle, and previously fed
+  this equation with silently wrong numbers.
 - `w_t` = `trace_width_mm` = `min_trace_mm` from the context.
 - `s` = `trace_spacing_mm` = `min_space_mm` from the context.
 - `theta` = `angle_rad`, measured from the x/travel axis. An angle parallel to
@@ -478,32 +490,96 @@ max(w_s) = tau_p / phases - g_phase
 ```
 
 where `tau_p` is the **centre-to-centre** North/South pole pitch (`pole_pitch_mm`,
-not the magnet's physical width) and `g_phase` is `phase_clearance_mm` (the
-core's minimum spacing rule). `phase_band_pitch_mm` is the ideal phase-band pitch
-`tau_p / phases`; it is separate from the conductor band width in each
-`phase_band_widths[]` record.
+not the magnet's physical width) and `g_phase` is `phase_clearance_mm`.
+`g_phase` is an **explicit input**: `RoutingContext.phase_clearance_mm` carries
+it, and when a context leaves it `None` the context's `min_space_mm`
+(trace-to-trace clearance) is used as a documented compatibility fallback.
+That fallback keeps legacy contexts working, but it is a real reuse of the
+trace clearance rule — set `phase_clearance_mm` explicitly when the
+phase-to-phase gap differs from the trace-to-trace clearance.
+`phase_band_pitch_mm` is the ideal phase-band pitch `tau_p / phases`; it is
+separate from the conductor band width in each `phase_band_widths[]` record.
 
 A negative `margin_mm` is a **diagnostic** that the requested bundle does not
 fit — the host never shortens, moves, or sanitises the pattern's coordinates to
 hide it. If a context has no magnet pitch, the bottom-up records are still
 available and the top-down fields are `null`.
 
+### 10.2 True per-slot metrics (declared leg grid)
+
+A **slot houses one active leg** — never a whole coil bundle (glossary
+"Slot"). Alongside the phase-band metrics, a pattern may declare its leg grid
+on the result (`RoutingResult.leg_grid: Option<LegGrid>`, additive with
+`#[serde(default)]`):
+
+```rust
+pub struct LegGrid {
+    pub slot_count: u32,                 // N_slots
+    pub strands_per_leg: Option<u32>,    // the braid's num_strands
+}
+```
+
+When the grid is declared, `RoutingDimensions` gains:
+
+- `slot_count` — the declared `N_slots`;
+- `slot_pitch_mm` — the true slot pitch `tau_s = L_stator / N_slots`, with
+  `L_stator` the context's active-area length (the stator track populated by
+  active legs);
+- `interleave_step_mm` — the effective leg pitch of braided **slotless**
+  patterns, `tau_p / (phases × strands_per_leg)`. Braided patterns have no
+  physical slots; this is the equivalent leg-pitch model of their interleaved
+  trace layout. Note that `tau_s = tau_p / phases` (the ideal phase-band
+  pitch) only holds for uniform 1-slot-per-pole-per-phase windings.
+
+Without a declared grid all three fields stay `null` and the phase-band
+metrics work exactly as before. A malformed declaration (zero slot or strand
+count) degrades to `null` rather than failing generation. The bundled
+infinity braid declares its actual leg grid: `slot_count = periods × phases ×
+strands` (65 × 3 × 5 = 975 for the 600 mm / 12 mm-pole-pitch reference) and
+`strands_per_leg = num_strands`; each braid strand remains a single-trace leg,
+so its per-record `slot_width_mm` is the single-leg width.
+
+Per-record slot width (glossary "Slot Width") — the along-travel width of the
+track space housing one active leg:
+
+```text
+slot_width = (k * w_t + (k - 1) * s) / sin(theta)      (k = parallel strands in ONE leg)
+```
+
+`phase_band_widths[].slot_width_mm` always reports the single-trace leg width
+(`k = 1`, i.e. `w_t / sin(theta)`). Callers whose legs bundle `k` parallel
+strands compute the bundled-leg width with the helper directly. The slot
+width is a different quantity from `band_width_mm` (the full `N`-strand
+bundle), from `slot_pitch_mm`, and from the electrical period `P_e`.
+
 **Worked examples** (these exactly match the Rust unit tests):
 
 ```rust
-// Bottom-up: 4 parallel traces, w_t = 0.2 mm, s = 0.15 mm, theta = 45°
+// Single-leg slot width: w_t = 0.2 mm, theta = 45°
+assert_eq!(slot_width_from_leg_geometry_mm(1, 0.2, 0.15, 45_f64.to_radians())?, 0.28284271);
+// (1 * 0.2) / sin(45°) = 0.2 / 0.7071 ≈ 0.2828 mm
+
+// Bundled leg (k = 4 parallel strands in one leg): w_t = 0.2, s = 0.15, theta = 45°
+assert_eq!(slot_width_from_leg_geometry_mm(4, 0.2, 0.15, 45_f64.to_radians())?, 1.76776695);
+
+// Bottom-up phase-band width: 4 parallel traces, w_t = 0.2 mm, s = 0.15 mm, theta = 45°
 assert_eq!(phase_band_width_from_trace_geometry_mm(4, 0.2, 0.15, 45_f64.to_radians())?, 1.76776695);
 // (4 * 0.2 + 3 * 0.15) / sin(45°) = 1.25 / 0.7071 ≈ 1.7678 mm
 
 // Top-down: tau_p = 12 mm, 3 phases, g_phase = 0
 assert_eq!(max_phase_band_width_from_pole_pitch_mm(12.0, 3, 0.0)?, 4.0);
+
+// True slot pitch: L_stator = 600 mm, 975 declared slots
+assert_eq!(slot_pitch_from_leg_grid_mm(600.0, 975)?, 600.0 / 975.0);
 ```
 
-Public helpers: `pcbmotorgen_routing::phase_band_width_from_trace_geometry_mm(...)` and
-`pcbmotorgen_routing::max_phase_band_width_from_pole_pitch_mm(...)`, both returning
+Public helpers: `pcbmotorgen_routing::phase_band_width_from_trace_geometry_mm(...)`,
+`pcbmotorgen_routing::max_phase_band_width_from_pole_pitch_mm(...)`,
+`pcbmotorgen_routing::slot_width_from_leg_geometry_mm(k, w_t, s, theta_rad)`, and
+`pcbmotorgen_routing::slot_pitch_from_leg_grid_mm(l_stator_mm, n_slots)`, all returning
 `Result<f64, String>` with the input validation described above.
 
-### 10.2 Infinity-braid alignment
+### 10.3 Infinity-braid alignment
 
 When `RoutingContext.magnet_pitch_mm` is present, the bundled infinity braid:
 
@@ -521,6 +597,11 @@ actionable error rather than emitting a magnet-misaligned pattern. Without a
 magnet layout, the reference pattern retains its fallback `n_periods` probe
 behavior and does not claim magnet alignment (its repeat pitch is reported, but
 there is no pole pitch to compare it with).
+
+The braid also declares its leg grid on the result (see §10.2):
+`slot_count = periods × phases × strands` and `strands_per_leg = num_strands`,
+from which the host reports the true slot pitch and the
+`tau_p / (phases × strands)` interleave step.
 
 ## 11. Presentation projection: `PhaseCoil` / `CoilPathIpc`
 
@@ -728,6 +809,7 @@ needed when a user installs a Python runner.
 
 - NaN/Infinity, bounds, layer, degenerate-shape, net, and continuity rejection;
 - exact bottom-up and top-down phase-band width equations;
+- exact per-slot width and slot-pitch equations plus leg-grid-derived slot metrics;
 - exact pole-pitch alignment for the bundled infinity braid;
 - per-layer/per-net dimension reporting; and
 - Python runner parsing and malformed-output rejection.
@@ -755,8 +837,25 @@ human-readable message; it is never repaired in place.
 - **v-next terminology alignment:** slot-width dimension fields were renamed to
   phase-band terminology (`band_width_mm`, `max_band_width_mm`,
   `phase_band_pitch_mm`, `phase_band_widths`). Old names remain accepted as
-  serde aliases on deserialize; `RoutingContext` additionally carries the legacy
-  `coil_span_mm` field for plugin compatibility.
+  serde aliases on deserialize (with the two exceptions retired by the
+  per-slot metrics change below); `RoutingContext` additionally carries the
+  legacy `coil_span_mm` field for plugin compatibility.
+- **v-next true per-slot metrics (kata mqw4):** patterns may declare a leg
+  grid on the result (`RoutingResult.leg_grid: Option<LegGrid>`, additive);
+  `RoutingDimensions` gains `slot_count`, `slot_pitch_mm` (true
+  `tau_s = L_stator / N_slots`), and `interleave_step_mm`
+  (`tau_p / (phases × strands)` for braided slotless patterns), and each
+  `phase_band_widths[]` record gains the single-leg `slot_width_mm`
+  (`w_t / sin(theta)`). Two legacy serde aliases were retired because those
+  key names became the new true-slot fields: a dimensions-level
+  `slot_pitch_mm` key now populates the true slot pitch (not
+  `phase_band_pitch_mm`), and a per-band `slot_width_mm` key now populates
+  the single-leg width while `band_width_mm` became required (payloads
+  relying on the old per-band alias are rejected instead of silently
+  reinterpreted). `RoutingContext.phase_clearance_mm` (`Option<f64>`) makes
+  the inter-phase clearance `g_phase` an explicit input; when `None` it falls
+  back to `min_space_mm` by documented contract. The `trace_count` hint no
+  longer accepts whole-coil counts (`turns`, `windings_per_phase`).
 
 ## 16. Maintaining these documents
 

@@ -28,6 +28,18 @@
 //! The host-side [`RoutingReport`](crate::RoutingReport) derives the diamond
 //! edge angle as `atan(board_width / pole_pitch)` and reports the resulting
 //! conductor-band width budget for every active (layer, net) bundle.
+//!
+//! ## Declared leg grid
+//!
+//! The braid declares its leg grid on the result
+//! (`RoutingResult::leg_grid`): `slot_count = periods × phases × strands`
+//! — one slot per phase/strand position per period — and
+//! `strands_per_leg = num_strands`. The host derives the true slot pitch
+//! `tau_s = L_stator / N_slots` and the effective leg pitch
+//! `interleave_step_mm = tau_p / (phases × strands)` from that declaration.
+//! Per the glossary the braid is slotless (no physical slots): the declaration
+//! is the equivalent leg-pitch model of its interleaved active segments, and
+//! each strand remains a single-trace leg for the per-record slot width.
 
 mod diamonds;
 mod peaks_valleys;
@@ -35,7 +47,7 @@ mod segments;
 
 use crate::context::RoutingContext;
 use crate::error::{RoutingError, RoutingErrorKind};
-use crate::model::{Point, PoleRegion, RouteSegment, RoutingResult, Via};
+use crate::model::{LegGrid, Point, PoleRegion, RouteSegment, RoutingResult, Via};
 use crate::pattern::RoutingPattern;
 
 use self::diamonds::{compute_diamonds, compute_endpoints, compute_pole_region_xs};
@@ -229,11 +241,24 @@ impl RoutingPattern for InfinityBraidPattern {
             }
         }
 
+        // Pattern-declared leg grid: the braid's active legs populate a
+        // uniform interleave grid of one slot per phase/strand position per
+        // period — `n_periods × phases × num_strands` slots in total. Its
+        // interleave step is `tau_p / (phases × strands)` when a pole pitch is
+        // known; per the glossary the braid is slotless, so this is the
+        // equivalent leg-pitch model of the generated segments, and each
+        // strand is its own single-trace leg.
+        let leg_grid = Some(LegGrid {
+            slot_count: (n_periods * phases * num_strands) as u32,
+            strands_per_leg: Some(num_strands as u32),
+        });
+
         Ok(RoutingResult {
             segments,
             curves: Vec::new(),
             vias,
             pole_regions,
+            leg_grid,
             ..Default::default()
         })
     }
@@ -438,6 +463,37 @@ mod tests {
             .phase_band_widths
             .iter()
             .all(|band| (band.angle_rad - (20.0_f64 / 12.0).atan()).abs() < 1e-12));
+    }
+
+    #[test]
+    fn declares_its_leg_grid_for_the_host_slot_metrics() {
+        // The braid's declared leg grid is its uniform interleave grid:
+        // periods × phases × strands slots. With the magnet layout the braid
+        // emits 65 complete pole-pitched periods.
+        let report = crate::generate_routing_report(&magnet_ctx(), "infinity-braid")
+            .expect("reference braid report");
+        let grid = report.result.leg_grid.as_ref().expect("declared leg grid");
+        assert_eq!(grid.slot_count, 65 * 3 * 5);
+        assert_eq!(grid.strands_per_leg, Some(5));
+        // Host-derived slot metrics from the declaration.
+        assert_eq!(report.dimensions.slot_count, Some(975));
+        assert_eq!(report.dimensions.slot_pitch_mm, Some(600.0 / 975.0));
+        assert_eq!(report.dimensions.interleave_step_mm, Some(0.8));
+
+        // Fallback braid (no magnet layout): 4 periods × 3 phases × 5
+        // strands; no pole pitch means no interleave step.
+        let fallback = crate::generate_routing_report(&ctx(), "infinity-braid")
+            .expect("fallback braid report");
+        let grid = fallback.result.leg_grid.as_ref().expect("declared leg grid");
+        assert_eq!(grid.slot_count, 4 * 3 * 5);
+        assert_eq!(fallback.dimensions.slot_count, Some(60));
+        assert_eq!(fallback.dimensions.slot_pitch_mm, Some(600.0 / 60.0));
+        assert_eq!(fallback.dimensions.interleave_step_mm, None);
+        // Each strand stays a single-trace leg: slot width below band width.
+        for band in &fallback.dimensions.phase_band_widths {
+            let slot = band.slot_width_mm.expect("single-leg slot width");
+            assert!(slot < band.band_width_mm, "slot {slot} vs band {}", band.band_width_mm);
+        }
     }
 
     #[test]

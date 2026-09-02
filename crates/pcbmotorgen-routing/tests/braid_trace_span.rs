@@ -25,6 +25,9 @@ fn reference_context() -> RoutingContext {
         magnet_pitch_mm: Some(6.0),
         magnet_array_span_mm: Some(72.0),
         coil_span_mm: None,
+        // No explicit inter-phase clearance: the documented min_space_mm
+        // fallback applies.
+        phase_clearance_mm: None,
     }
 }
 

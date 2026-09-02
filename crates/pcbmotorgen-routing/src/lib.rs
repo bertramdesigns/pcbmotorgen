@@ -54,7 +54,8 @@ pub use context::RoutingContext;
 pub use design::DesignRules;
 pub use dimensions::{
     max_phase_band_width_from_pole_pitch_mm, phase_band_width_from_trace_geometry_mm,
-    PhaseBandWidth, RoutingDimensions,
+    slot_pitch_from_leg_grid_mm, slot_width_from_leg_geometry_mm, PhaseBandWidth,
+    RoutingDimensions,
 };
 pub use error::RoutingError;
 pub use generate::{
@@ -65,7 +66,7 @@ pub use generate::{
 };
 pub use interference::{check_interference, InterferenceViolation};
 pub use model::{
-    Layer, Net, Point, PoleRegion, RouteCurve, RouteSegment, RoutingResult, Via,
+    Layer, LegGrid, Net, Point, PoleRegion, RouteCurve, RouteSegment, RoutingResult, Via,
 };
 pub use pattern::{ParamType, PatternParameter, PluginMetadata, RoutingPattern};
 pub use report::RoutingReport;
