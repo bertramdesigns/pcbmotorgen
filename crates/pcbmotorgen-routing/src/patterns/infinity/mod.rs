@@ -478,9 +478,11 @@ mod tests {
         let grid = report.result.leg_grid.as_ref().expect("declared leg grid");
         assert_eq!(grid.slot_count, 65 * 3 * 5);
         assert_eq!(grid.strands_per_leg, Some(5));
-        // Host-derived slot metrics from the declaration.
+        // Host-derived slot metrics from the declaration. Slot pitch spans
+        // the active copper length (the routing domain equals the active
+        // area since kata hrd8): fixture active 800 mm / 975 slots.
         assert_eq!(report.dimensions.slot_count, Some(975));
-        assert_eq!(report.dimensions.slot_pitch_mm, Some(600.0 / 975.0));
+        assert_eq!(report.dimensions.slot_pitch_mm, Some(800.0 / 975.0));
         assert_eq!(report.dimensions.interleave_step_mm, Some(0.8));
 
         // Fallback braid (no magnet layout): 4 periods × 3 phases × 5
@@ -490,7 +492,8 @@ mod tests {
         let grid = fallback.result.leg_grid.as_ref().expect("declared leg grid");
         assert_eq!(grid.slot_count, 4 * 3 * 5);
         assert_eq!(fallback.dimensions.slot_count, Some(60));
-        assert_eq!(fallback.dimensions.slot_pitch_mm, Some(600.0 / 60.0));
+        // Fallback fixture active is also 800 mm (kata hrd8): 800 / 60 slots.
+        assert_eq!(fallback.dimensions.slot_pitch_mm, Some(800.0 / 60.0));
         assert_eq!(fallback.dimensions.interleave_step_mm, None);
         // Each strand stays a single-trace leg: slot width below band width.
         for band in &fallback.dimensions.phase_band_widths {
