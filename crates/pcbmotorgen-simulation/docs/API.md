@@ -330,29 +330,61 @@ alignment check** at `{0.1, 0.6, 1.1} × τ_p`. It accepts the polarity state
 `Err(SimulationError)` (FOC formula misconfiguration: sin vs cos, wrong
 per-coil offset).
 
-### 6.4 Commutation
+### 6.4 Commutation (FOC, `id = 0`)
 
 ```rust
 #[serde(rename_all = "snake_case")]
 pub enum CommutationMode {
-    MaxThrust,    // sinusoidal FOC drive maximizing thrust, cos-based (default);
+    MaxThrust,    // sinusoidal FOC drive maximizing thrust (default);
                   // wire value "max_thrust" (renamed from "max_torque")
     PhaseAOnly,   // only Phase A at peak current; B, C = 0
 }
 ```
 
-`MaxThrust` current law (`cos` because `B_z ∝ cos(π(x−p)/τ)`):
+`MaxThrust` implements the glossary-normative FOC law with the **pinned
+d-axis convention** (product-owner approved): **`id = 0`, pure q-axis**.
+Coreless motors have no saliency, so `id = 0` is the standard
+maximum-thrust-per-ampere choice; the glossary's 90-degree rule (stator
+field orthogonal — 90° electrical — to the mover field) is realized by
+q-axis current only.
+
+**Derivation chain** (90° rule → per-coil law):
+
+1. **d-axis pinned along the mover field**: the alternating array has
+   `B_z` peaking at the magnet centre, so the d-axis frame is
+   `x ≡ 0 (mod τ_p)` with the mover-field phasor along d and
+   `θ_e = π·x/τ_p = 2π·x/(2τ_p)`.
+2. **q-axis alignment**: pure q-axis drive puts each coil's current in
+   phase with its local `B_z` (`B_z ∝ cos(π(x−p)/τ_p)`), which maximizes
+   the Lorentz thrust per ampere — the 90° rule expressed in the field
+   frame.
+3. **General per-coil offset law** (glossary): a coil displaced Δx
+   spatially carries an electrical phase shift `π·Δx/τ_p`; adjacent coils
+   are one phase-band pitch apart (`Δx = τ_band = r·τ_p/phases`), giving
+   the per-coil offset `π·τ_band/τ_p` (60° for the default 3-phase 1:1
+   layout).
 
 ```text
-θ_e        = 2π·p / (2τ_p) + phase_shift
-I_p(p)     = I_pk · cos(θ_e − p · phase_offset)
-phase_off  = π · τ_s / τ_p     (τ_s = phase-band pitch)
+θ_e        = 2π·x / (2τ_p) + phase_shift      (phase_shift ∈ {0, π}: polarity)
+I_p(x)     = I_pk · cos(θ_e − p · phase_offset)
+phase_off  = π · τ_band / τ_p                 (τ_band = phase-band pitch)
 ```
 
 For the default 3-phase config `phase_offset = π/3` (60°), giving
-`(I_A, I_B, I_C) = (1, 0.5, −0.5)` at `p = 0` — the coils are 60° apart, not
-120°; the 3-phase sum is `+1.0`, which is correct. The 4:5 Vernier
+`(I_A, I_B, I_C) = (1, 0.5, −0.5)` at `x = 0` — the coils are 60° apart,
+not 120°; the 3-phase sum is `+1.0`, which is correct. The 4:5 Vernier
 (`spacing_ratio = 0.8`) gives `phase_offset = 0.8·π/3`.
+
+Whether the per-phase current is `sin` or `cos` of θ_e is a reference-frame
+(d-axis alignment) convention, not a physics difference. The glossary's
+classic balanced 120° law `I_p = I_pk·sin(θ_e − p·2π/3)` is the special
+case for coils spaced `2τ_p/3` (`phase_offset = 2π/3`) viewed from a frame
+rotated 90° electrical from the one pinned here; those currents sum to zero
+at every θ_e (pinned by `test_balanced_120deg_law_special_case`). The
+implemented alignment is empirically pinned as thrust-optimal (pure
+q-axis) by `test_foc_thrust_peaks_at_zero_phase_tilt`: sweeping a phase
+tilt δ over [−90°, +90°] through the real force sweep, the mean thrust
+peaks at δ = 0 and is symmetric about it.
 
 ### 6.5 `ForceResult`
 
@@ -652,7 +684,9 @@ cargo build --workspace
 The suite covers unit conversion, grade lookup, the validation cascade, serde
 defaults, derived geometry, the plain alternating array (counts and polarity),
 1D/2D B-field sampling, conductor meshing, Lorentz integration, commutation
-(1:1 and 4:5 Vernier), the 3-point FOC guard, ripple statistics, all stackup
+(1:1 and 4:5 Vernier offsets, the balanced-120° special case, and the
+thrust-vs-tilt 90°-rule optimality sweep), the 3-point FOC guard, ripple
+statistics, all stackup
 estimators, and Python-oracle cross-validation. `test_vectors.rs` requires
 `scripts/fixtures/test_vectors.json` (bundle is present; regenerate with
 `scripts/export_test_vectors.py` to refresh).

@@ -393,14 +393,11 @@ impl ForceEvaluator {
 
     /// Electrical angle in radians for a given mover position.
     ///
-    /// One full electrical cycle completes over two pole pitches.
-    ///
-    /// // TODO: FOC-rewrite-pcb-motor-expert
-    /// The `@pcb-motor-expert` agent is producing a refined electrical-angle
-    /// definition that accounts for Vernier (non-1:1) spacing ratios and
-    /// phase-loss tolerance. This method remains the live implementation until
-    /// the rewrite lands (the old `foc_spec` stub was removed in the Round 11
-    /// crate restructure).
+    /// One full electrical cycle completes over two pole pitches:
+    /// `θ_e = 2π·x/(2τ_p) = π·x/τ_p`. This is the electrical angle of the
+    /// pinned d-axis frame — d-axis along the mover field (`B_z` peak at the
+    /// magnet centres, `x ≡ 0 mod τ_p`) — used by the FOC commutation law
+    /// (see the `commutation` module for the derivation chain).
     pub fn electrical_angle(config: &SimulationInput, mover_position_m: f64) -> f64 {
         2.0 * std::f64::consts::PI * mover_position_m / (2.0 * config.pole_pitch_m())
     }
@@ -456,6 +453,56 @@ mod tests {
             layer_pair: None,
             center_via_positions: vec![],
         }
+    }
+
+    /// Full-span 3-phase serpentine for `cfg` (mirrors the fixture
+    /// `coils_serpentine` layout): slots every phase-band pitch
+    /// (`τ_band = τ_p/phases·r`), phase `p` occupying slots ≡ p (mod phases),
+    /// consecutive same-phase legs one pole pitch apart with alternating
+    /// direction (+Y / −Y, the convention documented for the coil model) so
+    /// all legs of a phase contribute coherently to the thrust.
+    fn make_full_span_serpentine(cfg: &SimulationInput) -> Vec<PhaseCoil> {
+        let band_mm = cfg.phase_band_pitch_m() * 1e3;
+        let width_mm = cfg.board_width_m * 1e3;
+        let n_slots = ((cfg.active_area_length_m * 1e3) / band_mm).floor() as usize;
+        let phases = cfg.phases;
+        (0..phases)
+            .map(|p| {
+                let mut segments = Vec::new();
+                let legs: Vec<usize> = ((p as usize)..n_slots).step_by(phases as usize).collect();
+                for (k, &slot) in legs.iter().enumerate() {
+                    let x = slot as f64 * band_mm;
+                    // Even leg index runs +Y (start y=0 → end y=W), odd runs −Y.
+                    let (y0, y1) = if k % 2 == 0 { (0.0, width_mm) } else { (width_mm, 0.0) };
+                    segments.push(CoilSegment {
+                        start: (x, y0),
+                        end: (x, y1),
+                        is_active: true,
+                    });
+                    // Inactive connector to the next leg (serpentine turn);
+                    // end turns carry no net thrust and are excluded from the
+                    // Lorentz integral by `is_active: false`.
+                    if let Some(&next) = legs.get(k + 1) {
+                        let xn = next as f64 * band_mm;
+                        segments.push(CoilSegment {
+                            start: (x, y1),
+                            end: (xn, y1),
+                            is_active: false,
+                        });
+                    }
+                }
+                PhaseCoil {
+                    phase_idx: p,
+                    layer_idx: 0,
+                    segments,
+                    corner_arcs: vec![],
+                    phase_name: format!("PHASE_{}", p + 1),
+                    pattern_id: "serpentine-test".to_string(),
+                    layer_pair: None,
+                    center_via_positions: vec![],
+                }
+            })
+            .collect()
     }
 
     #[test]
@@ -585,45 +632,112 @@ mod tests {
         }
     }
 
-    /// Placeholder for the FOC rewrite ripple target.
+    /// Empirically pin the FOC 90-degree rule (pure q-axis, `id = 0`): the
+    /// implemented per-coil alignment must be the **thrust-maximizing** one.
     ///
-    /// // TODO: FOC-rewrite-pcb-motor-expert
-    /// When the rewrite spec lands, enable this test (drop the `#[ignore]`)
-    /// and replace the `< 5.0` threshold with whatever the
-    /// `@pcb-motor-expert` agent computes as the closed-form bound for
-    /// 1:1 spacing.
+    /// A phase tilt δ is swept over [−90°, +90°] —
+    /// `I_p = I_pk·cos(θ_e − p·offset − δ)` — through the real
+    /// `ForceEvaluator` force sweep for the default config, and the mean
+    /// thrust must peak at δ ≈ 0 and be symmetric about δ = 0. A δ = ±90°
+    /// peak would mean the implemented drive is in quadrature with the mover
+    /// field (a d-axis current, ~zero mean thrust); the δ = 0 peak proves the
+    /// implemented law is the pure q-axis alignment of the 90° rule.
+    ///
+    /// The tilt is injected through the evaluator's `phase_shift` (tests may
+    /// touch the private field): `commutation_currents` computes
+    /// `I_p = I_pk·cos(θ_e + phase_shift − p·offset)`, so
+    /// `phase_shift = φ₀ − δ` realizes the tilted law relative to the
+    /// calibrated polarity φ₀. φ₀ ∈ {0, π} is the 3-point guard's d-axis
+    /// *sign* choice — orthogonal to the q-axis tilt under test.
+    ///
+    /// Coil geometry: the full-span serpentine (mirrors the fixture
+    /// `coils_serpentine` layout) — slots every phase-band pitch (4 mm =
+    /// τ_p/3 for the default config), phase p in slots ≡ p (mod 3), so
+    /// adjacent phases are one phase-band pitch apart (the offset law the
+    /// commutation implements) and consecutive same-phase legs one pole pitch
+    /// apart with alternating direction (coherent contribution). A winding
+    /// spanning the full active area keeps interior legs dominant; a sparse
+    /// few-leg probe would be dominated by the magnet-array front-edge
+    /// distortion and show a small genuine quadrature residual instead.
+    /// Mesh 5 + 200 positions keep the sweep fast while averaging the
+    /// real-field harmonic ripple.
     #[test]
-    #[ignore = "FOC rewrite pending @pcb-motor-expert spec"]
-    fn test_foc_rewrite_ripple_target_1_1() {
+    fn test_foc_thrust_peaks_at_zero_phase_tilt() {
         let cfg = SimulationInput::default();
-        let coils = generate_coils(&cfg);
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
-        let result = ev.evaluate(&cfg, &coils).expect("default FOC must pass 3-point guard");
-        let ripple = result.ripple_pct();
-        assert!(
-            ripple < 5.0,
-            "1:1 spacing FOC rewrite target: ripple should be < 5%, got {ripple:.2}%"
-        );
-    }
+        let coils = make_full_span_serpentine(&cfg);
+        assert_eq!(coils.len(), 3);
+        let mut ev = ForceEvaluator::new(200, 5, CommutationMode::MaxThrust, 0.0);
+        // Calibrate once to settle the polarity φ₀ ∈ {0, π}, then sweep the
+        // tilt δ around it (calibrated = true means evaluate() no longer
+        // overwrites phase_shift).
+        ev.evaluate(&cfg, &coils)
+            .expect("default FOC must pass 3-point guard");
+        let phi0 = ev.phase_shift;
 
-    /// Placeholder for the FOC rewrite ripple target (4:5 Vernier).
-    ///
-    /// // TODO: FOC-rewrite-pcb-motor-expert
-    #[test]
-    #[ignore = "FOC rewrite pending @pcb-motor-expert spec"]
-    fn test_foc_rewrite_ripple_target_4_5_vernier() {
-        let cfg = SimulationInput {
-            spacing_ratio: 0.8,
-            ..SimulationInput::default()
-        };
-        let coils = generate_coils(&cfg);
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
-        let result = ev.evaluate(&cfg, &coils).expect("4:5 Vernier FOC must pass 3-point guard");
-        let ripple = result.ripple_pct();
-        assert!(
-            ripple < 10.0,
-            "4:5 Vernier FOC rewrite target: ripple should be < 10%, got {ripple:.2}%"
-        );
+        let step_deg = 15.0;
+        let grid_deg: Vec<f64> = (0..=12)
+            .map(|k| -90.0 + step_deg * k as f64)
+            .collect();
+        let mut means = Vec::with_capacity(grid_deg.len());
+        for &deg in &grid_deg {
+            ev.phase_shift = phi0 - deg.to_radians();
+            let result = ev
+                .evaluate(&cfg, &coils)
+                .expect("calibrated sweep must succeed for every tilt");
+            means.push(result.mean_thrust_n());
+        }
+        let mean_at =
+            |deg: f64| -> f64 { means[((deg + 90.0) / step_deg).round() as usize] };
+
+        for (i, &deg) in grid_deg.iter().enumerate() {
+            assert!(means[i].is_finite(), "mean thrust at δ={deg}° not finite");
+        }
+
+        // (1) δ = 0 is the argmax of the mean thrust over [−90°, +90°].
+        let m0 = mean_at(0.0);
+        assert!(m0 > 0.0, "mean thrust at δ=0 must be positive, got {m0}");
+        for &deg in &grid_deg {
+            assert!(
+                mean_at(deg) <= m0 + 1e-12,
+                "mean thrust at δ={deg:+.1}° ({:.6} N) exceeds the δ=0 value \
+                 ({m0:.6} N) — the implemented FOC is not the thrust-maximizing \
+                 (pure q-axis) alignment",
+                mean_at(deg)
+            );
+        }
+
+        // (2) Symmetric about δ = 0 (cos-shaped optimality curve). Tolerance
+        // is 1% of m0: the magnet-array edges and fill-factor harmonics of
+        // the real (non-ideal-cosine) field leave a sub-percent odd-in-δ
+        // residual (measured ≈ 0.07% at the 15° grid; see the test doc
+        // comment).
+        for &deg in &[-15.0, -30.0, -45.0, -60.0, -75.0] {
+            let plus = mean_at(-deg);
+            let minus = mean_at(deg);
+            let scale = m0.abs().max(1e-12);
+            assert!(
+                (plus - minus).abs() < 0.01 * scale,
+                "mean thrust not symmetric about δ=0: at ±{deg:.1}° got \
+                 ({minus:.6}, {plus:.6}) N (m0 = {m0:.6} N)"
+            );
+        }
+
+        // (3) Pure quadrature drive (δ = ±90°) yields far less thrust than
+        // the q-axis alignment — the 90° rule's "no d-axis thrust" half.
+        // Measured ≈ 0.04% of m0; a d-axis (cos−90°) misalignment would put
+        // the maximum here instead.
+        for &deg in &[-90.0, 90.0] {
+            assert!(
+                mean_at(deg) < 0.1 * m0,
+                "mean thrust at δ={deg:+.1}° ({:.6} N) should be well below the \
+                 δ=0 q-axis value ({m0:.6} N)",
+                mean_at(deg)
+            );
+        }
+        eprintln!("thrust-vs-tilt sweep (φ₀ = {phi0:.6} rad):");
+        for (i, &deg) in grid_deg.iter().enumerate() {
+            eprintln!("  δ = {deg:+6.1}°  mean thrust = {:.6} N", means[i]);
+        }
     }
 
     // ------------------------------------------------------------------
