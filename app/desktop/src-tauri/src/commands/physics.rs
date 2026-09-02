@@ -13,8 +13,9 @@ use pcbmotorgen_simulation::stackup::{FrictionEstimator, HeightStackCalculator, 
 // compute_config_derived — REAL (core derived methods)
 // ===========================================================================
 
-/// Compute read-only derived geometry values (travel, coil_span, pole_pitch,
-/// slot_pitch, magnet_gap, min_via_pad, acceleration/min-drive force).
+/// Compute read-only derived geometry values (travel, magnet_array_span,
+/// pole_pitch, phase_band_pitch, magnet_gap, min_via_pad,
+/// acceleration/min-drive force).
 ///
 /// This calls the **real** `pcbmotorgen `config::LinearMotorConfig``
 /// derived methods — not a stub. The core's math is the authoritative source.
@@ -50,7 +51,8 @@ pub async fn validate_config(
         let travel = core.travel_m();
         if travel <= 0.0 {
             errors.push(format!(
-                "Travel is zero or negative ({:.1} mm) — active_area_length must exceed coil_span",
+                "Travel is zero or negative ({:.1} mm) — active_area_length must exceed \
+                 the magnet array span",
                 travel * 1e3
             ));
         } else if travel < 5e-3 {
@@ -61,7 +63,7 @@ pub async fn validate_config(
         }
         let valid = errors.is_empty();
         let derived = DerivedValuesIpc {
-            coil_span_mm: core.coil_span_m() * 1e3,
+            magnet_array_span_mm: core.magnet_array_span_m() * 1e3,
             travel_mm: core.travel_m() * 1e3,
             pole_pitch_mm: core.pole_pitch_m() * 1e3,
             magnet_gap_mm: core.magnet_gap_m() * 1e3,
@@ -92,7 +94,7 @@ pub struct ValidationResultIpc {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct DerivedValuesIpc {
-    pub coil_span_mm: f64,
+    pub magnet_array_span_mm: f64,
     pub travel_mm: f64,
     pub pole_pitch_mm: f64,
     pub magnet_gap_mm: f64,
@@ -149,9 +151,9 @@ pub async fn compute_height_stack(
 ///
 /// The routing pattern owns layer semantics, so this command resolves the
 /// selected pattern through the routing registry rather than assigning phases
-/// round-robin in the application.  The returned `routing_dimensions` include
-/// the centre-to-centre pole pitch, ideal phase-band pitch, and calculated slot
-/// widths for each active `(layer, net)` bundle.
+    /// round-robin in the application.  The returned `routing_dimensions` include
+    /// the centre-to-centre pole pitch, ideal phase-band pitch, and calculated
+    /// phase-band widths for each active `(layer, net)` bundle.
 #[tauri::command]
 pub async fn generate_coils(config: LinearMotorConfigIpc) -> Result<CoilPathIpc, String> {
     let core = config.to_core();
@@ -199,7 +201,7 @@ pub async fn evaluate_force_sweep(
     let n_positions = config.n_positions.max(2) as usize;
     let meshing = config.meshing.max(1) as usize;
     let commutation = match config.commutation {
-        CommutationModeIpc::MaxTorque => CoreCommutationMode::MaxTorque,
+        CommutationModeIpc::MaxThrust => CoreCommutationMode::MaxThrust,
         CommutationModeIpc::PhaseAOnly => CoreCommutationMode::PhaseAOnly,
     };
     tauri::async_runtime::spawn_blocking(move || {
@@ -238,7 +240,7 @@ pub async fn evaluate_force_sweep(
             force_z_n: result.force_z_n,
             per_phase_force_x: per_phase,
             commutation: match result.commutation {
-                CoreCommutationMode::MaxTorque => CommutationModeIpc::MaxTorque,
+                CoreCommutationMode::MaxThrust => CommutationModeIpc::MaxThrust,
                 CoreCommutationMode::PhaseAOnly => CommutationModeIpc::PhaseAOnly,
             },
             current_a: result.current_a,
@@ -439,11 +441,12 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 /// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
 ///
 /// Product reference convention: the endpoints are COIL-CAPTURE positions
-/// anchored to the SLOT/COPPER region — min = slot_start + (2/3)·P_e,
-/// max = slot_end − (3/4)·P_e, with P_e = 2 × pole pitch. Defaults
-/// (P_e = 12 mm, slots [30, 177] mm in track coords): **38 → 168 mm**.
-/// The track-frame lattice phase is `(slot_start + φ) mod P_e`, φ the
-/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`. The UI clamps
+/// anchored to the stator copper region — min = copper_region_start +
+/// (2/3)·P_e, max = copper_region_end − (3/4)·P_e, with P_e = 2 × pole pitch.
+/// Defaults (P_e = 12 mm, copper region [30, 177] mm in track coords):
+/// **38 → 168 mm**. The track-frame lattice phase is
+/// `(copper_region_start + φ) mod P_e`, φ the baseline rest phase
+/// `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`. The UI clamps
 /// its position slider to [min_position_m, max_position_m].
 #[tauri::command]
 pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {
@@ -453,14 +456,14 @@ pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvel
     // centre-to-centre pole pitch).
     let electrical_period_m = 2.0 * sim.magnet_pitch_m;
     let ctx = core.routing_context();
-    let slot_start_m = ctx.padding_mm * 0.001;
-    let slot_end_m = (ctx.padding_mm + ctx.active_area_length_mm) * 0.001;
+    let copper_region_start_m = ctx.padding_mm * 0.001;
+    let copper_region_end_m = (ctx.padding_mm + ctx.active_area_length_mm) * 0.001;
     Ok(TravelEnvelopeIpc::from(
         pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots(
             electrical_period_m,
             sim.magnet_count,
-            slot_start_m,
-            slot_end_m,
+            copper_region_start_m,
+            copper_region_end_m,
         ),
     ))
 }

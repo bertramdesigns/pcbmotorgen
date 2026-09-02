@@ -157,12 +157,12 @@ impl LinearMotorConfig {
                 self.active_area_length_m
             )));
         }
-        if self.active_area_length_m <= self.coil_span_m() {
+        if self.active_area_length_m <= self.magnet_array_span_m() {
             return Err(ConfigError(format!(
-                "active_area_length_m ({:.1} mm) must be > coil_span ({:.1} mm = \
-                 {} magnets × {:.1} mm) — travel would be zero or negative",
+                "active_area_length_m ({:.1} mm) must be greater than the magnet array \
+                 span ({:.1} mm = {} magnets × {:.1} mm) — travel would be zero or negative",
                 self.active_area_length_m * 1e3,
-                self.coil_span_m() * 1e3,
+                self.magnet_array_span_m() * 1e3,
                 self.magnet_count,
                 self.magnet_pitch_m * 1e3
             )));
@@ -186,25 +186,25 @@ impl LinearMotorConfig {
                 self.padding_m
             )));
         }
-        if self.windings_per_phase < 1 {
+        if self.strands_per_phase < 1 {
             return Err(ConfigError(format!(
-                "windings_per_phase must be ≥ 1, got {}",
-                self.windings_per_phase
+                "strands_per_phase must be ≥ 1, got {}",
+                self.strands_per_phase
             )));
         }
         // Each strand needs at least `min_trace_m + min_space_m` of
         // vertical room. Reject configs that try to pack too many
         // strands into the board_width.
-        if self.windings_per_phase > 1 {
-            let strand_height = self.board_width_m / self.windings_per_phase as f64;
+        if self.strands_per_phase > 1 {
+            let strand_height = self.board_width_m / self.strands_per_phase as f64;
             let min_strand_height = self.min_trace_m + self.min_space_m;
             if strand_height < min_strand_height {
                 return Err(ConfigError(format!(
-                    "windings_per_phase ({}) requires each strand to be ≥ \
+                    "strands_per_phase ({}) requires each strand to be ≥ \
                      {:.3} mm tall (min_trace + min_space); board_width_m / \
-                     windings_per_phase = {:.3} mm. Reduce windings_per_phase \
+                     strands_per_phase = {:.3} mm. Reduce strands_per_phase \
                      or increase board_width_m.",
-                    self.windings_per_phase,
+                    self.strands_per_phase,
                     min_strand_height * 1e3,
                     strand_height * 1e3,
                 )));
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn test_active_area_le_coil_span_raises() {
+    fn test_active_area_le_magnet_array_span_raises() {
         let cfg = LinearMotorConfig {
             active_area_length_m: mm(120.0),
             magnet_count: 10,

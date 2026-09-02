@@ -11,7 +11,7 @@
 //! ## Magnet-aware period count
 //!
 //! When the [`RoutingContext`] carries the magnet layout (`magnet_pitch_mm` +
-//! `coil_span_mm`) the braid sizes its repeating diamond period to the pole
+//! `magnet_array_span_mm`) the braid sizes its repeating diamond period to the pole
 //! pitch. Complete periods are used after reserving the interleave span, so the
 //! distance between corresponding diamond repeats is **exactly** the
 //! centre-to-centre pole pitch. The phase/strand via pitch is
@@ -27,7 +27,7 @@
 //!
 //! The host-side [`RoutingReport`](crate::RoutingReport) derives the diamond
 //! edge angle as `atan(board_width / pole_pitch)` and reports the resulting
-//! slot-width budget for every active layer/net bundle.
+//! conductor-band width budget for every active (layer, net) bundle.
 
 mod diamonds;
 mod peaks_valleys;
@@ -268,7 +268,7 @@ mod tests {
     fn magnet_ctx() -> RoutingContext {
         let mut c = ctx();
         c.magnet_pitch_mm = Some(12.0);
-        c.coil_span_mm = Some(120.0);
+        c.magnet_array_span_mm = Some(120.0);
         c
     }
 
@@ -423,21 +423,21 @@ mod tests {
     }
 
     #[test]
-    fn report_exposes_exact_pole_pitch_and_slot_width_budget() {
+    fn report_exposes_exact_pole_pitch_and_phase_band_width_budget() {
         let report = crate::generate_routing_report(&magnet_ctx(), "infinity-braid")
             .expect("reference braid report");
         assert_eq!(report.dimensions.pole_pitch_mm, Some(12.0));
         assert_eq!(report.dimensions.magnet_array_span_mm, Some(120.0));
         assert_eq!(report.dimensions.period_pitch_mm, Some(12.0));
-        assert_eq!(report.dimensions.slot_pitch_mm, Some(4.0));
+        assert_eq!(report.dimensions.phase_band_pitch_mm, Some(4.0));
         assert_eq!(report.dimensions.period_count, Some(65));
-        assert!(!report.dimensions.slot_widths.is_empty());
-        assert!(report.dimensions.all_slots_fit());
+        assert!(!report.dimensions.phase_band_widths.is_empty());
+        assert!(report.dimensions.all_phase_bands_fit());
         assert!(report
             .dimensions
-            .slot_widths
+            .phase_band_widths
             .iter()
-            .all(|slot| (slot.angle_rad - (20.0_f64 / 12.0).atan()).abs() < 1e-12));
+            .all(|band| (band.angle_rad - (20.0_f64 / 12.0).atan()).abs() < 1e-12));
     }
 
     #[test]

@@ -13,7 +13,7 @@ and the plugin authoring guide into one document.
 
 The crate owns the routing-pattern plugin contract, raw geometry model, strict
 validator, loaders, DFM/design rules, interference diagnostics, the bundled
-two-layer `infinity-braid` pattern, and the pole-pitch / slot-width dimension
+two-layer `infinity-braid` pattern, and the pole-pitch / phase-band width dimension
 sidecar.
 
 It does **not** own KiCad layer-name mapping (stays in `pcbmotorgen-export`),
@@ -39,7 +39,7 @@ copper widths supplied by the core, or the physics/force model
    contract is `format_version = 2` (millimetres; version-1 metre payloads are
    rejected).
 2. **Application handoff:** `RoutingReport` wraps the validated `RoutingResult`
-   with a `dimensions` sidecar (pole pitch, phase-band budget, per-band slot
+   with a `dimensions` sidecar (pole pitch, phase-band budget, per-band
    widths). The `generate_coils` IPC response carries the same measurements as
    `routing_dimensions`. The application adapter converts routing millimetres to
    its existing SI/meter frontend DTO at that boundary.
@@ -111,7 +111,7 @@ flow, and the plugin README template.
 
 `cargo test -p pcbmotorgen-routing` covers NaN/Infinity, bounds, layer,
 degenerate-shape, net, and continuity rejection; the exact bottom-up and
-top-down slot-width equations; exact pole-pitch alignment for the infinity
+top-down phase-band width equations; exact pole-pitch alignment for the infinity
 braid; per-layer/per-net dimension reporting; and Python runner parsing and
 malformed-output rejection.
 

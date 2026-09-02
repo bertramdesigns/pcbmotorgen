@@ -3,11 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// FOC commutation strategy. Wire format: `"max_torque" | "phase_a_only"`.
+/// FOC commutation strategy. Wire format: `"max_thrust" | "phase_a_only"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CommutationModeIpc {
-    MaxTorque,
+    /// Legacy alias: persisted payloads written before the glossary
+    /// alignment used `"max_torque"`.
+    #[serde(alias = "max_torque")]
+    MaxThrust,
     PhaseAOnly,
 }
 

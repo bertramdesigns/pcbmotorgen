@@ -30,7 +30,7 @@ The crate owns:
 - interference / DFM diagnostics (`check_interference`);
 - the registry and dynamic loaders (Rust `cdylib` plugins + Python runners);
 - the bundled two-layer `infinity-braid` reference pattern; and
-- the pole-pitch and active-conductor-band (`slot_width`) calculations needed to
+- the pole-pitch and active-conductor-band (`phase_band_widths`) calculations needed to
   hand traces off to a magnet-array calculator.
 
 The crate does **not** own:
@@ -52,7 +52,7 @@ The crate does **not** own:
 | `pattern` | The `RoutingPattern` trait, `PatternParameter`, `PluginMetadata`. |
 | `validator` | The single strict-shape gate every result must pass. |
 | `design` | `DesignRules`: DFM trace width / clearance / via sizing. |
-| `dimensions` | Pole pitch, phase-band budget, and slot-width calculations. |
+| `dimensions` | Pole pitch, phase-band budget, and phase-band width calculations. |
 | `interference` | `check_interference`: DRC overlap / via-pad clearance checks. |
 | `report` | `RoutingReport` — validated geometry plus its dimension sidecar. |
 | `coil` | `PhaseCoil` presentation model (grouped by layer + net). |
@@ -123,7 +123,7 @@ boundary.
   "expects_continuous": false,
   "params": { "num_strands": 5 },
   "magnet_pitch_mm": 12.0,
-  "coil_span_mm": 120.0
+  "magnet_array_span_mm": 120.0
 }
 ```
 
@@ -139,11 +139,12 @@ boundary.
 | `expects_continuous` | `bool` | Whether the pattern declares end→start continuity per (layer, net), driving the validator continuity check. |
 | `params` | `{string → number}` | Pattern-specific user-editable parameters. |
 | `magnet_pitch_mm` | `f64?` | Pole pitch, centre-to-centre North/South distance (`tau_p`), when the mover layout is known [mm]. |
-| `coil_span_mm` | `f64?` | Full mover magnet-array span, when known [mm]. |
+| `magnet_array_span_mm` | `f64?` | Full mover magnet-array span, when known [mm]. The legacy `coil_span_mm` key is still accepted as a serde alias on deserialize. |
 
 Convenience accessors on the Rust type: `ctx.param(key, default)` reads a
 parameter with a fallback; `ctx.magnet_pitch()` / `ctx.pole_pitch()` resolve the
-pole pitch (only when `> 0`); `ctx.coil_span()` resolves the mover span.
+pole pitch (only when `> 0`); `ctx.magnet_array_span()` resolves the mover span
+(the deprecated `ctx.coil_span()` legacy alias returns the same value).
 
 ## 5. Output contract: `RoutingResult`
 
@@ -268,7 +269,7 @@ user knobs (strand count, period count, angles…) should be declared.
 Out-of-range user values are rejected before generation with a helpful error,
 e.g. `Strands per period = 1 is below the minimum 2 for pattern "infinity-braid"`.
 
-**Do not** duplicate `slot_width_mm` or `pole_pitch_mm` as user parameters: the
+**Do not** duplicate `band_width_mm` or `pole_pitch_mm` as user parameters: the
 host computes these dimensions from the board context and returned active
 geometry so they cannot drift away from the active area or magnet layout.
 
@@ -384,7 +385,7 @@ validation, the host may wrap the exact `RoutingResult` in a `RoutingReport`:
 #[derive(Serialize, Deserialize)]
 pub struct RoutingReport {
     pub result: RoutingResult,        // the validated canonical geometry
-    pub dimensions: RoutingDimensions, // pole pitch + slot-width sidecar
+    pub dimensions: RoutingDimensions, // pole pitch + phase-band width sidecar
 }
 ```
 
@@ -410,10 +411,10 @@ existing SI/meter frontend DTO names for compatibility.
     "pole_pitch_mm": 12.0,
     "period_pitch_mm": 12.0,
     "period_count": 20,
-    "slot_pitch_mm": 4.0,
+    "phase_band_pitch_mm": 4.0,
     "phase_clearance_mm": 0.127,
-    "max_slot_width_mm": 3.873,
-    "slot_widths": [
+    "max_phase_band_width_mm": 3.873,
+    "phase_band_widths": [
       {
         "layer": 0,
         "net": "A",
@@ -421,8 +422,8 @@ existing SI/meter frontend DTO names for compatibility.
         "trace_width_mm": 0.127,
         "trace_spacing_mm": 0.127,
         "angle_rad": 1.030377,
-        "slot_width_mm": 1.333,
-        "max_slot_width_mm": 3.873,
+        "band_width_mm": 1.333,
+        "max_band_width_mm": 3.873,
         "margin_mm": 2.540
       }
     ],
@@ -441,19 +442,19 @@ existing SI/meter frontend DTO names for compatibility.
 | `pole_pitch_mm` | `f64?` | Centre-to-centre adjacent North/South pole pitch (`tau_p`) [mm]. |
 | `period_pitch_mm` | `f64?` | Pattern repeat pitch [mm]; exact pole pitch for the magnet-aware infinity braid. |
 | `period_count` | `u32?` | Complete repeat periods emitted, when known. |
-| `slot_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
+| `phase_band_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
 | `phase_clearance_mm` | `f64` | `g_phase`, currently the core minimum spacing rule [mm]. |
-| `max_slot_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
-| `slot_widths` | array | Per-active-`(layer, net)` bottom-up width records. |
+| `max_phase_band_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
+| `phase_band_widths` | array | Per-active-`(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries, copied from the result. |
 
-Each `slot_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
+Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
 (`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), the calculated
-`slot_width_mm`, the top-down `max_slot_width_mm`, and `margin_mm`.
-Convenience helpers on `RoutingDimensions`: `all_slots_fit()` and
+`band_width_mm`, the top-down `max_band_width_mm`, and `margin_mm`.
+Convenience helpers on `RoutingDimensions`: `all_phase_bands_fit()` and
 `pole_to_pole_pitch_mm()`.
 
-### 10.1 Slot-width equations
+### 10.1 Phase-band width equations
 
 For each active `(layer, net)` group, the bottom-up width is:
 
@@ -478,9 +479,9 @@ max(w_s) = tau_p / phases - g_phase
 
 where `tau_p` is the **centre-to-centre** North/South pole pitch (`pole_pitch_mm`,
 not the magnet's physical width) and `g_phase` is `phase_clearance_mm` (the
-core's minimum spacing rule). `slot_pitch_mm` is the ideal phase-band pitch
+core's minimum spacing rule). `phase_band_pitch_mm` is the ideal phase-band pitch
 `tau_p / phases`; it is separate from the conductor band width in each
-`slot_widths[]` record.
+`phase_band_widths[]` record.
 
 A negative `margin_mm` is a **diagnostic** that the requested bundle does not
 fit — the host never shortens, moves, or sanitises the pattern's coordinates to
@@ -491,15 +492,15 @@ available and the top-down fields are `null`.
 
 ```rust
 // Bottom-up: 4 parallel traces, w_t = 0.2 mm, s = 0.15 mm, theta = 45°
-assert_eq!(slot_width_from_trace_geometry_mm(4, 0.2, 0.15, 45_f64.to_radians())?, 1.76776695);
+assert_eq!(phase_band_width_from_trace_geometry_mm(4, 0.2, 0.15, 45_f64.to_radians())?, 1.76776695);
 // (4 * 0.2 + 3 * 0.15) / sin(45°) = 1.25 / 0.7071 ≈ 1.7678 mm
 
 // Top-down: tau_p = 12 mm, 3 phases, g_phase = 0
-assert_eq!(max_slot_width_from_pole_pitch_mm(12.0, 3, 0.0)?, 4.0);
+assert_eq!(max_phase_band_width_from_pole_pitch_mm(12.0, 3, 0.0)?, 4.0);
 ```
 
-Public helpers: `pcbmotorgen_routing::slot_width_from_trace_geometry_mm(...)` and
-`pcbmotorgen_routing::max_slot_width_from_pole_pitch_mm(...)`, both returning
+Public helpers: `pcbmotorgen_routing::phase_band_width_from_trace_geometry_mm(...)` and
+`pcbmotorgen_routing::max_phase_band_width_from_pole_pitch_mm(...)`, both returning
 `Result<f64, String>` with the input validation described above.
 
 ### 10.2 Infinity-braid alignment
@@ -540,7 +541,7 @@ ships the same three primitive families to the preview:
 | `segments` | `<line>` — thick solid for active, thin dashed for end-turns. |
 | `corner_arcs` | `<path d="M s Q m e">` — dashed unless `is_active`. |
 | `via_positions` | `<circle>` at via centers. |
-| `routing_dimensions` | Pole pitch, phase-band budget, and slot-width sidecar. |
+| `routing_dimensions` | Pole pitch, phase-band budget, and phase-band width sidecar. |
 
 The routing crate's units remain millimetres. The application IPC adapter
 converts the sidecar and geometry to its existing SI/meter frontend contract at
@@ -672,8 +673,8 @@ pub fn register_python_runner(path: &Path, probe: &RoutingContext, custom_id: Op
 pub fn routing_result_to_phase_coils(result: &RoutingResult, pattern_id: &str) -> Vec<PhaseCoil>;
 
 // Dimension helpers
-pub fn slot_width_from_trace_geometry_mm(u32, f64, f64, f64) -> Result<f64, String>;
-pub fn max_slot_width_from_pole_pitch_mm(f64, u32, f64) -> Result<f64, String>;
+pub fn phase_band_width_from_trace_geometry_mm(u32, f64, f64, f64) -> Result<f64, String>;
+pub fn max_phase_band_width_from_pole_pitch_mm(f64, u32, f64) -> Result<f64, String>;
 
 // DRC
 pub fn check_interference(rules: &DesignRules, result: &RoutingResult) -> Vec<InterferenceViolation>;
@@ -726,7 +727,7 @@ needed when a user installs a Python runner.
 `cargo test -p pcbmotorgen-routing` covers:
 
 - NaN/Infinity, bounds, layer, degenerate-shape, net, and continuity rejection;
-- exact bottom-up and top-down slot-width equations;
+- exact bottom-up and top-down phase-band width equations;
 - exact pole-pitch alignment for the bundled infinity braid;
 - per-layer/per-net dimension reporting; and
 - Python runner parsing and malformed-output rejection.
@@ -751,6 +752,11 @@ human-readable message; it is never repaired in place.
   change): MUST bump `format_version` (and the `pcbmotorgen_ROUTING_PLUGIN_API`
   constant) and update this document. Version 2 is the millimetre contract;
   version-1 metre payloads must not be mixed into version 2.
+- **v-next terminology alignment:** slot-width dimension fields were renamed to
+  phase-band terminology (`band_width_mm`, `max_band_width_mm`,
+  `phase_band_pitch_mm`, `phase_band_widths`). Old names remain accepted as
+  serde aliases on deserialize; `RoutingContext` additionally carries the legacy
+  `coil_span_mm` field for plugin compatibility.
 
 ## 16. Maintaining these documents
 
@@ -766,11 +772,11 @@ maintainer changing the Rust model, the handoff, or this API reference.
    copper-stack layer indexes.
 3. **Canonical output vs enriched application output** — plugins emit strict
    `RoutingResult` geometry only; the host validates; `RoutingReport` /
-   `routing_dimensions` carry calculated pole pitch and slot widths. Never tell
+   `routing_dimensions` carry calculated pole pitch and phase-band widths. Never tell
    plugin authors to emit a report envelope from Python.
 4. **Design equations with a worked example** — equation, symbol meanings with
-   units, angle direction, and one hand-checkable number. Keep both slot-width
-   views together (`w_s = (N·w_t + (N-1)·s)/sin(theta)` and
+   units, angle direction, and one hand-checkable number. Keep both phase-band
+   width views together (`w_s = (N·w_t + (N-1)·s)/sin(theta)` and
    `max(w_s) = tau_p/m - g_phase`).
 5. **Commands** — copy/paste focused and workspace commands.
 6. **Extension links** — to this API reference, the authoring guide, the handoff
@@ -786,7 +792,7 @@ maintainer changing the Rust model, the handoff, or this API reference.
 6. Search for stale names or units:
 
    ```bash
-   rg "coil_topology|single-layer|slot_width|pole_pitch|RoutingResult" \
+   rg "coil_topology|single-layer|phase_band_width|pole_pitch|RoutingResult" \
      README.md docs crates app/desktop
    ```
 
@@ -819,7 +825,7 @@ List only independent user knobs; explain which dimensions are derived from the
 context rather than copied into parameters.
 
 ## Motor dimensions
-State how pole pitch, phase-band pitch, slot width, trace angle, and any pattern
+State how pole pitch, phase-band pitch, phase-band width, trace angle, and any pattern
 period are calculated, with equations and units.
 
 ## Build and install
@@ -848,7 +854,7 @@ metadata calculated after validation.
 - [ ] Scope and ownership are accurate.
 - [ ] Units, axes, layer indexes, and net semantics are explicit.
 - [ ] Strict plugin JSON is not confused with `RoutingReport`.
-- [ ] Slot-width and pole-pitch equations include symbol definitions.
+- [ ] Phase-band width and pole-pitch equations include symbol definitions.
 - [ ] A worked example matches the Rust tests.
 - [ ] Focused and workspace commands are copy/pasteable.
 - [ ] Rust and Python extension paths are linked.

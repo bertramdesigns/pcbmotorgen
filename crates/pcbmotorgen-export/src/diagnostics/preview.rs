@@ -20,7 +20,8 @@ pub struct CoilPreviewLayer {
     /// example, `0` bottom = `BL_BCU`, top = `BL_FCU`. The Tauri command
     /// serialises this directly so the UI can render layer-aware previews.
     pub board_layer: i32,
-    /// Number of phase coils on this layer.
+    /// Number of (phase, layer) coil groups on this layer. A phase coil
+    /// spans multiple layers; there is one record per (layer, net) pair.
     pub phase_count: u32,
     /// Number of track segments (sum of `segments.len()` across phases).
     pub segment_count: u32,
@@ -38,9 +39,10 @@ pub struct CoilPreviewLayer {
 pub struct CoilPreview {
     /// Number of layers the writer would iterate over.
     pub num_layers: u32,
-    /// Routing pattern id that produced the coil set (reported back for UI
-    /// clarity).
-    pub topology: String,
+    /// Routing pattern id that produced the coil set (e.g.
+    /// "infinity-braid"). Distinct from construction topology
+    /// (slotted/slotless/coreless).
+    pub pattern_id: String,
     /// Per-layer breakdown.
     pub layers: Vec<CoilPreviewLayer>,
     /// Total track segments across all layers.
@@ -78,7 +80,7 @@ pub fn preview_coils(coils: &[PhaseCoil], num_layers: u32) -> Result<CoilPreview
         ));
     }
 
-    let topology = coils
+    let pattern_id = coils
         .iter()
         .find(|c| !c.pattern_id.is_empty())
         .map(|c| c.pattern_id.clone())
@@ -118,7 +120,7 @@ pub fn preview_coils(coils: &[PhaseCoil], num_layers: u32) -> Result<CoilPreview
 
     Ok(CoilPreview {
         num_layers,
-        topology,
+        pattern_id,
         layers,
         total_tracks,
         total_vias,
@@ -211,10 +213,10 @@ fn test_preview_coils_per_layer_count_matches_phases() {
 }
 
 #[test]
-fn test_preview_coils_topology_label() {
+fn test_preview_coils_pattern_id_label() {
     let coils = braid_coils(4);
     let preview = preview_coils(&coils, 4).expect("preview");
-    assert_eq!(preview.topology, "infinity-braid");
+    assert_eq!(preview.pattern_id, "infinity-braid");
 }
 
 #[test]

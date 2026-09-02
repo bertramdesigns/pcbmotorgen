@@ -23,7 +23,7 @@ impl PowerBudget {
              \x20 Burst loss:        {:.0} mW\n\
              \x20 Temperature rise:  +{:.1} °C\n\
              \x20 Capacitor needed:  {:.0} µF\n\
-             \x20 Efficiency (peak): {:.1} %",
+             \x20 Efficiency (continuous, at rated speed): {:.1} %",
             self.phase_resistance_ohm,
             self.continuous_power_w * 1e3,
             self.burst_power_w * 1e3,

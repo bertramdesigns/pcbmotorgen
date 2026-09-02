@@ -36,11 +36,11 @@ fn default_num_layers() -> u32 {
     4
 }
 
-/// Default value for `windings_per_phase` when the field is absent during
+/// Default value for `strands_per_phase` when the field is absent during
 /// serde deserialisation. 1 = the historical single-strand behaviour
 /// (Round 8 and earlier). Round 9 introduces multi-strand; the default
 /// preserves backward compatibility for existing JSON payloads.
-fn default_windings_per_phase() -> u32 {
+fn default_strands_per_phase() -> u32 {
     1
 }
 
@@ -55,7 +55,7 @@ fn default_routing_pattern() -> String {
 /// Linear PCB coreless motor configuration (flying mover).
 ///
 /// All quantities in SI units. `active_area_length_m` is the primary INPUT;
-/// `travel` is derived: `active_area_length - coil_span`.
+/// `travel` is derived: `active_area_length - magnet_array_span`.
 ///
 /// Ports Python `BaseMotorConfig` + `LinearMotorConfig` as a single flat struct
 /// (Rust has no dataclass inheritance).
@@ -84,7 +84,7 @@ pub struct LinearMotorConfig {
     pub air_gap_m: f64,
     /// Extra PCB length added BEYOND `active_area_length_m` on each end
     /// (in the travel direction) to give the end-turn routing room.
-    /// Multi-strand windings need extra x range to fit their parallel
+    /// Multi-strand coils need extra x range to fit their parallel
     /// paths without overlap; without padding the strands collide at
     /// the y-boundaries. Default 0.0 (no padding; uses the active area
     /// only). Round 9 — see `docs/adr/0008-phase-layer-round-robin-assignment.md`
@@ -93,21 +93,21 @@ pub struct LinearMotorConfig {
     pub padding_m: f64,
     /// Number of parallel serpentine paths per phase on the same layer
     /// ("strands", stacked in the y direction within the board_width).
-    /// Each strand uses `board_width_m / windings_per_phase` of the
+    /// Each strand uses `board_width_m / strands_per_phase` of the
     /// vertical board space. The strands are offset in x by
-    /// `slot_pitch / windings_per_phase` so their end-turns and active
+    /// `phase_band_pitch / strands_per_phase` so their end-turns and active
     /// conductors interleave without collision. Default 1 (single strand,
     /// the historical single-layer serpentine).
     ///
     /// Round 9 motivation: with 1 strand per phase, the user's 3-phase /
     /// 4-layer / 195 mm board only had 33 segments per phase, 132
-    /// total. With `windings_per_phase = 2` and `padding_m = 30 mm` the
+    /// total. With `strands_per_phase = 2` and `padding_m = 30 mm` the
     /// same config produces 66 segments per phase × 3 phases = 198
     /// segments (50% more copper per phase), with the end-turns routed
     /// through the padding area and the two strands interleaved so
     /// they don't cross each other.
-    #[serde(default = "default_windings_per_phase")]
-    pub windings_per_phase: u32,
+    #[serde(default = "default_strands_per_phase")]
+    pub strands_per_phase: u32,
 
     // --- Coil ---
     /// Extensible routing-pattern plugin id (see the `pcbmotorgen-routing`
@@ -122,7 +122,7 @@ pub struct LinearMotorConfig {
     pub routing_params: std::collections::HashMap<String, f64>,
     /// Number of electrical phases.
     pub phases: u32,
-    /// Vernier slot pitch spacing ratio. 1.0 = standard 1:1.
+    /// Vernier phase-band pitch spacing ratio. 1.0 = standard 1:1.
     pub spacing_ratio: f64,
 
     // --- Drive electronics ---
@@ -193,11 +193,11 @@ impl Default for LinearMotorConfig {
             // Round 9: padding + multi-strand. These are the new
             // defaults that the production code path uses for the
             // MagneticFader reference design. With
-            // `windings_per_phase = 2` and `padding_m = 30 mm`:
+            // `strands_per_phase = 2` and `padding_m = 30 mm`:
             //
             // - Each phase gets 2 parallel serpentine paths on its
             //   assigned layer (stacked in y, interleaved in x by
-            //   `slot_pitch / 2`).
+            //   `phase_band_pitch / 2`).
             // - The 30 mm padding gives the strands' offset x positions
             //   extra room at the ends of the active area for
             //   routing.
@@ -210,7 +210,7 @@ impl Default for LinearMotorConfig {
             // Round 8 regression tests) override these fields
             // explicitly to keep their assertions stable.
             padding_m: 0.030,
-            windings_per_phase: 2,
+            strands_per_phase: 2,
             routing_pattern: "infinity-braid".to_string(),
             routing_params: std::collections::HashMap::new(),
             phases: 3,

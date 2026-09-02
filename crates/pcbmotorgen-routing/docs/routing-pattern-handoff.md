@@ -56,7 +56,7 @@ on the concrete core `LinearMotorConfig` — this snapshot is the entire world.
   "expects_continuous": false,
   "params": { "num_strands": 5 },
   "magnet_pitch_mm": 12.0,
-  "coil_span_mm": 120.0
+  "magnet_array_span_mm": 120.0
 }
 ```
 
@@ -72,7 +72,7 @@ on the concrete core `LinearMotorConfig` — this snapshot is the entire world.
 | `expects_continuous`   | `bool`              | Whether the validator enforces end→start continuity per (layer, net). |
 | `params`               | `{string → number}` | Pattern-specific user-editable parameters.           |
 | `magnet_pitch_mm`      | `f64?`              | Pole pitch, when the mover layout is known [mm].     |
-| `coil_span_mm`         | `f64?`              | Mover magnet-array span, when known [mm].             |
+| `magnet_array_span_mm` | `f64?`              | Mover magnet-array span, when known [mm]. The legacy `coil_span_mm` key is still accepted as a serde alias. |
 
 ## 4. Output contract: `RoutingResult`
 
@@ -167,10 +167,10 @@ complete validated pattern output.
     "pole_pitch_mm": 12.0,
     "period_pitch_mm": 12.0,
     "period_count": 20,
-    "slot_pitch_mm": 4.0,
+    "phase_band_pitch_mm": 4.0,
     "phase_clearance_mm": 0.127,
-    "max_slot_width_mm": 3.873,
-    "slot_widths": [
+    "max_phase_band_width_mm": 3.873,
+    "phase_band_widths": [
       {
         "layer": 0,
         "net": "A",
@@ -178,8 +178,8 @@ complete validated pattern output.
         "trace_width_mm": 0.127,
         "trace_spacing_mm": 0.127,
         "angle_rad": 1.030377,
-        "slot_width_mm": 1.333,
-        "max_slot_width_mm": 3.873,
+        "band_width_mm": 1.333,
+        "max_band_width_mm": 3.873,
         "margin_mm": 2.540
       }
     ]
@@ -196,20 +196,20 @@ complete validated pattern output.
 | `pole_pitch_mm` | `f64?` | Centre-to-centre adjacent North/South pole pitch (`tau_p`) [mm]. |
 | `period_pitch_mm` | `f64?` | Pattern repeat pitch [mm]; exact pole pitch for magnet-aware infinity braid. |
 | `period_count` | `u32?` | Complete repeat periods emitted, when known. |
-| `slot_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
+| `phase_band_pitch_mm` | `f64?` | Ideal phase-band pitch, `pole_pitch / phases` [mm]. |
 | `phase_clearance_mm` | `f64` | `g_phase`, currently the core minimum spacing rule [mm]. |
-| `max_slot_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
-| `slot_widths` | array | Per-active `(layer, net)` bottom-up width records. |
+| `max_phase_band_width_mm` | `f64?` | `pole_pitch / phases - phase_clearance` [mm]. |
+| `phase_band_widths` | array | Per-active `(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries for each phase and pole pitch [mm]. |
 
-Each `slot_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
-(`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), `slot_width_mm`, the
+Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
+(`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), `band_width_mm`, the
 top-down maximum, and `margin_mm`.
 
 `pole_pitch_mm` is the centre-to-centre distance between adjacent North and
-South poles (`tau_p`), not the physical magnet width. `slot_pitch_mm` is the
-ideal phase-band pitch `tau_p / phases`; it is separate from the conductor
-band width in each `slot_widths[]` record.
+South poles (`tau_p`), not the physical magnet width. `phase_band_pitch_mm` is
+the ideal phase-band pitch `tau_p / phases`; it is separate from the conductor
+band width in each `phase_band_widths[]` record.
 
 `pole_regions[]` is the authoritative region interface for magnet/pole
 placement. It is deliberately emitted by the pattern rather than inferred by
@@ -262,7 +262,7 @@ preview:
 | `segments`         | `<line>` — thick solid for active, thin dashed for end-turns |
 | `corner_arcs`      | `<path d="M s Q m e">` — dashed unless `is_active` |
 | `via_positions`    | `<circle>` at via centers                  |
-| `routing_dimensions` | Pole pitch, phase-band budget, and slot-width sidecar |
+| `routing_dimensions` | Pole pitch, phase-band budget, and phase-band width sidecar |
 
 The routing crate's units remain millimetres. The application IPC adapter
 converts the sidecar and geometry to its existing SI/meter frontend contract;

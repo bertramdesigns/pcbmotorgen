@@ -40,6 +40,10 @@ impl PowerEstimator {
         let r_per_m = cu_resistance_per_length(trace_width_m, cu_thickness_m, RHO_CU);
         let r_phase = r_per_m * total_length_m;
 
+        // NOTE: uses the peak current directly (I_peak²), conservative by 2×
+        // vs the glossary definition P_loss = I_rms²·R_phase with
+        // I_rms = I_peak/√2 for sinusoidal drive. Planned correction — do not
+        // silently change.
         let i_cont = config.max_current_a;
         let p_cont = config.phases as f64 * i_cont * i_cont * r_phase;
 

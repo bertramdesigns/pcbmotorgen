@@ -4,9 +4,9 @@
 use serde::{Deserialize, Serialize};
 
 use pcbmotorgen_routing::{
-    CoilSegment as CoreCoilSegment, PhaseCoil as CorePhaseCoil,
-    PoleRegion as CorePoleRegion,
-    RoutingDimensions as CoreRoutingDimensions, SlotWidth as CoreSlotWidth,
+    CoilSegment as CoreCoilSegment, PhaseBandWidth as CorePhaseBandWidth,
+    PhaseCoil as CorePhaseCoil, PoleRegion as CorePoleRegion,
+    RoutingDimensions as CoreRoutingDimensions,
 };
 
 const MM_TO_M: f64 = 1e-3;
@@ -63,22 +63,25 @@ pub struct PhaseCoilIpc {
     pub terminal_end: [f64; 2],
 }
 
-/// One active trace bundle's calculated effective slot width.
+/// One active trace bundle's calculated effective phase-band width.
 ///
 /// Lengths are metres and `angle_rad` is relative to the direction of travel.
 /// `margin_m < 0` means the bundle is wider than the phase band allowed by the
 /// pole pitch; the backend reports that condition and does not alter geometry.
+///
+/// This is the full coil-side conductor bundle width (a phase band), NOT a
+/// single-slot width: a slot houses one active leg.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct SlotWidthIpc {
+pub struct PhaseBandWidthIpc {
     pub layer: u32,
     pub net: String,
     pub trace_count: u32,
     pub trace_width_m: f64,
     pub trace_spacing_m: f64,
     pub angle_rad: f64,
-    pub slot_width_m: f64,
-    pub max_slot_width_m: Option<f64>,
+    pub band_width_m: f64,
+    pub max_band_width_m: Option<f64>,
     pub margin_m: Option<f64>,
 }
 
@@ -96,11 +99,11 @@ pub struct RoutingDimensionsIpc {
     pub pole_pitch_m: Option<f64>,
     pub period_pitch_m: Option<f64>,
     pub period_count: Option<u32>,
-    /// Ideal phase-band pitch (`pole_pitch_m / phases`).
-    pub slot_pitch_m: Option<f64>,
+    /// Ideal phase-band pitch (pole_pitch_m / phases, spacing_ratio = 1.0).
+    pub phase_band_pitch_m: Option<f64>,
     pub phase_clearance_m: f64,
-    pub max_slot_width_m: Option<f64>,
-    pub slot_widths: Vec<SlotWidthIpc>,
+    pub max_phase_band_width_m: Option<f64>,
+    pub phase_band_widths: Vec<PhaseBandWidthIpc>,
     #[serde(default)]
     pub pole_regions: Vec<PoleRegionIpc>,
 }
@@ -125,10 +128,10 @@ impl Default for RoutingDimensionsIpc {
             pole_pitch_m: None,
             period_pitch_m: None,
             period_count: None,
-            slot_pitch_m: None,
+            phase_band_pitch_m: None,
             phase_clearance_m: 0.0,
-            max_slot_width_m: None,
-            slot_widths: Vec::new(),
+            max_phase_band_width_m: None,
+            phase_band_widths: Vec::new(),
             pole_regions: Vec::new(),
         }
     }
@@ -242,18 +245,18 @@ impl CoilPathIpc {
     }
 }
 
-impl SlotWidthIpc {
-    fn from_core(slot: &CoreSlotWidth) -> Self {
+impl PhaseBandWidthIpc {
+    fn from_core(band: &CorePhaseBandWidth) -> Self {
         Self {
-            layer: slot.layer,
-            net: slot.net.clone(),
-            trace_count: slot.trace_count,
-            trace_width_m: slot.trace_width_mm * MM_TO_M,
-            trace_spacing_m: slot.trace_spacing_mm * MM_TO_M,
-            angle_rad: slot.angle_rad,
-            slot_width_m: slot.slot_width_mm * MM_TO_M,
-            max_slot_width_m: slot.max_slot_width_mm.map(|v| v * MM_TO_M),
-            margin_m: slot.margin_mm.map(|v| v * MM_TO_M),
+            layer: band.layer,
+            net: band.net.clone(),
+            trace_count: band.trace_count,
+            trace_width_m: band.trace_width_mm * MM_TO_M,
+            trace_spacing_m: band.trace_spacing_mm * MM_TO_M,
+            angle_rad: band.angle_rad,
+            band_width_m: band.band_width_mm * MM_TO_M,
+            max_band_width_m: band.max_band_width_mm.map(|v| v * MM_TO_M),
+            margin_m: band.margin_mm.map(|v| v * MM_TO_M),
         }
     }
 }
@@ -269,13 +272,13 @@ impl RoutingDimensionsIpc {
             pole_pitch_m: dimensions.pole_pitch_mm.map(|v| v * MM_TO_M),
             period_pitch_m: dimensions.period_pitch_mm.map(|v| v * MM_TO_M),
             period_count: dimensions.period_count,
-            slot_pitch_m: dimensions.slot_pitch_mm.map(|v| v * MM_TO_M),
+            phase_band_pitch_m: dimensions.phase_band_pitch_mm.map(|v| v * MM_TO_M),
             phase_clearance_m: dimensions.phase_clearance_mm * MM_TO_M,
-            max_slot_width_m: dimensions.max_slot_width_mm.map(|v| v * MM_TO_M),
-            slot_widths: dimensions
-                .slot_widths
+            max_phase_band_width_m: dimensions.max_phase_band_width_mm.map(|v| v * MM_TO_M),
+            phase_band_widths: dimensions
+                .phase_band_widths
                 .iter()
-                .map(SlotWidthIpc::from_core)
+                .map(PhaseBandWidthIpc::from_core)
                 .collect(),
             pole_regions: dimensions
                 .pole_regions
@@ -321,10 +324,10 @@ mod tests {
             pole_pitch_mm: Some(12.0),
             period_pitch_mm: Some(12.0),
             period_count: Some(20),
-            slot_pitch_mm: Some(4.0),
+            phase_band_pitch_mm: Some(4.0),
             phase_clearance_mm: 0.127,
-            max_slot_width_mm: Some(3.873),
-            slot_widths: vec![],
+            max_phase_band_width_mm: Some(3.873),
+            phase_band_widths: vec![],
             pole_regions: vec![CorePoleRegion {
                 phase: "A".to_string(),
                 pole_index: 2,

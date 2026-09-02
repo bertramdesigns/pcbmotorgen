@@ -93,12 +93,12 @@ It does **not** own:
 ```text
 Lorentz force:   F = I · Σ(dLᵢ × Bᵢ)           (mover force; Newton's 3rd law)
 Torque:          τ = Σ(rᵢ × Fᵢ)                (about the coil origin)
-Commutation:     I_p = I_pk · cos(θ_e − p · π·τ_slot/τ_p)
+Commutation:     I_p = I_pk · cos(θ_e − p · π·τ_s/τ_p)
 Electrical angle θ_e = 2π·x / (2·τ_p) + phase_shift
 ```
 
 - `dLᵢ` = sub-segment direction-length vector, `Bᵢ` = field at its midpoint.
-- `τ_p` = pole pitch, `τ_slot` = slot pitch, `I_pk` = peak phase current.
+- `τ_p` = pole pitch, `τ_s` = phase-band pitch, `I_pk` = peak phase current.
 
 ## Commands
 
@@ -131,9 +131,9 @@ oracle output) and asserts the Rust core matches within tolerance:
   absolute;
 - Ripple percentage: ±0.5 percentage points.
 
-The FOC was corrected (slot-pitch offset + cos-FOC + 3-point polarity guard), so
-some force aliases in the fixture are regenerated from the Rust code path; the
-tests document this explicitly.
+The FOC was corrected (phase-band-pitch offset + cos-FOC + 3-point polarity
+guard), so some force aliases in the fixture are regenerated from the Rust
+code path; the tests document this explicitly.
 
 ## Tests and guarantees
 
@@ -141,8 +141,9 @@ tests document this explicitly.
 
 - unit conversion and magnet-grade lookups;
 - `SimulationInput` validation cascade and serde defaults (`num_layers = 4`,
-  `windings_per_phase = 1` when absent);
-- derived-geometry accessors (travel, slot pitch, rest offset, via pad, …);
+  `strands_per_phase = 1` when absent; legacy key `windings_per_phase`
+  accepted as an alias);
+- derived-geometry accessors (travel, phase-band pitch, rest offset, via pad, …);
 - the plain alternating magnet array (magnet counts, B-field polarity);
 - B-field 1D and 2D grid sampling (row-major `BFieldSample2D`);
 - conductor meshing, Lorentz force integration, commutation phase laws

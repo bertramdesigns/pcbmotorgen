@@ -5,14 +5,16 @@ use super::{SAFETY_MARGIN, SimulationInput};
 impl SimulationInput {
     // --- Derived geometry ---
 
-    /// Full span of the mover's magnet array [m]: `magnet_count × magnet_pitch`.
-    pub fn coil_span_m(&self) -> f64 {
+    /// Span of the mover magnet array [m]: `magnet_count × magnet_pitch`
+    /// (center-of-first-magnet to one pitch beyond the last; the physical
+    /// end-to-end span is one inter-magnet gap shorter).
+    pub fn magnet_array_span_m(&self) -> f64 {
         self.magnet_count as f64 * self.magnet_pitch_m
     }
 
-    /// Derived center-to-center travel [m]: `active_area_length - coil_span`.
+    /// Derived center-to-center travel [m]: `active_area_length − magnet array span`.
     pub fn travel_m(&self) -> f64 {
-        self.active_area_length_m - self.coil_span_m()
+        self.active_area_length_m - self.magnet_array_span_m()
     }
 
     /// Minimum PCB length required [m] (= active_area_length_m).
@@ -25,8 +27,11 @@ impl SimulationInput {
         self.magnet_pitch_m
     }
 
-    /// Coil slot pitch = (pole_pitch / phases) × spacing_ratio [m].
-    pub fn slot_pitch_m(&self) -> f64 {
+    /// Vernier-adjusted phase-band pitch [m]: `(pole_pitch / phases) × spacing_ratio`.
+    /// With `spacing_ratio = 1.0` this is the ideal phase-band pitch
+    /// `τ_p/phases`; the glossary's slot pitch `τ_s = L_stator/N_slots`
+    /// coincides only for uniform 1-slot-per-pole-per-phase windings.
+    pub fn phase_band_pitch_m(&self) -> f64 {
         (self.pole_pitch_m() / self.phases as f64) * self.spacing_ratio
     }
 
@@ -37,7 +42,8 @@ impl SimulationInput {
             .clamp(0.0, self.pole_pitch_m())
     }
 
-    /// Gap between adjacent magnets [m]: `magnet_pitch - magnet_width`.
+    /// Inter-magnet gap along the travel axis [m]: `magnet_pitch − magnet_width`.
+    /// Distinct from the motor air gap `air_gap_m` (stator-to-mover clearance).
     pub fn magnet_gap_m(&self) -> f64 {
         self.magnet_pitch_m - self.magnet_dims_m[0]
     }
@@ -69,9 +75,9 @@ mod tests {
     #[test]
     fn test_derived_values() {
         let cfg = default_config();
-        assert!((cfg.coil_span_m() - 120e-3).abs() < 1e-12);
+        assert!((cfg.magnet_array_span_m() - 120e-3).abs() < 1e-12);
         assert!((cfg.travel_m() - 75e-3).abs() < 1e-12);
-        assert!((cfg.slot_pitch_m() - 4e-3).abs() < 1e-12);
+        assert!((cfg.phase_band_pitch_m() - 4e-3).abs() < 1e-12);
         assert_eq!(cfg.rest_offset_m(), 0.0);
         assert!((cfg.magnet_gap_m() - 2e-3).abs() < 1e-12);
         assert!((cfg.min_via_pad_m() - 0.4e-3).abs() < 1e-12);

@@ -162,9 +162,9 @@ fn test_config_derived_values() {
 
     // Exact match for derived values
     assert!(
-        (cfg.coil_span_m() * 1e3 - v.config.coil_span_mm).abs() < 1e-6,
-        "coil_span: {} vs {}",
-        cfg.coil_span_m() * 1e3,
+        (cfg.magnet_array_span_m() * 1e3 - v.config.coil_span_mm).abs() < 1e-6,
+        "coil_span (fixture field) vs magnet_array_span: {} vs {}",
+        cfg.magnet_array_span_m() * 1e3,
         v.config.coil_span_mm
     );
     assert!(
@@ -191,11 +191,12 @@ fn test_config_derived_values() {
         (cfg.air_gap_m * 1e3 - v.config.air_gap_mm).abs() < 1e-9,
         "air_gap"
     );
-    // slot_pitch = pole_pitch / phases × spacing_ratio (spacing_ratio=1.0)
+    // phase_band_pitch = pole_pitch / phases × spacing_ratio (spacing_ratio=1.0);
+    // fixture key `slot_pitch_mm` predates the phase-band-pitch rename.
     assert!(
-        (cfg.slot_pitch_m() * 1e3 - v.config.slot_pitch_mm).abs() < 1e-9,
-        "slot_pitch: {} vs {}",
-        cfg.slot_pitch_m() * 1e3,
+        (cfg.phase_band_pitch_m() * 1e3 - v.config.slot_pitch_mm).abs() < 1e-9,
+        "slot_pitch (fixture field) vs phase_band_pitch: {} vs {}",
+        cfg.phase_band_pitch_m() * 1e3,
         v.config.slot_pitch_mm
     );
 }
@@ -320,8 +321,8 @@ fn test_force_sweep() {
         .collect();
 
     // Match the Python ForceEvaluator parameters:
-    // n_positions=20, meshing=20, commutation="max_torque", layer_z_m=0.0
-    let mut ev = ForceEvaluator::new(20, 20, CommutationMode::MaxTorque, 0.0);
+    // n_positions=20, meshing=20, commutation="max_thrust", layer_z_m=0.0
+    let mut ev = ForceEvaluator::new(20, 20, CommutationMode::MaxThrust, 0.0);
     let result = ev
         .evaluate(&cfg, &coils)
         .expect("default FOC must pass 3-point polarity + alignment guard");
@@ -406,7 +407,7 @@ fn test_ripple_percentage() {
         .map(coil_vector_to_phase_coil)
         .collect();
 
-    let mut ev = ForceEvaluator::new(20, 20, CommutationMode::MaxTorque, 0.0);
+    let mut ev = ForceEvaluator::new(20, 20, CommutationMode::MaxThrust, 0.0);
     let result = ev
         .evaluate(&cfg, &coils)
         .expect("default FOC must pass 3-point polarity + alignment guard");

@@ -88,7 +88,7 @@ impl Default for ForceEvaluator {
         Self {
             n_positions: 50,
             meshing: 20,
-            commutation: CommutationMode::MaxTorque,
+            commutation: CommutationMode::MaxThrust,
             layer_z_m: 0.0,
             phase_shift: 0.0,
             calibrated: false,
@@ -334,7 +334,9 @@ impl ForceEvaluator {
             "FOC misconfiguration: forward thrust is negative at one or more \
              test positions (10%, 60%, 110% of pole pitch) for both \
              phase_shift=0 and phase_shift=π. This usually means the FOC \
-             formula is wrong (sin vs cos, wrong per-coil offset). \
+             formula or per-coil offset does not match the winding geometry \
+             (per-coil offset must be π·τ_s/τ_p for coils spaced one \
+             phase-band pitch apart). \
              See scripts/foc_cross_validation/ and the @pcb-motor-expert FOC \
              spec for the closed-form derivation."
         )))
@@ -432,7 +434,8 @@ mod tests {
             expects_continuous: false,
             params: std::collections::HashMap::new(),
             magnet_pitch_mm: Some(config.magnet_pitch_m * 1e3),
-            coil_span_mm: Some(config.coil_span_m() * 1e3),
+            magnet_array_span_mm: Some(config.magnet_array_span_m() * 1e3),
+            coil_span_mm: Some(config.magnet_array_span_m() * 1e3),
         };
         pcbmotorgen_routing::generate_coils_from_context(&ctx, "infinity-braid")
     }
@@ -463,7 +466,7 @@ mod tests {
             make_test_coil(1, "B", 4.0),
             make_test_coil(2, "C", 8.0),
         ];
-        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxThrust, 0.0);
         let result = ev.evaluate(&cfg, &coils).expect("default FOC must pass 3-point guard");
         assert_eq!(result.n_positions(), 5);
         assert_eq!(result.force_x_n.len(), 5);
@@ -496,7 +499,7 @@ mod tests {
             make_test_coil(1, "B", 4.0),
             make_test_coil(2, "C", 8.0),
         ];
-        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxThrust, 0.0);
         assert!(!ev.calibrated);
         ev.evaluate(&cfg, &coils).expect("default FOC must pass 3-point guard");
         assert!(ev.calibrated);
@@ -528,7 +531,7 @@ mod tests {
         let coils = generate_coils(&cfg);
         assert!(!coils.is_empty(), "infinity-braid must produce coils for the default config");
 
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         match ev.evaluate(&cfg, &coils) {
             Ok(result) => {
                 assert_eq!(result.n_positions(), 50);
@@ -565,7 +568,7 @@ mod tests {
         let coils = generate_coils(&cfg);
         assert!(!coils.is_empty(), "infinity-braid must produce coils for the 4:5 Vernier config");
 
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         match ev.evaluate(&cfg, &coils) {
             Ok(result) => {
                 for f in &result.force_x_n {
@@ -594,7 +597,7 @@ mod tests {
     fn test_foc_rewrite_ripple_target_1_1() {
         let cfg = SimulationInput::default();
         let coils = generate_coils(&cfg);
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         let result = ev.evaluate(&cfg, &coils).expect("default FOC must pass 3-point guard");
         let ripple = result.ripple_pct();
         assert!(
@@ -614,7 +617,7 @@ mod tests {
             ..SimulationInput::default()
         };
         let coils = generate_coils(&cfg);
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         let result = ev.evaluate(&cfg, &coils).expect("4:5 Vernier FOC must pass 3-point guard");
         let ripple = result.ripple_pct();
         assert!(
@@ -644,7 +647,7 @@ mod tests {
             make_test_coil(1, "B", 4.0),
             make_test_coil(2, "C", 8.0),
         ];
-        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(5, 5, CommutationMode::MaxThrust, 0.0);
         let result = ev
             .self_calibrate(&cfg, &coils)
             .expect("default FOC must pass 3-point guard");
@@ -669,7 +672,7 @@ mod tests {
     fn test_foc_alignment_phase_a_at_p0_is_max() {
         let cfg = SimulationInput::default();
         let coils = generate_coils(&cfg);
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         // The classic "Phase A is at its maximum at p=0" alignment held for the
         // removed single-layer serpentine, whose conductors sat directly under
         // the magnet peaks. The infinity-braid is a staggered two-layer weave,
@@ -703,7 +706,7 @@ mod tests {
         let rest = cfg.rest_offset_m();
         let travel = cfg.travel_m();
         let n = 100;
-        let mut ev = ForceEvaluator::new(n, 20, CommutationMode::MaxTorque, 0.0);
+        let mut ev = ForceEvaluator::new(n, 20, CommutationMode::MaxThrust, 0.0);
         // Sample 5 points well inside the travel range, plus their
         // p + 2τ counterparts, and assert both evaluate cleanly.
         let sample_offsets = [0.1, 0.25, 0.4, 0.55, 0.7];
@@ -734,8 +737,8 @@ mod tests {
 
     /// 4:5 Vernier (spacing_ratio = 0.8) — with the old single-layer
     /// serpentine this locked the Vernier spatial phase shift: at the spec's
-    /// test position `p = 0.5·τ_slot ≈ 1.6 mm` (for `τ_p = 12 mm`,
-    /// `τ_slot = 0.8·τ_p/3 = 3.2 mm`), Phase B's first conductor sat at a
+    /// test position `p = 0.5·τ_s ≈ 1.6 mm` (for `τ_p = 12 mm`,
+    /// `τ_s = 0.8·τ_p/3 = 3.2 mm`), Phase B's first conductor sat at a
     /// `B_z` peak. With the infinity-braid the weave spreads copper across
     /// both layers, so this test now verifies the evaluator handles the
     /// Vernier config robustly (finite sweep or clean guard rejection).
@@ -748,8 +751,8 @@ mod tests {
         let coils = generate_coils(&cfg);
         assert!(!coils.is_empty());
         let rest = cfg.rest_offset_m();
-        let p_test = rest + 0.5 * cfg.slot_pitch_m();
-        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxTorque, 0.0);
+        let p_test = rest + 0.5 * cfg.phase_band_pitch_m();
+        let mut ev = ForceEvaluator::new(50, 20, CommutationMode::MaxThrust, 0.0);
         // The infinity-braid's staggered weave does not concentrate copper
         // under the Vernier magnet peaks, so the 3-point FOC guard may
         // legitimately reject this config. The test asserts the evaluator
