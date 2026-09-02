@@ -373,7 +373,11 @@
            be inspected side by side; the Simulation tab keeps its own copy. -->
       <div class="mt-3 space-y-3">
         <CoilPreview {config} {coils} {motion} />
-        <DesignDimensions {config} measuredTraceLengthMm={measuredTrace?.traceLengthMm ?? null} />
+        <DesignDimensions
+          {config}
+          measuredTraceLengthMm={measuredTrace?.traceLengthMm ?? null}
+          routingDimensions={coils?.routing_dimensions ?? null}
+        />
       </div>
     </aside>
 

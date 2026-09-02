@@ -66,6 +66,18 @@ const INNER_CU_THICKNESS_M = 70e-6;
 /** Copper resistivity (Ω·m). */
 const RHO = 1.72e-8;
 
+// Reference per-slot metrics pinned from a REAL infinity-braid output (kata
+// mqw4) so dev-mode readouts show realistic magnitudes: 975 active leg slots
+// over a 0.6 m stator track -> tau_s = L_stator/N_slots ~= 0.6154 mm; the
+// braided interleave step (effective leg pitch tau_p/(phases x strands)) is
+// 0.8 mm; a single-leg slot width (w_t/sin(theta)) is ~= 0.1166 mm. A slot
+// houses ONE active leg — the bundle width (band_width_m) is a different,
+// larger quantity.
+const REF_SLOT_COUNT = 975;
+const REF_SLOT_PITCH_M = 6.1538e-4;
+const REF_INTERLEAVE_STEP_M = 8.0e-4;
+const REF_SLOT_WIDTH_M = 1.1662e-4;
+
 /**
  * Mock magnet-grade table. Projects the static TS mirror of the Rust
  * `pcbmotorgen_simulation::magnet_grades::MAGNET_GRADES` table into the same
@@ -153,6 +165,10 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     (pole_pitch_m / Math.max(1, c.phases)) * (c.spacing_ratio || 1);
   const phase_clearance_m = c.min_space_m;
   const max_phase_band_width_m = phase_band_pitch_m - phase_clearance_m;
+  // The mock mirrors the infinity braid, whose result declares a leg grid.
+  // Other patterns report no pattern-declared per-slot metrics (null),
+  // matching the real backend's pattern-dependent leg grid.
+  const isBraid = c.routing_pattern === "infinity-braid";
   const trace_count = Math.max(
     1,
     Math.round(c.routing_params.num_strands ?? c.strands_per_phase ?? 1),
@@ -227,6 +243,7 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
         trace_spacing_m: c.min_space_m,
         angle_rad: Math.PI / 2,
         band_width_m,
+        slot_width_m: REF_SLOT_WIDTH_M,
         max_band_width_m: max_phase_band_width_m,
         margin_m: max_phase_band_width_m - band_width_m,
       });
@@ -263,6 +280,9 @@ export function mockCoils(c: LinearMotorConfig): CoilPathDto {
     phase_band_pitch_m,
     phase_clearance_m,
     max_phase_band_width_m,
+    slot_count: isBraid ? REF_SLOT_COUNT : null,
+    slot_pitch_m: isBraid ? REF_SLOT_PITCH_M : null,
+    interleave_step_m: isBraid ? REF_INTERLEAVE_STEP_M : null,
     phase_band_widths,
     pole_regions,
   };

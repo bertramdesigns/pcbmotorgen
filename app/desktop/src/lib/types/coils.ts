@@ -40,7 +40,8 @@ export interface PhaseCoilDto {
 /**
  * Effective phase-band (conductor bundle) width for one (layer, net) group.
  * This is the full coil-side bundle width — NOT a single-slot width (a slot
- * houses one active leg).
+ * houses one active leg); the single-leg track width is reported separately
+ * as `slot_width_m`.
  */
 export interface PhaseBandWidthDto {
   layer: number;
@@ -52,6 +53,13 @@ export interface PhaseBandWidthDto {
   angle_rad: number;
   /** Bottom-up effective bundle width along the travel axis. */
   band_width_m: number;
+  /**
+   * Width of the track space housing ONE active leg of this band
+   * (`w_t / sin(theta)` for a single-trace leg) — glossary "Slot Width".
+   * Distinct from the bundle width `band_width_m`. Null when the pattern
+   * does not report per-slot geometry.
+   */
+  slot_width_m: number | null;
   /** Top-down maximum allowed width, when pole pitch is known. */
   max_band_width_m: number | null;
   /** max_band_width_m - band_width_m, when pole pitch is known. */
@@ -74,6 +82,24 @@ export interface RoutingDimensionsDto {
   phase_band_pitch_m: number | null;
   phase_clearance_m: number;
   max_phase_band_width_m: number | null;
+  /**
+   * Total active leg slots declared by the pattern's leg grid. Null when the
+   * pattern declares no leg grid (per-slot metrics are pattern-dependent).
+   */
+  slot_count: number | null;
+  /**
+   * True slot pitch tau_s = L_stator / N_slots from the declared leg grid.
+   * Distinct from `phase_band_pitch_m` — the two coincide only for uniform
+   * 1-slot-per-pole-per-phase windings. Null without a declared leg grid.
+   */
+  slot_pitch_m: number | null;
+  /**
+   * Effective leg pitch of braided/slotless patterns:
+   * pole_pitch_m / (phases x strands). Braided patterns have no physical
+   * slots — this is the equivalent leg-pitch model of their interleaved
+   * trace layout. Null without a declared leg grid.
+   */
+  interleave_step_m: number | null;
   phase_band_widths: PhaseBandWidthDto[];
   /** Pattern-owned pole-pitch boundaries, in metres, used by preview zones. */
   pole_regions: PoleRegionDto[];
