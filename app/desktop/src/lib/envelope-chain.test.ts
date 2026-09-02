@@ -9,12 +9,13 @@ describe("envelope consumption chain", () => {
     const config = new ConfigStore();
     const ipc = config.toIpc();
     const env = await fetchTravelEnvelope(ipc);
-    // Lattice-snapped, span-aware convention (kata xb16; defaults: padding
+    // Nearest-snapped, span-aware convention (kata xb16; defaults: padding
     // 30, active 147, N=12, τ_p=6 → P_e=12): centre clamp [66, 141] mm,
-    // φ_track = 4 mm lattice → min = 4 + 6·12 = 76 mm, max = 4 + 11·12 =
-    // 136 mm (pinned values ARE lattice points), so force-chart zeros land
-    // on the stable rests.
-    expect(env.min_position_m).toBeCloseTo(0.076, 10);
+    // φ_track = 4 mm lattice → min = nearest to 66 = 4 + 5·12 = 64 mm,
+    // max = 4 + 11·12 = 136 mm (each ≤ P_e/2 = 6 mm from its bound), so
+    // force-chart zeros land on the stable rests and the 72 mm sweep
+    // approximates the 75 mm configured travel.
+    expect(env.min_position_m).toBeCloseTo(0.064, 10);
     expect(env.max_position_m).toBeCloseTo(0.136, 10);
 
     const motion = new MotionStore(config);
@@ -24,16 +25,17 @@ describe("envelope consumption chain", () => {
     expect(motion.moverMinMm).toBeCloseTo(66, 3);
     expect(motion.moverMaxMm).toBeCloseTo(141, 3);
     motion.setEnvelope(env);
-    expect(motion.moverMinMm).toBeCloseTo(76, 3);
+    expect(motion.moverMinMm).toBeCloseTo(64, 3);
     expect(motion.moverMaxMm).toBeCloseTo(136, 3);
     expect(motion.restPhaseMm).toBeCloseTo(4, 3);
     expect(motion.electricalPeriodMm).toBeCloseTo(12, 3);
 
-    // MIN endpoint: strip edges at centre ± span/2 = 40 … 112 mm (leading
-    // edge stays inside copper: 40 ≥ 30).
+    // MIN endpoint: strip edges at centre ± span/2 = 28 … 100 mm (leading
+    // edge overhangs the copper start by 2 mm into the end-turn padding,
+    // within the documented P_e/2 nearest-snap deviation).
     motion.commit(motion.moverMinMm);
-    expect(motion.stripStartMm).toBeCloseTo(40, 6);
-    expect(motion.stripEndMm).toBeCloseTo(112, 6);
+    expect(motion.stripStartMm).toBeCloseTo(28, 6);
+    expect(motion.stripEndMm).toBeCloseTo(100, 6);
 
     // MAX endpoint: strip edges at 100 … 172 mm (trailing edge 172 ≤ 177).
     motion.commit(motion.moverMaxMm);
@@ -59,7 +61,7 @@ describe("envelope consumption chain", () => {
     const env = await fetchTravelEnvelope(config.toIpc());
     motion.setEnvelope(env);
     expect(motion.envelope).not.toBeNull();
-    // Re-pinned to the lattice-snapped envelope (kata xb16): max = 136 mm.
+    // Re-pinned to the nearest-snapped envelope (kata xb16): max = 136 mm.
     expect(motion.moverMaxMm).toBeCloseTo(136, 3);
   });
 });

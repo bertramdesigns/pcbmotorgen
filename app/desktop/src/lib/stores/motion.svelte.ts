@@ -18,13 +18,15 @@
  * `travel_envelope_over_slots`): the centre is clamped so the array stays
  * inside the copper active area — centre ∈ [copper_start + span/2,
  * copper_end − span/2] with the glossary "Mover Span" span = N·τ_p, a
- * range that WIDENS as N shrinks — and both endpoints are snapped onto
- * the rest lattice `x ≡ φ_track (mod P_e)`. This is the glossary-normative
- * "first/last stable rest position inside the copper active area"; the
- * pre-xb16 edge rule (leading edge ≥ track start at min, trailing edge ≤
- * track end at max) is superseded — the clamp bounds the CENTRE, not the
- * array edges. Until an envelope arrives the store falls back to the
- * geometric "array flush inside the copper" range below.
+ * range that WIDENS as N shrinks and has the width of the configured free
+ * travel — and both endpoints are snapped to the NEAREST point of the rest
+ * lattice `x ≡ φ_track (mod P_e)` (ties inward), deviating by ≤ P_e/2 per
+ * endpoint so the swept range approximates the configured travel. This is
+ * the glossary-normative "first/last stable rest position inside the copper
+ * active area"; the pre-xb16 edge rule (leading edge ≥ track start at min,
+ * trailing edge ≤ track end at max) is superseded — the clamp bounds the
+ * CENTRE, not the array edges. Until an envelope arrives the store falls
+ * back to the geometric "array flush inside the copper" range below.
  */
 
 import type { ConfigStore } from "./config.svelte";
@@ -55,14 +57,14 @@ export class MotionStore {
   });
 
   // --- Geometric fallback bounds ------------------------------------------
-  // Approximates the backend clamp of the lattice-snapped travel envelope
+  // Approximates the backend clamp of the nearest-snapped travel envelope
   // (kata xb16): centre ∈ [copper_start + span/2, copper_end − span/2] —
   // the array flush inside the copper active area. The backend additionally
-  // lattice-snaps both endpoints onto `x ≡ φ_track (mod P_e)`; that residual
-  // difference is unknowable here without φ (φ_track is N-dependent and
-  // only the backend envelope carries it), so these bounds are the UNSNAPPED
-  // clamp range and may sit up to one P_e per endpoint away from the true
-  // stable rests.
+  // snaps each endpoint to the NEAREST rest-lattice point (≤ P_e/2
+  // deviation per endpoint); that residual difference is unknowable here
+  // without φ (φ_track is N-dependent and only the backend envelope carries
+  // it), so these bounds are the UNSNAPPED clamp range and may sit up to
+  // P_e/2 per endpoint away from the true stable rests.
   private geometricMinMm = $derived.by(
     () => this.config.padding_mm + this.moverSpanMm / 2,
   );

@@ -440,15 +440,19 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 /// Stable-equilibrium travel envelope of the mover array centre under the
 /// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
 ///
-/// Glossary-normative spec (kata xb16, 2026-09-02): the endpoints are the
+/// Glossary-normative spec (kata xb16, 2026-09-02; nearest-snap revision
+/// the same day after field verification): the endpoints are the
 /// FIRST and LAST STABLE REST POSITION inside the copper active area — a
 /// span-aware centre clamp (`centre ∈ [copper_start + span/2, copper_end −
-/// span/2]`, glossary "Mover Span" span = N · τ_p, τ_p = P_e/2) intersected
-/// with the stable-rest lattice `x ≡ (copper_start + φ) mod P_e` (φ the
-/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`). Defaults
+/// span/2]`, glossary "Mover Span" span = N · τ_p, τ_p = P_e/2) with each
+/// endpoint snapped to the NEAREST point of the stable-rest lattice
+/// `x ≡ (copper_start + φ) mod P_e` (φ the baseline rest phase
+/// `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`), deviating by ≤ P_e/2 per endpoint
+/// so the sweep approximates the configured travel
+/// (`travel = copper_length − span`). Defaults
 /// (N = 12, P_e = 12 mm, copper region [30, 177] mm in track coords):
-/// **76 → 136 mm**; the endpoints DEPEND on N (N = 4 gives 52 → 160 mm).
-/// If no stable rest fits the clamped range, max clamps to min (never
+/// **64 → 136 mm**; the endpoints DEPEND on N (N = 4 gives 40 → 160 mm).
+/// If the copper cannot host the span, max clamps to min (never
 /// inverted). The UI clamps its position slider to
 /// [min_position_m, max_position_m].
 #[tauri::command]
