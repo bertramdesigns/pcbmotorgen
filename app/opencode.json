@@ -23,6 +23,10 @@
             "path": "../crates/pcbmotorgen-simulation/docs/API.md",
             "description": "API documentation for consuming the pcbmotorgen simulation crate handling physics and simulation."
         },
+        "pcb-linear-motor-reference-glossary": {
+            "path": "./.opencode/docs/glossary.md",
+            "description": "Technical domain terminology, physical definitions, and governing kinematic equations for printed circuit board (PCB) linear electromagnetic motors, structured for embedded software and motor control algorithms."
+        },
     },
     "mcp": {
         "svelte": {
