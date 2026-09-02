@@ -13,11 +13,18 @@
  * (full-step commutation would re-anchor every τp). The RANGE endpoints are
  * physics-derived: they come from the backend
  * travel envelope — the first/last STABLE EQUILIBRIUM rest positions of the
- * array centre under the baseline excitation (IA=+I, IB=0, IC=−I), computed
- * over the MEASURED routed track with the array fully supported (edge rule:
- * centres satisfy `x ≡ φ (mod P_e)`; leading edge ≥ track start at min,
- * trailing edge ≤ track end at max). Until an envelope arrives the store
- * falls back to the geometric "array flush inside the routing domain" range.
+ * array CENTRE under the baseline excitation (IA=+I, IB=0, IC=−I), computed
+ * over the MEASURED routed track (kata xb16 spec, mirroring the Rust
+ * `travel_envelope_over_slots`): the centre is clamped so the array stays
+ * inside the copper active area — centre ∈ [copper_start + span/2,
+ * copper_end − span/2] with the glossary "Mover Span" span = N·τ_p, a
+ * range that WIDENS as N shrinks — and both endpoints are snapped onto
+ * the rest lattice `x ≡ φ_track (mod P_e)`. This is the glossary-normative
+ * "first/last stable rest position inside the copper active area"; the
+ * pre-xb16 edge rule (leading edge ≥ track start at min, trailing edge ≤
+ * track end at max) is superseded — the clamp bounds the CENTRE, not the
+ * array edges. Until an envelope arrives the store falls back to the
+ * geometric "array flush inside the copper" range below.
  */
 
 import type { ConfigStore } from "./config.svelte";
@@ -47,7 +54,15 @@ export class MotionStore {
     return fallbackRestPhaseMm(this.config.magnet_count, this.electricalPeriodMm);
   });
 
-  // --- Geometric fallback bounds (array flush inside the routing domain) --
+  // --- Geometric fallback bounds ------------------------------------------
+  // Approximates the backend clamp of the lattice-snapped travel envelope
+  // (kata xb16): centre ∈ [copper_start + span/2, copper_end − span/2] —
+  // the array flush inside the copper active area. The backend additionally
+  // lattice-snaps both endpoints onto `x ≡ φ_track (mod P_e)`; that residual
+  // difference is unknowable here without φ (φ_track is N-dependent and
+  // only the backend envelope carries it), so these bounds are the UNSNAPPED
+  // clamp range and may sit up to one P_e per endpoint away from the true
+  // stable rests.
   private geometricMinMm = $derived.by(
     () => this.config.padding_mm + this.moverSpanMm / 2,
   );
@@ -60,11 +75,19 @@ export class MotionStore {
     ),
   );
 
-  /** Leftmost allowed mover centre: first stable equilibrium rest position. */
+  /**
+   * Leftmost allowed mover centre: first stable equilibrium rest position
+   * of the array centre inside the copper active area (lattice-snapped,
+   * span-aware — kata xb16).
+   */
   moverMinMm = $derived(
     this.envelope ? this.envelope.min_position_m * 1000 : this.geometricMinMm,
   );
-  /** Rightmost allowed mover centre: last stable equilibrium rest position. */
+  /**
+   * Rightmost allowed mover centre: last stable equilibrium rest position
+   * of the array centre inside the copper active area (lattice-snapped,
+   * span-aware — kata xb16).
+   */
   moverMaxMm = $derived.by(() => {
     if (!this.envelope) return this.geometricMaxMm;
     return Math.max(this.moverMinMm, this.envelope.max_position_m * 1000);

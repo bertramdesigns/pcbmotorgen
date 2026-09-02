@@ -272,42 +272,54 @@ describe("mockBFieldGrid", () => {
 describe("mockTravelEnvelope", () => {
   // PRODUCT REFERENCE PINS — if min or max move, these tests fail.
   //
-  // Coil-capture convention: min = padding + (2/3)·P_e, max =
-  // (padding + active) − (3/4)·P_e — endpoints scale with P_e, not N.
-  // rest_phase_m is the track-frame phase (padding + φ) mod P_e.
-  it("defaults (P_e=12 mm, copper [30,177]) spans 38 → 168 mm", () => {
+  // Lattice-snapped, span-aware convention (kata xb16, mirroring the Rust
+  // `travel_envelope_over_slots`): endpoints are the first/last stable rest
+  // positions of the array CENTRE inside copper — centre clamp
+  // [copper_start + span/2, copper_end − span/2] with span = N·τ_p, both
+  // endpoints snapped onto x ≡ φ_track (mod P_e). Endpoints therefore
+  // DEPEND on N (they widen as N shrinks); rest_phase_m is the track-frame
+  // phase (padding + φ) mod P_e.
+  it("defaults (N=12, P_e=12 mm, copper [30,177]) span 76 → 136 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
     expect(env.electrical_period_m).toBeCloseTo(0.012, 12);
-    expect(env.min_position_m).toBeCloseTo(0.038, 12);
-    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    // φ_track = 4 mm lattice: clamp [66, 141] mm → min = 4 + 6·12 = 76 mm,
+    // max = 4 + 11·12 = 136 mm (both pinned values ARE lattice points).
+    expect(env.min_position_m).toBeCloseTo(0.076, 12);
+    expect(env.max_position_m).toBeCloseTo(0.136, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
   });
 
-  it("N=4 shares the capture endpoints (phase marker differs only if φ does)", () => {
+  it("N=4 widens the envelope to 52 → 160 mm on the same φ_track = 4 mm lattice", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
-    expect(env.min_position_m).toBeCloseTo(0.038, 12);
-    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    // Clamp [42, 165] mm → min = 4 + 4·12 = 52 mm, max = 4 + 13·12 = 160 mm.
+    expect(env.min_position_m).toBeCloseTo(0.052, 12);
+    expect(env.max_position_m).toBeCloseTo(0.160, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
   });
 
-  it("N=6 shares the endpoints; track-frame phase (30+4) mod 12 = 10 mm", () => {
+  it("N=6 endpoints 58 → 154 mm; track-frame phase (30+4) mod 12 = 10 mm", () => {
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
-    expect(env.min_position_m).toBeCloseTo(0.038, 12);
-    expect(env.max_position_m).toBeCloseTo(0.168, 12);
+    // φ_track = 10 mm lattice; clamp [48, 159] mm → min = 10 + 4·12 = 58 mm,
+    // max = 10 + 12·12 = 154 mm.
+    expect(env.min_position_m).toBeCloseTo(0.058, 12);
+    expect(env.max_position_m).toBeCloseTo(0.154, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
   });
 
   it("clamps max to min when the copper region cannot host the envelope", () => {
-    // Copper region [30, 40] mm: min 38, max = max(40−9, 38) = 38 → clamped.
+    // Copper [30, 40] mm is far shorter than the N=24 span (144 mm): the
+    // clamped centre range [102, −32] mm holds no lattice point, so both
+    // endpoints snap to the same φ_track = 4 mm lattice point (112 mm).
     const env = mockTravelEnvelope(
       makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
     );
+    expect(env.min_position_m).toBeCloseTo(0.112, 12);
     expect(env.max_position_m).toBeCloseTo(env.min_position_m, 12);
   });
 });
