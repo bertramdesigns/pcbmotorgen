@@ -15,6 +15,11 @@ import type {
   MagnetGrade,
 } from "../types";
 import { getRemanence, MAGNET_GRADES, extractBaseGrade } from "../types";
+import {
+  layerOptions as layerOptionsFor,
+  nearestLayer,
+  patternLayerRange,
+} from "../layerConstraints";
 import { mm, listRoutingPatterns, routingPatternParameters, loadInstalledPlugins, fetchMagnetGrades } from "../ipc";
 
 export class ConfigStore {
@@ -148,6 +153,40 @@ export class ConfigStore {
     this.active_area_length_mm <= this.mover_span_mm,
   );
 
+  // --- Pattern-constrained layer selection (mirrored IPC metadata) --------
+  // The routing crate declares a supported layer range per pattern
+  // (`min_layers` / `max_layers` / `layers_multiple_of`, additive trait
+  // defaults). These deriveds only CONSTRAIN THE UI — the authoritative
+  // validation stays in Rust (config validation + generate-time
+  // `validate_layer_range`).
+
+  /** Catalog entry of the active pattern (null until the backend catalog
+   *  loads or the id is unknown). */
+  activePatternInfo = $derived(
+    this.routing_patterns.find((p) => p.id === this.routing_pattern) ?? null,
+  );
+
+  /** Layer-range metadata declared by the active pattern (nulls =
+   *  unconstrained). */
+  patternLayerRange = $derived(patternLayerRange(this.activePatternInfo));
+
+  /** Copper-layer counts the layer selector may offer: even, >= 2, within
+   *  `max_layers`, intersected with the active pattern's declared range. */
+  layerOptions = $derived(layerOptionsFor(this.max_layers, this.patternLayerRange));
+
+  /**
+   * Constrain `num_layers` into the currently offered options (nearest valid
+   * value). Called when the pattern catalog loads and whenever the pattern
+   * changes, so a pattern switch can never leave an unsupported layer count
+   * selected. No-op when the current value is already valid or the option
+   * set is empty (the Rust validation reports that case).
+   */
+  constrainLayersToPattern(): void {
+    const options = this.layerOptions;
+    if (options.length === 0 || options.includes(this.num_layers)) return;
+    this.num_layers = nearestLayer(this.num_layers, options);
+  }
+
   // --- Magnet-grade reference (loaded from backend at startup) -----------
   /**
    * The runtime-loaded magnet-grade table from the backend
@@ -213,6 +252,9 @@ export class ConfigStore {
     } catch {
       // backend unavailable or errored — keep the current (possibly empty) list
     }
+    // The catalog carries the pattern-declared layer ranges: re-constrain
+    // the selected layer count now that the metadata is available.
+    this.constrainLayersToPattern();
     // Startup re-registration: reload patterns first, then re-register any
     // persisted plugins so the freshly-loaded catalog includes them. Errors
     // are per-plugin strings (empty = all ok); surface as a console warn so a
@@ -241,6 +283,9 @@ export class ConfigStore {
    * default for newly-exposed parameters.
    */
   async loadRoutingParams(patternId: string): Promise<void> {
+    // The pattern changed: re-constrain the layer count against the new
+    // pattern's declared range before (and regardless of) the IPC fetch.
+    this.constrainLayersToPattern();
     try {
       this.routing_param_defs = await routingPatternParameters(patternId);
     } catch {
