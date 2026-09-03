@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
+  import { formatLayerRange } from "../../layerConstraints";
   import RoutingParamsPanel from "./RoutingParamsPanel.svelte";
   import GeneratorUploadPanel from "../plugins/GeneratorUploadPanel.svelte";
 
@@ -12,9 +13,13 @@
 
   let modalOpen = $state(false);
 
+  /** Pattern-declared layer range, shown beside the layer selector. */
+  const layerRangeLabel = $derived(formatLayerRange(config.patternLayerRange));
+
   // Pull the selected pattern's declared user-editable params whenever the
   // pattern changes (also on initial mount). The store reseeds defaults for
-  // keys the user hasn't set yet.
+  // keys the user hasn't set yet and re-constrains the layer count against
+  // the pattern's declared range.
   $effect(() => {
     const id = config.routing_pattern;
     void config.loadRoutingParams(id);
@@ -31,6 +36,16 @@
       return;
     }
     config.routing_pattern = value;
+  }
+
+  function onLayerChange(event: Event): void {
+    const value = Number((event.currentTarget as HTMLSelectElement).value);
+    // The selector only offers valid counts (even, >= 2, within the board
+    // stackup and the pattern's range); guard anyway so nothing but a whole
+    // number reaches the store.
+    if (Number.isInteger(value) && value >= 2) {
+      config.num_layers = value;
+    }
   }
 </script>
 
@@ -65,6 +80,36 @@
       <option value={DIVIDER_VALUE} disabled>&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</option>
       <option value={LOAD_VALUE}>&#43; Load new generator&#8230;</option>
     </select>
+  </div>
+
+  <!-- Copper-layer count: options are the even ladder (>= 2, <= max_layers)
+       intersected with the active pattern's declared range; the caption shows
+       that range and updates on pattern switch. The selector can only OFFER
+       valid values — the Rust config validation and the routing crate's
+       generate-time layer check remain the authorities. -->
+  <div class="flex flex-wrap items-center gap-2">
+    <label
+      for="num-layers"
+      class="text-[11px] font-semibold uppercase tracking-wider text-slate-300"
+    >
+      Copper layers
+    </label>
+    <select
+      id="num-layers"
+      value={config.num_layers}
+      onchange={onLayerChange}
+      disabled={config.layerOptions.length <= 1}
+      aria-label="Copper layer count"
+      title="Copper layer count (even, ≥ 2, within the board stackup and the pattern's declared range)"
+      class="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {#each config.layerOptions as n (n)}
+        <option value={n}>{n}</option>
+      {/each}
+    </select>
+    <span class="min-w-0 flex-1 text-[10px] text-slate-500" role="note">
+      {layerRangeLabel}
+    </span>
   </div>
 
   <RoutingParamsPanel {config} />

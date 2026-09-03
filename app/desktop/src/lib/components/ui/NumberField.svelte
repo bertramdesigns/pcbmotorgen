@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { isMultipleOf } from "../../layerConstraints";
+
   /**
    * A numeric text field that keeps the last committed value in the parent
    * store while the user is editing. Invalid drafts stay local to this
-   * component, so an empty string, NaN, or an out-of-range value can never
-   * reach ConfigStore.
+   * component, so an empty string, NaN, an out-of-range value, or an
+   * off-multiple value (when `multipleOf` is set) can never reach
+   * ConfigStore.
    */
   interface NumberFieldProps {
     value: number;
@@ -11,6 +14,10 @@
     max?: number;
     step?: number;
     integer?: boolean;
+    /** Valid values are multiples of this (epsilon-tolerant, mirroring the
+     *  routing crate's 1e-9 discipline). An off-multiple draft stays local
+     *  and is shown as invalid — it can never be committed. */
+    multipleOf?: number;
     id?: string;
     ariaLabel?: string;
     describedBy?: string;
@@ -27,6 +34,7 @@
     max,
     step,
     integer = false,
+    multipleOf,
     id,
     ariaLabel,
     describedBy,
@@ -63,6 +71,12 @@
     }
     if (max !== undefined && Number.isFinite(max) && parsed > max) {
       return { value: null, error: `Value must be at most ${max}.` };
+    }
+    if (multipleOf !== undefined && !isMultipleOf(parsed, multipleOf)) {
+      return {
+        value: null,
+        error: `Value must be a multiple of ${multipleOf}.`,
+      };
     }
 
     return { value: parsed, error: null };
