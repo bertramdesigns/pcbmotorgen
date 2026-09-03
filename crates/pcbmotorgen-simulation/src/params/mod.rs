@@ -22,11 +22,13 @@ mod derived;
 mod friction_budget;
 mod height_stack_result;
 mod power_budget;
+mod phase_band;
 mod stackup_result;
 mod validation;
 
 pub use friction_budget::FrictionBudget;
 pub use height_stack_result::HeightStackResult;
+pub use phase_band::{phase_bands_from_routing, PhaseBandPosition};
 pub use power_budget::PowerBudget;
 pub use stackup_result::StackupResult;
 
@@ -146,6 +148,17 @@ pub struct SimulationInput {
     pub max_accel_m_s2: f64,
     /// Burst-current capacitor bank size [µF].
     pub capacitor_bank_uf: f64,
+
+    // --- Declared phase bands (kata hzs2) ---
+    /// Pattern-declared phase-band positions [m], converted from the routing
+    /// contract's resolved `phase_bands` sidecar. When present, commutation
+    /// derives the per-coil electrical offsets from the declared band
+    /// centerlines (matched by phase label) and the equilibrium helpers can
+    /// anchor the copper region to the declared extents. Empty by default
+    /// (serde default): the analytic `spacing_ratio · tau_p/phases` offsets
+    /// and the context copper region remain the fallback.
+    #[serde(default)]
+    pub phase_bands: Vec<PhaseBandPosition>,
 }
 
 impl Default for SimulationInput {
@@ -179,6 +192,7 @@ impl Default for SimulationInput {
             carriage_mass_kg: 0.015,
             max_accel_m_s2: 2.0,
             capacitor_bank_uf: 1000.0,
+            phase_bands: Vec::new(),
         }
     }
 }
@@ -245,5 +259,25 @@ mod tests {
         let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
         assert_eq!(cfg.num_layers, 4, "num_layers must default to 4 when absent");
         assert!(cfg.strands_per_phase >= 1);
+        assert!(
+            cfg.phase_bands.is_empty(),
+            "declared phase bands must default to empty for legacy payloads"
+        );
+    }
+
+    #[test]
+    fn test_serde_round_trip_with_declared_phase_bands() {
+        let cfg = SimulationInput {
+            phase_bands: vec![PhaseBandPosition {
+                phase: "A".to_string(),
+                centerline_m: 0.002,
+                start_m: 0.0,
+                end_m: 0.004,
+            }],
+            ..SimulationInput::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: SimulationInput = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.phase_bands, cfg.phase_bands);
     }
 }

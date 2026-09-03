@@ -16,6 +16,17 @@
 //! the array edges sit exactly on the copper bounds at the endpoints
 //! (kata 5c7r; see that function's docs). The stable rests themselves are
 //! reported via `rest_phase_m` and marked on the holding-force chart.
+//!
+//! ## Declared phase bands (kata hzs2)
+//!
+//! When the routing contract declares phase-band geometry, the equilibrium
+//! helpers in this module can anchor the copper region to the declared band
+//! extents ([`copper_region_from_phase_bands`] /
+//! [`travel_envelope_from_phase_bands`]) instead of the caller's analytic
+//! copper arguments; `rest_phase_m` itself is pure lattice math and needs no
+//! bands.
+
+use crate::params::PhaseBandPosition;
 
 /// Travel envelope of the mover array centre (metres).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +148,47 @@ pub fn travel_envelope_over_slots(
         rest_phase_m: phase_track,
         electrical_period_m: period,
     }
+}
+
+/// Copper region bounds from declared phase bands (kata hzs2) [m]: the union
+/// of the bands' along-travel extents. Returns `None` when no bands are
+/// declared — callers then keep their analytic copper region.
+#[must_use]
+pub fn copper_region_from_phase_bands(bands: &[PhaseBandPosition]) -> Option<(f64, f64)> {
+    if bands.is_empty() {
+        return None;
+    }
+    let start = bands
+        .iter()
+        .map(|band| band.start_m)
+        .fold(f64::INFINITY, f64::min);
+    let end = bands
+        .iter()
+        .map(|band| band.end_m)
+        .fold(f64::NEG_INFINITY, f64::max);
+    Some((start, end))
+}
+
+/// Travel envelope anchored to the declared phase-band copper region (kata
+/// hzs2) [m].
+///
+/// The copper region is the union of the declared bands' extents (see
+/// [`copper_region_from_phase_bands`]); everything else matches
+/// [`travel_envelope_over_slots`]. Returns `None` when no bands are declared
+/// — the caller falls back to the analytic copper arguments.
+#[must_use]
+pub fn travel_envelope_from_phase_bands(
+    electrical_period_m: f64,
+    magnet_count: u32,
+    bands: &[PhaseBandPosition],
+) -> Option<TravelEnvelope> {
+    let (start, end) = copper_region_from_phase_bands(bands)?;
+    Some(travel_envelope_over_slots(
+        electrical_period_m,
+        magnet_count,
+        start,
+        end,
+    ))
 }
 
 #[cfg(test)]
@@ -288,5 +340,61 @@ mod tests {
         let env = travel_envelope_over_slots(0.0, 4, 0.0, 147.0 * MM);
         assert_eq!(env.min_position_m, 0.0);
         assert_eq!(env.max_position_m, 0.0);
+    }
+    // ------------------------------------------------------------------
+    // Declared phase bands (kata hzs2)
+    // ------------------------------------------------------------------
+
+    use crate::params::PhaseBandPosition;
+
+    fn band(phase: &str, centerline_m: f64, start_m: f64, end_m: f64) -> PhaseBandPosition {
+        PhaseBandPosition {
+            phase: phase.to_string(),
+            centerline_m,
+            start_m,
+            end_m,
+        }
+    }
+
+    /// The declared bands' union extent anchors the copper region; the
+    /// envelope then matches `travel_envelope_over_slots` on those bounds.
+    /// Real-app defaults: N = 10, P_e = 24 mm, declared bands spanning the
+    /// full 195 mm copper → flush clamp [60, 135] mm (mirrors the
+    /// `app_defaults_pin_flush_60_to_135_mm` pin above).
+    #[test]
+    fn declared_bands_anchor_the_travel_envelope() {
+        let bands = vec![
+            band("A", 0.002, 0.0, 0.004),
+            band("B", 0.006, 0.004, 0.008),
+            band("C", 0.010, 0.008, 0.195),
+        ];
+        let region = copper_region_from_phase_bands(&bands).expect("declared region");
+        assert!((region.0 - 0.0).abs() < 1e-15);
+        assert!((region.1 - 0.195).abs() < 1e-15);
+
+        let env = travel_envelope_from_phase_bands(24.0 * MM, 10, &bands)
+            .expect("envelope from declared bands");
+        let direct = travel_envelope_over_slots(24.0 * MM, 10, region.0, region.1);
+        assert_eq!(env, direct);
+        // Flush contract still holds on the declared region.
+        assert!((env.min_position_m - 0.060).abs() < 1e-12);
+        assert!((env.max_position_m - 0.135).abs() < 1e-12);
+    }
+
+    /// Extents are unioned across all declared bands (including overlapping
+    /// layer copies), and empty input falls back to `None`.
+    #[test]
+    fn copper_region_unions_bands_and_falls_back_to_none() {
+        let bands = vec![
+            band("A", 0.002, 0.001, 0.005),
+            band("A", 0.002, 0.0, 0.004),
+            band("B", 0.006, 0.004, 0.009),
+        ];
+        let region = copper_region_from_phase_bands(&bands).expect("declared region");
+        assert!((region.0 - 0.0).abs() < 1e-15);
+        assert!((region.1 - 0.009).abs() < 1e-15);
+
+        assert!(copper_region_from_phase_bands(&[]).is_none());
+        assert!(travel_envelope_from_phase_bands(24.0 * MM, 10, &[]).is_none());
     }
 }

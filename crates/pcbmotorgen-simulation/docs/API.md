@@ -118,6 +118,9 @@ pub struct SimulationInput {
     pub carriage_mass_kg: f64,
     pub max_accel_m_s2: f64,
     pub capacitor_bank_uf: f64,         // burst capacitor bank [µF]
+
+    // Declared phase bands (kata hzs2, serde default = empty)
+    pub phase_bands: Vec<PhaseBandPosition>, // per-(layer, net) band records [m]
 }
 ```
 
@@ -142,6 +145,8 @@ footprint violation, and the force / mass / accel / capacitor targets.
 
 - `num_layers` defaults to **4** when absent.
 - `strands_per_phase` defaults to **1** when absent (historical single-strand).
+- `phase_bands` defaults to **empty** when absent (kata hzs2): the analytic
+  commutation offsets and the caller's copper region remain the fallback.
 
 ### 3.3 Derived-geometry accessors
 
@@ -380,6 +385,25 @@ implemented alignment is empirically pinned as thrust-optimal (pure
 q-axis) by `test_foc_thrust_peaks_at_zero_phase_tilt`: sweeping a phase
 tilt δ over [−90°, +90°] through the real force sweep, the mean thrust
 peaks at δ = 0 and is symmetric about it.
+
+**Declared phase bands (kata hzs2).** When `SimulationInput.phase_bands`
+carries the routing contract's resolved band records, each coil slot is
+matched to a band **by phase label** and runs the general per-coil offset
+law read from the laid-out geometry:
+
+```text
+offset_p = π · (x_p − x_ref) / τ_p     (declared band centerlines)
+```
+
+with `x_ref` the first coil slot's band centerline. This generalizes the
+uniform analytic offset (coil slots for one phase split across layers share
+the same offset, and non-uniform layouts get their real positions). The
+analytic `p·π·τ_band/τ_p` law remains the fallback whenever no bands are
+declared, any coil slot is unmatched, or the pole pitch is unknown — on the
+reference fixture (ideal `τ_band = τ_p/phases` layout) the two paths are
+exactly equal (`test_declared_bands_match_analytic_on_reference_fixture`,
+plus the evaluator-level parity pin
+`test_declared_phase_bands_parity_and_engagement`).
 
 ### 6.5 `ForceResult`
 
@@ -634,6 +658,13 @@ pub fn rest_phase_m(electrical_period_m, magnet_count) -> f64;
 pub fn travel_envelope_over_slots(electrical_period_m, magnet_count,
                                   copper_region_start_m,
                                   copper_region_end_m) -> TravelEnvelope;
+
+// Declared phase bands (kata hzs2) — copper region from the bands' extents.
+pub fn copper_region_from_phase_bands(bands: &[PhaseBandPosition])
+    -> Option<(f64, f64)>;
+pub fn travel_envelope_from_phase_bands(electrical_period_m, magnet_count,
+                                        bands: &[PhaseBandPosition])
+    -> Option<TravelEnvelope>;
 ```
 
 The envelope endpoints are the glossary-normative SPAN-AWARE FLUSH LIMITS
@@ -668,6 +699,12 @@ rest-snapped revisions after field verification):
 - `rest_phase_m` is the TRACK-FRAME phase `(copper_region_start + φ) mod P_e`
   (= 10 mm for the defaults), so holding-force zero markers align to the
   stable rests.
+- Declared phase bands (kata hzs2): when the routing contract carries
+  resolved band records, `copper_region_from_phase_bands` unions their
+  along-travel extents into the copper region and
+  `travel_envelope_from_phase_bands` applies the same flush clamp to it.
+  Both return `None` when no bands are declared — callers keep their
+  analytic copper arguments.
 
 Exposed to the desktop UI as the `travel_envelope` command
 (`TravelEnvelopeIpc`).
@@ -676,10 +713,10 @@ Exposed to the desktop UI as the `travel_envelope` command
 
 ```rust
 pub use pcbmotorgen_simulation::{
-    BearingType, BFieldSample2D, CoilCurrentModel, CommutationMode, ConductorSample,
-    FrictionBudget, FrictionEstimator, ForceEvaluator, ForceResult, HeightStackCalculator,
-    HeightStackResult, MagnetArray, PowerBudget, PowerEstimator,
-    SimulationError, SimulationInput, StackupResult,
+    phase_bands_from_routing, BearingType, BFieldSample2D, CoilCurrentModel, CommutationMode,
+    ConductorSample, FrictionBudget, FrictionEstimator, ForceEvaluator, ForceResult,
+    HeightStackCalculator, HeightStackResult, MagnetArray, PhaseBandPosition, PowerBudget,
+    PowerEstimator, SimulationError, SimulationInput, StackupResult,
 };
 pub use pcbmotorgen_simulation::{CoilArc, CoilSegment, PhaseCoil, PHASE_NAMES}; // from routing
 ```
