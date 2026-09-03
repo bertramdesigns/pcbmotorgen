@@ -42,6 +42,8 @@ RoutingResult {
   segments: [ RouteSegment { start: {x,y}, end: {x,y}, layer, net, is_active } ],
   curves:   [ RouteCurve    { start: {x,y}, mid: {x,y}, end: {x,y}, layer, net, is_active } ],
   vias:     [ Via          { position: {x,y}, from_layer, to_layer, net } ],
+  phase_bands: [ PhaseBand { layer, net, centerline_x_mm, start_x_mm, end_x_mm,
+                             y_min_mm, y_max_mm, shape } ],   // optional (kata hzs2)
 }
 ```
 
@@ -175,6 +177,32 @@ the rightmost point-3 of one diamond period and the leftmost point-1 of the
 next period. Point 0 (the top vertex) is not used as the pole boundary.
 The infinity pattern extrapolates the first and last boundaries from the
 interior median spacing so edge regions remain equal in width for visualization.
+
+### Declaring phase bands (kata hzs2)
+
+Patterns that have a clear phase-band layout SHOULD declare it on the result
+(`RoutingResult.phase_bands`): one `PhaseBand` record per `(layer, net)` band
+with
+
+- `centerline_x_mm` — the centerline of the band's first repeating instance
+  (the **phase reference position**). Adjacent phase bands must sit one
+  phase-band pitch apart in the centerlines; simulation commutation derives
+  the per-phase electrical offsets from these centerline distances
+  (offset = π·Δx/τ_p), so the declaration must match the laid-out geometry.
+- `start_x_mm` / `end_x_mm` — the band's along-travel extent as laid out
+  (for a repeating layout: the full span of all repeats).
+- `y_min_mm` / `y_max_mm` — the band's across-travel extent.
+- `shape` — `linear` (straight legs at a fixed angle) or `braided` (strands
+  crossing over the extent).
+
+Declaring is optional: when a pattern declares no bands, the host derives
+them in the dimension sidecar from the ideal phase-band pitch `τ_p/phases`
+and marks them `derived`. Declared bands pass the same strict validator as
+the geometry (finite, in-bounds, non-degenerate extents, valid layer/net)
+and are never sanitised. For the bundled infinity braid the declaration is
+consistent with its `pole_regions` emission: the centerline is the first
+pole region's center, the extent spans all of the phase's pole regions, and
+the diamonds cover the full board width.
 
 For the bundled infinity braid, `period_pitch_mm` is exactly the context's
 `magnet_pitch_mm` whenever magnet data is supplied. Its phase/strand via grid

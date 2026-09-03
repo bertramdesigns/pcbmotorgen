@@ -58,6 +58,7 @@ impl Validator {
         validate_curves(result, ctx, &bounds)?;
         validate_vias(result, ctx, &bounds)?;
         validate_pole_regions(result, &bounds)?;
+        validate_phase_bands(result, ctx, &bounds)?;
 
         // Continuity (per layer+net chain).
         if expect_continuous {
@@ -166,6 +167,92 @@ fn validate_pole_regions(result: &RoutingResult, bounds: &Bounds) -> Result<(), 
             ));
         }
         check_net(&region.phase, &format!("pole_regions[{i}].phase"), idx)?;
+    }
+    Ok(())
+}
+
+/// Validate the pattern-declared phase bands (kata hzs2): finite scalars,
+/// in-bounds x/y extents and centerline, non-degenerate extents, valid layer
+/// and net. Same rejection policy as the geometry: never sanitised.
+fn validate_phase_bands(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, band) in result.phase_bands.iter().enumerate() {
+        let idx = i + 1;
+        for (name, x) in [
+            ("centerline_x_mm", band.centerline_x_mm),
+            ("start_x_mm", band.start_x_mm),
+            ("end_x_mm", band.end_x_mm),
+        ] {
+            if !x.is_finite() {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("phase_bands[{i}].{name}"),
+                    RoutingErrorKind::Malformed,
+                    format!("non-finite coordinate {x} — NaN/Inf is not a valid position"),
+                ));
+            }
+            if x < -bounds.eps || x > bounds.x_max + bounds.eps {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("phase_bands[{i}].{name}"),
+                    RoutingErrorKind::OutOfBounds,
+                    format!(
+                        "x = {x:.3} mm outside the routing area [0, {:.3} mm] — the routing domain equals the active area; fix the pattern",
+                        bounds.x_max
+                    ),
+                ));
+            }
+        }
+        for (name, y) in [("y_min_mm", band.y_min_mm), ("y_max_mm", band.y_max_mm)] {
+            if !y.is_finite() {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("phase_bands[{i}].{name}"),
+                    RoutingErrorKind::Malformed,
+                    format!("non-finite coordinate {y} — NaN/Inf is not a valid position"),
+                ));
+            }
+            if y < -bounds.eps || y > bounds.board_width + bounds.eps {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("phase_bands[{i}].{name}"),
+                    RoutingErrorKind::OutOfBounds,
+                    format!(
+                        "y = {y:.3} mm outside the board width [0, {:.3} mm]",
+                        bounds.board_width
+                    ),
+                ));
+            }
+        }
+        if band.end_x_mm - band.start_x_mm <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("phase_bands[{i}]"),
+                RoutingErrorKind::Degenerate,
+                format!(
+                    "degenerate along-travel extent {} ↦ {} mm — start_x_mm and end_x_mm must differ",
+                    band.start_x_mm,
+                    band.end_x_mm
+                ),
+            ));
+        }
+        if band.y_max_mm - band.y_min_mm <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("phase_bands[{i}]"),
+                RoutingErrorKind::Degenerate,
+                format!(
+                    "degenerate y-extent {} ↦ {} mm — y_min_mm and y_max_mm must differ",
+                    band.y_min_mm,
+                    band.y_max_mm
+                ),
+            ));
+        }
+        check_layer(band.layer, ctx.num_layers, &format!("phase_bands[{i}].layer"), idx)?;
+        check_net(&band.net, &format!("phase_bands[{i}].net"), idx)?;
     }
     Ok(())
 }
@@ -466,6 +553,93 @@ mod tests {
             seg(10.0, 0.0, 20.0, 0.0, 0, "A"),
         ]);
         assert!(Validator::validate(&r, &ctx(), true).is_ok());
+    }
+
+    #[test]
+    fn accepts_valid_phase_band_and_legacy_results_still_pass() {
+        // Legacy payload without bands: unchanged.
+        let r = result_with(vec![seg(0.0, 0.0, 0.0, 20.0, 0, "A")]);
+        assert!(Validator::validate(&r, &ctx(), false).is_ok());
+
+        let mut r = result_with(vec![seg(0.0, 0.0, 0.0, 20.0, 0, "A")]);
+        r.phase_bands = vec![crate::model::PhaseBand {
+            layer: 0,
+            net: "A".into(),
+            centerline_x_mm: 2.0,
+            start_x_mm: 0.0,
+            end_x_mm: 4.0,
+            y_min_mm: 0.0,
+            y_max_mm: 20.0,
+            shape: crate::model::PhaseBandShape::Linear,
+        }];
+        assert!(Validator::validate(&r, &ctx(), false).is_ok());
+    }
+
+    #[test]
+    fn rejects_phase_band_out_of_bounds() {
+        let mut r = result_with(vec![seg(0.0, 0.0, 0.0, 20.0, 0, "A")]);
+        r.phase_bands = vec![crate::model::PhaseBand {
+            layer: 0,
+            net: "A".into(),
+            centerline_x_mm: 2.0,
+            start_x_mm: 0.0,
+            end_x_mm: 150.0,
+            y_min_mm: 0.0,
+            y_max_mm: 20.0,
+            shape: crate::model::PhaseBandShape::Linear,
+        }];
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::OutOfBounds);
+        assert!(e.field.contains("phase_bands[0].end_x_mm"), "field: {}", e.field);
+    }
+
+    #[test]
+    fn rejects_phase_band_non_finite_and_degenerate() {
+        let mut r = result_with(vec![seg(0.0, 0.0, 0.0, 20.0, 0, "A")]);
+        r.phase_bands = vec![crate::model::PhaseBand {
+            layer: 0,
+            net: "A".into(),
+            centerline_x_mm: f64::NAN,
+            start_x_mm: 0.0,
+            end_x_mm: 4.0,
+            y_min_mm: 0.0,
+            y_max_mm: 20.0,
+            shape: crate::model::PhaseBandShape::Linear,
+        }];
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::Malformed);
+
+        r.phase_bands[0].centerline_x_mm = 2.0;
+        r.phase_bands[0].end_x_mm = 0.0;
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::Degenerate);
+
+        r.phase_bands[0].end_x_mm = 4.0;
+        r.phase_bands[0].y_max_mm = 0.0;
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::Degenerate);
+    }
+
+    #[test]
+    fn rejects_phase_band_bad_layer_and_net() {
+        let mut r = result_with(vec![seg(0.0, 0.0, 0.0, 20.0, 0, "A")]);
+        r.phase_bands = vec![crate::model::PhaseBand {
+            layer: 5,
+            net: "A".into(),
+            centerline_x_mm: 2.0,
+            start_x_mm: 0.0,
+            end_x_mm: 4.0,
+            y_min_mm: 0.0,
+            y_max_mm: 20.0,
+            shape: crate::model::PhaseBandShape::Linear,
+        }];
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::BadLayer);
+
+        r.phase_bands[0].layer = 0;
+        r.phase_bands[0].net = "".into();
+        let e = Validator::validate(&r, &ctx(), false).unwrap_err();
+        assert_eq!(e.kind, RoutingErrorKind::BadNet);
     }
 
     #[test]

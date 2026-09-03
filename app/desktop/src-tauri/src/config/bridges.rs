@@ -87,6 +87,9 @@ impl LinearMotorConfig {
             carriage_mass_kg: self.carriage_mass_kg,
             max_accel_m_s2: self.max_accel_m_s2,
             capacitor_bank_uf: self.capacitor_bank_uf,
+            // No config field maps to declared phase bands yet; empty keeps
+            // the analytic commutation offsets (kata hzs2 fallback).
+            phase_bands: Vec::new(),
         }
     }
 

@@ -352,6 +352,7 @@ mod tests {
             slot_pitch_mm: Some(0.8),
             interleave_step_mm: Some(0.8),
             phase_band_widths: vec![],
+            phase_bands: vec![],
             pole_regions: vec![CorePoleRegion {
                 phase: "A".to_string(),
                 pole_index: 2,
