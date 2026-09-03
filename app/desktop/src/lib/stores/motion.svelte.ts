@@ -13,8 +13,9 @@
  *
  * Travel envelope (kata ab30): the RANGE endpoints and the rest phase come
  * EXCLUSIVELY from the backend — the `travel_envelope` Tauri command backed
- * by `pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots`
- * (span-aware flush clamp, kata 5c7r). This store does NOT re-derive that
+ * by `pcbmotorgen_simulation::equilibrium::charge::travel_envelope_charge_based`
+ * (charge-based endpoints clamped into the span-aware flush limits, kata
+ * k5r5 + 5c7r). This store does NOT re-derive that
  * math. Until a plausible envelope is installed — and whenever the
  * browser-dev placeholder mock is active — the bounds come from the shared
  * fixed PLACEHOLDER_TRAVEL_ENVELOPE (lib/ipc/mocks.ts) and the

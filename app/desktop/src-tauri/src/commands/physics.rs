@@ -437,32 +437,146 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 // travel_envelope
 // ===========================================================================
 
-/// Stable-equilibrium travel envelope of the mover array centre under the
-/// baseline excitation (I_A = +I, I_B = 0, I_C = −I), as computed by the
-/// simulation crate's equilibrium module (glossary "Travel Envelope",
-/// kata 5c7r): the span-aware flush clamp
+/// Stable-equilibrium travel envelope of the mover array centre, as computed
+/// by the simulation crate's equilibrium module (glossary "Travel Envelope",
+/// kata 5c7r + k5r5): the charge-based electromagnetic endpoints (stable rest
+/// of the first/last magnet under the first/last phase-band charge states —
+/// the Clarke-transform equilibrium of the band currents) clamped into the
+/// span-aware flush limits
 /// `centre ∈ [copper_start + span/2, copper_end − span/2]` over the whole
-/// active area, with `rest_phase_m` still reporting the stable-rest lattice
+/// active area. When the charge solve is unavailable (no coils, non-3-phase
+/// geometry, no stable rest in the scan window) the flush-clamp envelope is
+/// returned unchanged. `rest_phase_m` still reports the stable-rest lattice
 /// for the holding-force chart zeros. The UI clamps its position slider to
 /// [min_position_m, max_position_m].
 #[tauri::command]
 pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {
     let core = config.to_core();
-    let sim = core.to_simulation();
-    // P_e = 2 × pole pitch (SimulationInput.magnet_pitch_m is the
-    // centre-to-centre pole pitch).
-    let electrical_period_m = 2.0 * sim.magnet_pitch_m;
-    // The copper active area is the whole track: [0, active_area_length].
-    // There is no padding offset (kata hrd8 removed the padding feature).
-    let copper_region_start_m = 0.0;
-    let copper_region_end_m = sim.active_area_length_m;
-    Ok(TravelEnvelopeIpc::from(
-        pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots(
-            electrical_period_m,
-            sim.magnet_count,
-            copper_region_start_m,
-            copper_region_end_m,
-        ),
-    ))
+    tauri::async_runtime::spawn_blocking(move || {
+        let sim = core.to_simulation();
+        // The copper active area is the whole track: [0, active_area_length].
+        // There is no padding offset (kata hrd8 removed the padding feature).
+        let copper_region_start_m = 0.0;
+        let copper_region_end_m = sim.active_area_length_m;
+        // Coils for the charge-state solve (same generation as generate_coils).
+        let coils = core.generate_coils_for_board();
+        Ok(TravelEnvelopeIpc::from(
+            pcbmotorgen_simulation::equilibrium::charge::travel_envelope_charge_based(
+                &sim,
+                &coils,
+                copper_region_start_m,
+                copper_region_end_m,
+            ),
+        ))
+    })
+    .await
+    .map_err(|e| format!("travel_envelope worker failed: {e}"))?
+}
+
+// ===========================================================================
+// Tests — travel_envelope reflects the charge-based refinement (kata k5r5)
+// ===========================================================================
+
+#[cfg(test)]
+mod travel_envelope_tests {
+    use super::*;
+
+    /// Verify the command returns EXACTLY the crate's charge-based envelope
+    /// for the given design inputs — not the geometric flush clamp alone.
+    /// Swept over several geometries; prints base vs refined so a drift is
+    /// visible in the test log.
+    #[test]
+    fn command_matches_the_charge_based_envelope() {
+        for (n, p_e_mm, travel_mm) in [
+            (12_u32, 12.0, 75.0), // app defaults = the reference fixture
+            (10, 24.0, 123.0),
+            (6, 12.0, 111.0),
+            (12, 18.0, 75.0),
+        ] {
+            let mut state = crate::ipc::ProjectConfigStateIpc::default();
+            state.magnet_count = n;
+            state.electrical_pitch_mm = p_e_mm;
+            state.desired_travel_mm = travel_mm;
+            let ipc = state.to_linear_motor_ipc();
+
+            let env = tauri::async_runtime::block_on(travel_envelope(ipc.clone()))
+                .expect("command should succeed");
+
+            let core = ipc.to_core();
+            let sim = core.to_simulation();
+            let coils = core.generate_coils_for_board();
+            let len_m = sim.active_area_length_m;
+            let refined = pcbmotorgen_simulation::equilibrium::charge::travel_envelope_charge_based(
+                &sim, &coils, 0.0, len_m,
+            );
+            let base = pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots(
+                2.0 * sim.magnet_pitch_m,
+                sim.magnet_count,
+                0.0,
+                len_m,
+            );
+            eprintln!(
+                "N={n} P_e={p_e_mm} L={:.1}mm coils={} | base [{:.3}, {:.3}] mm | refined [{:.3}, {:.3}] mm | command [{:.3}, {:.3}] mm",
+                len_m * 1e3,
+                coils.len(),
+                base.min_position_m * 1e3,
+                base.max_position_m * 1e3,
+                refined.min_position_m * 1e3,
+                refined.max_position_m * 1e3,
+                env.min_position_m * 1e3,
+                env.max_position_m * 1e3,
+            );
+            assert!(
+                env.min_position_m == refined.min_position_m
+                    && env.max_position_m == refined.max_position_m
+                    && env.rest_phase_m == refined.rest_phase_m
+                    && env.electrical_period_m == refined.electrical_period_m,
+                "N={n} P_e={p_e_mm}: command != refined"
+            );
+        }
+    }
+
+    /// App-default design (N=12, P_e=12 mm, travel 75 mm ⇒ copper [0, 147] mm)
+    /// with the app's REAL routing pattern (infinity-braid, not the crate's
+    /// serpentine fixture): the charge refinement ENGAGES — the min endpoint
+    /// stays flush-clamped at 36 mm (the raw first-magnet rest overhangs the
+    /// copper start) while the max endpoint is pulled INWARD off the 111 mm
+    /// flush limit (measured ≈ 107.97 mm) by the last magnet's
+    /// electromagnetic rest under the edge-anchored charge state — the max
+    /// charges are the min charges mirrored (A↔C, B unchanged), anchored on
+    /// the phase that owns the braid's last active leg (C). This is the
+    /// live number the position slider and previews must show (the 111 mm
+    /// placeholder pin is the flagged mock, never the live physics).
+    #[test]
+    fn command_refines_the_max_endpoint_on_app_defaults() {
+        let ipc = crate::ipc::ProjectConfigStateIpc::default().to_linear_motor_ipc();
+        let env = tauri::async_runtime::block_on(travel_envelope(ipc)).expect("command");
+        eprintln!(
+            "app defaults: command [{:.3}, {:.3}] mm, rest {:.3} mm, P_e {:.3} mm",
+            env.min_position_m * 1e3,
+            env.max_position_m * 1e3,
+            env.rest_phase_m * 1e3,
+            env.electrical_period_m * 1e3,
+        );
+        // Min: flush clamp binds (raw rest overhangs the copper start).
+        assert!(
+            (env.min_position_m - 0.036).abs() < 1e-9,
+            "min {}",
+            env.min_position_m
+        );
+        // Max: refined strictly inside the flush limit [36, 111] mm.
+        assert!(
+            env.max_position_m > env.min_position_m && env.max_position_m < 0.111,
+            "max {} not refined inward of the flush limit",
+            env.max_position_m
+        );
+        // Lattice unchanged by the refinement (holding-force chart zeros).
+        assert!((env.rest_phase_m - 0.010).abs() < 1e-12, "rest {}", env.rest_phase_m);
+        assert!(
+            (env.electrical_period_m - 0.012).abs() < 1e-12,
+            "period {}",
+            env.electrical_period_m
+        );
+    }
 }
 

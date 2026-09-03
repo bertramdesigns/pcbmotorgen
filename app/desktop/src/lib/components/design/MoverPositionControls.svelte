@@ -4,9 +4,11 @@
    * MotionStore: position number field and the travel slider, plus the live
    * readout. Motion input is continuous — a coreless motor has no
    * detent/cogging force. The slider endpoints come from the backend travel
-   * envelope (the simulation crate's `travel_envelope_over_slots`, kata
-   * 5c7r): the array edges sit exactly on the copper active-area bounds at
-   * min and max, and the endpoints are limits, not stable rest positions —
+   * envelope (the simulation crate's `travel_envelope_charge_based`, kata
+   * k5r5): the charge-based electromagnetic rests clamped into the
+   * span-aware flush limits, so the array edges sit at most on the copper
+   * active-area bounds at min and max, and the endpoints are limits, not
+   * stable rest positions —
    * the rests (spaced one electrical period P_e) are marked by the
    * force-chart zeros below, and the mover may hold position between them.
    * While only the placeholder envelope is active (backend unavailable /

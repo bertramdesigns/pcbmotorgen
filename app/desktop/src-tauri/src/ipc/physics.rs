@@ -138,10 +138,11 @@ pub struct FrictionBudgetIpc {
     pub minimum_drive_force_n: f64,
 }
 
-/// Stable-equilibrium travel envelope of the mover array centre under the
-/// baseline excitation (I_A = +I, I_B = 0, I_C = −I). Every stable rest
-/// centre satisfies `rest_phase_m ≡ x (mod electrical_period_m)`; the
-/// slider range endpoints are the first/last rest positions.
+/// Stable-equilibrium travel envelope of the mover array centre: the
+/// charge-based electromagnetic endpoints (kata k5r5) clamped into the
+/// span-aware flush limits (kata 5c7r). Every stable rest centre satisfies
+/// `rest_phase_m ≡ x (mod electrical_period_m)`; the slider range endpoints
+/// are the travel limits, not the rests.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TravelEnvelopeIpc {
