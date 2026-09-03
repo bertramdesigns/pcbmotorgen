@@ -94,11 +94,15 @@ mod tests {
     use crate::model::RoutingResult;
     use crate::pattern::{PatternParameter, RoutingPattern};
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     /// Register a scratch pattern under a unique id and validate a single
     /// param value against it. Unique ids keep the global runtime registry
-    /// race-free across parallel tests.
+    /// race-free across parallel tests (same discipline as the `SCRATCH_SEQ`
+    /// ids in the dispatch tests — a key/value-derived id collides whenever
+    /// two tests validate the same value, and registration replaces by id).
     fn validate_value(params: Vec<PatternParameter>, key: &str, value: f64) -> Result<(), String> {
+        static SCRATCH_SEQ: AtomicU64 = AtomicU64::new(0);
         struct Scratch {
             id: String,
             params: Vec<PatternParameter>,
@@ -121,7 +125,8 @@ mod tests {
             }
         }
         let id = format!(
-            "scratch-{}-{}",
+            "scratch-{}-{}-{}",
+            SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed),
             params.first().map(|p| p.key.as_str()).unwrap_or("x"),
             value
         )
