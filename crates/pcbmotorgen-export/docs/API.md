@@ -51,6 +51,13 @@ Produces a DXF file with `HEADER` (`$INSUNITS = 4`, mm), `TABLES`
 | `RouteSegment`  | `LINE`     | `L<layer>_<net>`                                       |
 | `RouteCurve`    | `ARC`      | `L<layer>_<net>` (falls back to `LINE` when collinear) |
 | `Via`           | `CIRCLE`   | `Via`                                                  |
+| `IoTrace`       | `LINE`     | `L<layer>_<net>` (IO fanout traces emit as normal tracks) |
+| `IoPad`         | `CIRCLE` / 4×`LINE` | `IO_Pad` (circle for round pads, closed rectangle outline for rectangular pads) |
+
+Payloads **without** IO elements produce byte-identical output to previous
+releases — the IO emission loops are no-ops when the additive
+`io_pads` / `io_traces` fields are empty. `tests/golden_compat.rs` pins this
+with goldens captured from the pre-IO implementation.
 
 ### `phase_coils_to_dxf`
 
@@ -146,6 +153,34 @@ Pure converter, no socket I/O:
 - all x-coords shifted by `-active_area_length_mm/2` so the coil straddles x=0;
 - units converted mm → nm (`mm_to_nm`).
 
+The additive counterpart for the routing result's IO elements (kata htcq —
+connector/IC pads + terminal fanout traces; see the routing API §5.3):
+
+```rust
+pub fn io_elements_to_board_items(
+    result: &RoutingResult,     // reads result.io_pads / result.io_traces only
+    num_layers: u32,            // the ACTUAL board layer count
+    rules: &DesignRules,        // trace width for fanout tracks (sizing authority)
+    active_area_length_mm: f64, // same centering shift as coils_to_board_items
+) -> Vec<prost_types::Any>      // FootprintInstance / Track messages ready for CreateItems
+```
+
+- one `FootprintInstance` per `io_pads[]` entry: a single-pad `Footprint`
+  (`pcbmotorgen:io_pad_<net>_<n>`, `not_in_schematic`, excluded from the BOM)
+  whose `Pad` maps the declared stack — `PadType` from the pad kind
+  (`smd` → `PT_SMD`, `tht` → `PT_PTH`, `board_edge` → `PT_EDGE_CONNECTOR`),
+  a `PstNormal` padstack (single `PadStackLayer` with the `ALL_LAYERS`
+  sentinel, circle shape for equal x/y sizes, rectangle otherwise), the
+  drill for THT pads, and the pad's copper layer set (declared `layers`
+  mapped onto the board, or the kind's default set when empty: all copper
+  layers for THT, `F_Cu` for surface pads);
+- one `Track` per `io_traces[]` entry — IO fanout traces emit as normal
+  tracks, sized from `rules.min_trace_mm`;
+- a result without IO elements produces an empty item list.
+
+**Sizing authority:** the writer reads pad sizes from the declared elements
+and trace width from `DesignRules` — it never decides dimensions.
+
 ### 2.4 High-level board handle — `BoardHandle`
 
 Borrows the `KiCadClient` mutably and is bound to a target
@@ -166,6 +201,14 @@ impl<'a> BoardHandle<'a> {
     pub fn write_coils_dry_run(
         &mut self,
         coils: &[PhaseCoil], num_layers: u32, rules: &DesignRules, active_area_length_mm: f64,
+    ) -> Result<WriteCoilsResult, KiCadError>;                   // no IPC traffic
+    pub fn write_io_elements(
+        &mut self,
+        result: &RoutingResult, num_layers: u32, rules: &DesignRules, active_area_length_mm: f64,
+    ) -> Result<WriteCoilsResult, KiCadError>;                   // IO pads + fanout traces, atomic
+    pub fn write_io_elements_dry_run(
+        &mut self,
+        result: &RoutingResult, num_layers: u32, rules: &DesignRules, active_area_length_mm: f64,
     ) -> Result<WriteCoilsResult, KiCadError>;                   // no IPC traffic
 }
 ```
@@ -281,7 +324,7 @@ AxisAlignment, DocumentSpecifier, DocumentType, Distance, ItemHeader,
 ItemRequestStatus, Kiid, KiCadVersion, LibraryIdentifier, LockedState,
 ProjectSpecifier, Vector2, Vector3,
 // board types
-Arc, BoardLayer, Net, Track, Via,
+Arc, BoardLayer, Footprint, FootprintInstance, Net, Pad, PadType, Track, Via,
 ```
 
 ---
@@ -346,7 +389,7 @@ let result = board.write_coils(&coils, num_layers, &rules, active_area_mm)?;
 | `client`      | KiCad  | `KiCadClient`, `KicadTransport`, transports |
 | `errors`      | KiCad  | `KiCadError`                                |
 | `layer_map`   | KiCad  | layer mapping + mm/nm conversion            |
-| `writer`      | KiCad  | `coils_to_board_items` + item emitters      |
+| `writer`      | KiCad  | `coils_to_board_items` / `io_elements_to_board_items` + item emitters (`track_writer`, `via_writer`, `pad_writer`) |
 | `commit`      | KiCad  | `Commit` atomic commit handle               |
 | `board`       | KiCad  | `BoardHandle`, `WriteCoilsResult`           |
 | `diagnostics` | KiCad  | diagnostics, preconditions, preview         |
