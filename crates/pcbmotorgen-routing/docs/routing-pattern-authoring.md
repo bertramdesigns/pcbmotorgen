@@ -60,7 +60,11 @@ RoutingResult {
 - `curves` are optional (arcs), matching KiCad's `(arc start mid end)`.
 - `io_pads` / `io_traces` are optional and additive (serde-defaulted): declare
   connector/IC pads and terminal fanout traces only when your pattern routes
-  IO to the controlling IC. Pad `size` comes from the DFM rules
+  IO to the controlling IC. In practice you usually should NOT: since kata
+  xa0f the **host** generates the IO fanout itself, pattern-agnostically,
+  when called through the opt-in `generate_routing_*_with_io` entry points
+  (board-edge connector row strategy, `docs/API.md` §5.3.1/§13.1). Patterns
+  stay motor-focused. Pad `size` comes from the DFM rules
   (`DesignRules::io_tht_pad_diameter_mm()` for THT stacks, `pcbmotorgen-dfm`
   crate) — the writers carry
   sizes through and never decide them. THT pads require `drill_mm`; surface

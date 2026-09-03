@@ -157,6 +157,9 @@ Declare which connector/IC pads (`io_pads`) and terminal fanout traces
 (`io_traces`) the pattern emits. State where pad sizes come from (the DFM
 rules — the writer never decides dimensions), the pad kinds used
 (`smd` / `tht` / `board_edge`), and why the fanout is routed the way it is.
+Note: since kata xa0f the host can generate the IO fanout itself for any
+pattern (opt-in, board-edge connector row strategy — `docs/API.md` §13.1);
+most patterns should omit this section entirely and stay motor-focused.
 
 ## Build and install
 ```bash

@@ -62,7 +62,7 @@ The crate does **not** own:
 | `registry` | `RoutingRegistry` patterns register into. |
 | `loaders` | Dynamic loading of patterns (Rust `cdylib` + Python runners). |
 | `patterns` | Bundled reference patterns (the `infinity` braid). |
-| `generate` | App-facing facade: registry, loading, and context → result/coils. |
+| `generate` | App-facing facade: registry, loading, context → result/coils, and the opt-in host IO fanout step (`io_fanout`, §13.1). |
 | `error` | `RoutingError` / `RoutingErrorKind` structured field-level errors. |
 
 > **DFM modules moved out (kata 0rgs):** the former `design` (`DesignRules`)
@@ -306,12 +306,17 @@ validated like every other geometry (finite, in-bounds, non-degenerate
 extents, valid layer/net) and are never sanitised.
 ### 5.3 IO elements: connector/IC pads and terminal fanout traces (additive)
 
-`io_pads[]` and `io_traces[]` are the DEFINITIONS-ONLY interface for
-input/output routing to the controlling IC (generation of IO routing is not
-part of this contract — a pattern that routes IO declares the elements; the
-host and the export crate only validate and emit them). Both fields are
-serde-defaulted, so legacy payloads and non-IO patterns deserialize unchanged
-and `FORMAT_VERSION` is unaffected (see §15).
+`io_pads[]` and `io_traces[]` are the additive interface for input/output
+routing to the controlling IC. Both fields are serde-defaulted, so legacy
+payloads and non-IO patterns deserialize unchanged and `FORMAT_VERSION` is
+unaffected (see §15). Two producers exist:
+
+- **Patterns** may declare IO elements directly (the schema supports it);
+  patterns stay motor-focused and are not expected to.
+- **The host** (kata xa0f) generates IO routing after pattern generation and
+  before validation, via the opt-in `generate_routing_*_with_io` entry
+  points (§13.1). This is pattern-agnostic: it works for bundled, native
+  plugin, and Python runner patterns alike.
 
 - `IoPad` carries the full pad-stack definition the writer needs: centre
   `position`, copper `size` (`{x, y}` in mm — equal extents mean a circular
@@ -322,7 +327,7 @@ and `FORMAT_VERSION` is unaffected (see §15).
   `PT_SMD` / `PT_PTH` / `PT_EDGE_CONNECTOR`), the phase `net`, and an
   optional pad `number` (carried through to KiCad as the pad number).
 - `IoTrace` is deliberately a distinct element family from `segments[]` so
-  later DFM checks can treat IO routing differently — it is never a
+  DFM checks can treat IO routing differently — it is never a
   force-producing conductor. `role` distinguishes a `fanout` (coil terminal →
   pad) from a `tail` (pad → board-edge exit).
 
@@ -330,13 +335,54 @@ The strict-shape validator (§8) checks IO elements like every other element:
 domain bounds (the routing domain equals the active area — the epsilon lets
 board-edge pads sitting exactly on a boundary pass), positive finite pad
 sizes, `tht` pads require a positive `drill_mm` while `smd` / `board_edge`
-pads reject one, and layer/net rules.
+pads reject one, and layer/net rules. Generated IO is held to the same
+rejected-not-sanitised standard: the generator emits valid geometry by
+construction, and anything that does not pass is a generation error.
 
 Sizing authority: pad dimensions remain governed by `DesignRules`
-(downstream in `pcbmotorgen-dfm`, kata 0rgs) — patterns read sizes from
-there (e.g. `DesignRules::io_tht_pad_diameter_mm()` for a THT pad stack) or
-size pads explicitly. The writers only carry the declared sizes through; they
-never decide dimensions.
+(downstream in `pcbmotorgen-dfm`, kata 0rgs) — callers read sizes from there
+(e.g. `DesignRules::io_tht_pad_diameter_mm()` for a THT pad stack) and bridge
+them into the generation options; the generator reads sizes and never
+decides them. The writers only carry the declared sizes through.
+
+#### 5.3.1 Host placement strategy (default, kata xa0f)
+
+`generate_io_fanout` implements one deterministic default strategy — a
+**board-edge connector row**:
+
+1. **Terminals.** Elements are grouped by `(layer, net)` (the same grouping
+   as the `PhaseCoil` adapter); each group contributes its first element's
+   start and last element's end as its two electrical terminals.
+2. **Rows.** Each terminal fans out to the **nearest across-travel board
+   edge** (`y ≤ board_width/2` → the `y = 0` row, else the
+   `y = board_width` row; the tie goes to `y = 0`). `IoFanoutEdge::AcrossMin`
+   / `AcrossMax` force a single row instead.
+3. **Pad slots.** Within a row, pads are evenly spaced along the travel axis
+   (end pads one pad diameter inboard of the x extremes), assigned to
+   terminals in x order — a monotone assignment, so fanout traces within a
+   row never cross each other. Pads are numbered `1..N` in emission order
+   (min row first, left to right).
+4. **Pad stack.** `IoFanoutOptions::tht` (the canonical sizing path —
+   `DesignRules::io_fanout_options()`) emits `tht` pads one pad radius
+   inboard of the edge so the drill stays on the board, declaring **all**
+   copper layers (a through-hole pad spans the stack, so the fanout connects
+   from any layer). `IoFanoutOptions::board_edge` emits castellated
+   `board_edge` pads centred exactly on the outline, declaring exactly the
+   fanout's layer. An IC-footprint strategy (pads in the active area, with
+   `tail` traces to the edge) remains possible through the schema but is not
+   generated by this step.
+5. **Nets.** Pass-through: a pad/trace inherits the net (phase label) of the
+   coil terminal it connects. A phase with several coil groups gets several
+   same-net connector pins.
+6. **Layers / crossings.** Fanouts stay on a single layer (the terminal's
+   layer) — **no vias are generated**: the nearest-edge row makes every
+   fanout a short straight trace, so a layer change is never genuinely
+   required. `IoTraceRole::Tail` is not used by the default strategy (the
+   pads already sit at the exit).
+7. **Determinism.** The step is a pure function of
+   `(result, context, options)`; a terminal that coincides with its pad slot
+   is resolved by a deterministic in-bounds nudge so no zero-length trace is
+   ever emitted (the validator rejects those).
 
 ## 6. The `RoutingPattern` trait
 
@@ -538,9 +584,18 @@ It reports design-rule violations against the configured widths:
 
 - **Segments** — same-layer, different-net traces closer than
   `min_trace_mm + min_space_mm` (edge-to-edge clearance).
+- **IO fanout traces** (kata xa0f) — join the same clearance rule, against
+  segments and other IO traces; they are ordinary copper for DRC purposes.
 - **Via pads** — via pad (`drill + 2 × annular ring`) on its from/to layers
   closer than `via_pad_radius + trace_width/2 + min_space` to a different-net
-  trace.
+  trace (segments or IO traces).
+- **IO pads** (kata xa0f) — on each explicitly declared copper layer, closer
+  than `pad_radius + trace_width/2 + min_space` to different-net copper, or
+  closer than `pad_radius_a + pad_radius_b + min_space` to a different-net IO
+  pad sharing a declared layer (the effective pad radius is the half diagonal
+  of the pad copper). Pads without declared layers are skipped — the
+  exporter's implicit default layer set is unknown downstream; the host IO
+  generator always declares its layers explicitly.
 
 Violations are surfaced as `InterferenceViolation { layer, net_a, net_b, kind,
 gap_mm, message }` and are **diagnostics only** — they are reported, never used
@@ -967,6 +1022,17 @@ pub fn generate_routing_report(ctx: &RoutingContext, id: &str) -> Result<Routing
 pub fn generate_routing_result(ctx: &RoutingContext, id: &str) -> Result<RoutingResult, String>;
 pub fn generate_coils_from_context(ctx: &RoutingContext, id: &str) -> Vec<PhaseCoil>;
 
+// Generation with host-side IO fanout (kata xa0f, §13.1)
+pub fn generate_routing_report_with_io(
+    ctx: &RoutingContext, id: &str, io: &IoFanoutOptions,
+) -> Result<RoutingReport, String>;
+pub fn generate_routing_result_with_io(
+    ctx: &RoutingContext, id: &str, io: &IoFanoutOptions,
+) -> Result<RoutingResult, String>;
+pub fn generate_io_fanout(
+    result: &mut RoutingResult, ctx: &RoutingContext, io: &IoFanoutOptions,
+) -> Result<(), String>;
+
 // Registry
 pub fn available_pattern_ids() -> Vec<(String, String)>;   // (id, display_name) catalog pairs
 pub fn available_pattern_metadata() -> Vec<PluginMetadata>; // catalog incl. layer-range metadata
@@ -1002,6 +1068,35 @@ context (`RoutingDimensions::for_infinity` for `"infinity-braid"`,
 `RoutingDimensions::from_result` for generic patterns). `generate_coils_from_context`
 adapts a validated result into the `PhaseCoil` presentation used by the preview
 and the force model.
+
+### 13.1 Host-side IO fanout generation (kata xa0f)
+
+`generate_routing_report_with_io` / `generate_routing_result_with_io` are the
+opt-in IO toggle: they run the identical pipeline but insert one host step
+between `pattern.generate(ctx)` and the validator —
+
+```text
+pattern.generate(ctx) → generate_io_fanout(result, ctx, &IoFanoutOptions) → Validator::validate
+```
+
+- The step is **pattern-agnostic** (bundled, native, and Python runner
+  patterns all get it) and appends `io_pads[]` / `io_traces[]` connecting
+  every coil terminal to a board-edge connector row (§5.3.1).
+- The plain `generate_routing_report` / `generate_routing_result` entry
+  points **never** emit IO: existing callers, payloads, and exports stay
+  byte-identical without any code change. This opt-in entry-point design was
+  chosen over a `RoutingContext` field because the context is the pattern's
+  input contract (the app constructs it with a full struct literal) — host
+  toggles do not belong in it.
+- A generated result that fails validation is a generation error
+  (`pattern "<id>" produced a malformed shape…`), never sanitised; the IO
+  step's own errors surface as `pattern "<id>" IO fanout generation failed:
+  …`.
+- Sizing: `IoFanoutOptions` carries the pad diameter / drill; the canonical
+  values come from the DFM authority via `DesignRules::io_fanout_options()`
+  (in `pcbmotorgen-dfm`). Export consumes the result unchanged through
+  `io_elements_to_board_items` / `write_io_elements` (KiCad `Footprint` /
+  `Pad` + tracks, DXF pad circles / trace lines).
 
 ## 14. Commands, tests, and guarantees
 
@@ -1046,6 +1141,10 @@ needed when a user installs a Python runner.
 - exact per-slot width and slot-pitch equations plus leg-grid-derived slot metrics;
 - phase-band declaration round-trip, host fallback derivation (marked
   `derived`), and braid-declared bands matching its pole regions (kata hzs2);
+- host IO fanout generation (kata xa0f): terminal→pad mapping, net
+  assignment, deterministic placement, nearest-edge rows, degenerate-guard,
+  opt-in behavior (plain entry points stay IO-free), and
+  validator-accepts-generated-IO end to end on the bundled braid;
 - exact pole-pitch alignment for the bundled infinity braid;
 - per-layer/per-net dimension reporting; and
 - Python runner parsing and malformed-output rejection.
@@ -1092,6 +1191,13 @@ human-readable message; it is never repaired in place.
   (KiCad `FootprintInstance`/`Pad` + fanout tracks; DXF `IO_Pad` circles /
   rectangle outlines + normal track LINEs) and proves byte-identical legacy
   exports with golden tests.
+- **v-next host IO fanout generation (kata xa0f):** the host can now
+  **generate** the IO routing itself — an opt-in host step
+  (`generate_routing_*_with_io`, §13.1) that appends `io_pads[]` /
+  `io_traces[]` after pattern generation and before validation, using the
+  board-edge connector row strategy (§5.3.1). No API/ABI version bump and no
+  schema change: the entry-point toggle means payloads from the existing
+  functions are byte-identical to the pre-xa0f behavior.
 - **v-next true per-slot metrics (kata mqw4):** patterns may declare a leg
   grid on the result (`RoutingResult.leg_grid: Option<LegGrid>`, additive);
   `RoutingDimensions` gains `slot_count`, `slot_pitch_mm` (true
