@@ -18,7 +18,10 @@
   and modal frame + canvas) stay mounted while the component exists, but
   only ONE of them is drawn per render tick — the `expanded` rune picks the
   active pair, so both canvases always show the same live schematic. Esc or
-  a backdrop click closes the modal.
+  a backdrop click closes the modal. While expanded, the page behind the
+  lightbox is scroll-locked (document overflow lock + backdrop
+  wheel/touchmove guard), so hover/wheel over the dimmed background can
+  never scroll it.
 
   Interaction: one pointer (mouse / pen / lone touch) drags to pan; a
   two-finger pinch or a ctrl+wheel trackpad pinch zooms CONTINUOUSLY
@@ -64,6 +67,10 @@
   import { CoilPreviewGestures } from "../../utils/coilPreviewGestures.svelte";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
   import MoverPositionControls from "./MoverPositionControls.svelte";
+  import {
+    attachBackdropScrollGuard,
+    lockPageScroll,
+  } from "../../utils/pageScrollLock";
 
   let {
     config,
@@ -445,6 +452,8 @@
   let canvasRef: HTMLCanvasElement | undefined = $state();
   let modalFrameRef: HTMLDivElement | undefined = $state();
   let modalCanvasRef: HTMLCanvasElement | undefined = $state();
+  let backdropRef: HTMLDivElement | undefined = $state();
+  let modalPanelRef: HTMLDivElement | undefined = $state();
   let expanded = $state(false);
   let frameSize = $state(0); // frame CSS-pixel width, measured by the RO
 
@@ -958,6 +967,28 @@
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // Scroll lock for the lightbox (Kata xy31): while the modal is open the
+  // page behind it must never scroll. Two layers:
+  //   1. refcounted overflow:hidden on <html>/<body> — kills document
+  //      scrolling below lg (above lg the stylesheet already hides the root
+  //      scroller);
+  //   2. non-passive wheel/touchmove guards on the backdrop that
+  //      preventDefault() every event landing OUTSIDE the modal's scrollable
+  //      panel, so browser scroll chaining can never reach a container
+  //      behind the overlay. The panel itself carries `overscroll-contain`
+  //      so its own scrolling never chains past the modal.
+  $effect(() => {
+    if (!expanded) return;
+    const backdrop = backdropRef;
+    if (!backdrop) return;
+    const detachGuard = attachBackdropScrollGuard(backdrop, modalPanelRef);
+    const unlock = lockPageScroll(document);
+    return () => {
+      detachGuard();
+      unlock();
+    };
+  });
+
   // -------------------------------------------------------------------
   // Interaction — ALL pan/pinch/scroll-zoom logic, touch↔pointer
   // coordination, pointer-capture cleanup and cursor math lives in
@@ -1066,6 +1097,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
       role="dialog"
       tabindex="-1"
+      bind:this={backdropRef}
       aria-modal="true"
       aria-label="Coil Preview — expanded"
       onpointerdown={(event) => {
@@ -1074,7 +1106,8 @@
     >
       <div
         role="group"
-        class="flex max-h-full w-full max-w-5xl flex-col gap-3 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+        bind:this={modalPanelRef}
+        class="flex max-h-full w-full max-w-5xl flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl"
         onpointerdown={(event) => event.stopPropagation()}
       >
         <!-- Header row -->

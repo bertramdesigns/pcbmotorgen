@@ -4,6 +4,7 @@
     openFileDialog,
     registerRoutingPlugin,
   } from "../../ipc";
+  import { attachBackdropScrollGuard, lockPageScroll } from "../../utils/pageScrollLock";
 
   let {
     config,
@@ -17,6 +18,8 @@
   let name = $state("");
   let status = $state<"idle" | "loading" | "success" | "error">("idle");
   let message = $state("");
+  let backdropRef: HTMLDivElement | undefined = $state();
+  let dialogRef: HTMLDivElement | undefined = $state();
 
   const KIND_LABEL: Record<"native" | "python", string> = {
     native: "Native crate plugin (.dylib / .so / .dll)",
@@ -103,10 +106,25 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  // Scroll lock (Kata xy31): nothing inside this dialog scrolls natively,
+  // so every wheel/touchmove on the overlay is blocked and the document is
+  // overflow-locked while the dialog is open — the page behind can never
+  // scroll.
+  $effect(() => {
+    const backdrop = backdropRef;
+    if (!backdrop) return;
+    const detachGuard = attachBackdropScrollGuard(backdrop, null);
+    const unlock = lockPageScroll(document);
+    return () => {
+      detachGuard();
+      unlock();
+    };
+  });
 </script>
 
 <!-- Modal overlay -->
-<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+<div bind:this={backdropRef} class="fixed inset-0 z-50 flex items-center justify-center p-4">
   <button
     type="button"
     aria-label="Close dialog"
@@ -117,6 +135,7 @@
     role="dialog"
     aria-modal="true"
     aria-label="Load new generator"
+    bind:this={dialogRef}
     class="relative z-10 w-full max-w-md rounded-lg bg-slate-800 border border-slate-700 shadow-xl"
   >
     <!-- Header -->
