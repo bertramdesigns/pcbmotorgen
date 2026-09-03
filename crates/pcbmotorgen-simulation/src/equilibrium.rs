@@ -25,8 +25,19 @@
 //! [`travel_envelope_from_phase_bands`]) instead of the caller's analytic
 //! copper arguments; `rest_phase_m` itself is pure lattice math and needs no
 //! bands.
+//!
+//! ## Charge-based endpoints (kata k5r5)
+//!
+//! The electromagnetic refinement of these endpoints — the first/last magnet
+//! equilibrium under the phase-band charge state — lives in
+//! [`charge`](self::charge): [`charge::travel_envelope_charge_based`] derives
+//! the envelope endpoints from the charge equilibria with the geometric
+//! flush clamp kept as the documented mechanical limit and fallback, and the
+//! [`travel_envelope_over_slots`] output below is unchanged by it.
 
 use crate::params::PhaseBandPosition;
+
+pub mod charge;
 
 /// Travel envelope of the mover array centre (metres).
 #[derive(Debug, Clone, Copy, PartialEq)]
