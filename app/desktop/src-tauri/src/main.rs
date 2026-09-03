@@ -35,6 +35,8 @@ fn main() {
             commands::kicad::validate_write_preconditions,
             commands::kicad::preview_coils,
             commands::dxf::export_coils_dxf,
+            commands::project::save_project,
+            commands::project::load_project,
             commands::routing_plugins::list_routing_patterns,
             commands::routing_plugins::register_routing_plugin,
             commands::routing_plugins::routing_pattern_parameters,

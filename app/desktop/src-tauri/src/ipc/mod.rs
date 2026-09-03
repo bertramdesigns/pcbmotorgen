@@ -31,6 +31,8 @@
 //! - [`coils`] — `CoilSegmentIpc` / `PhaseCoilIpc` / `CoilPathIpc` geometry.
 //! - [`physics`] — B-field grid, force sweep, stackup/height/power/friction.
 //! - [`magnets`] — `MagnetGradeIpc` + `magnet_grades()` + temp tables.
+//! - [`project`] — project persistence: versioned `.pmproj` envelope,
+//!   state DTOs, parse/migrate/validate (kata 0cgm).
 //! - [`kicad`] — board diagnostics, write preconditions, coil preview.
 
 pub mod coils;
@@ -39,6 +41,7 @@ pub mod enums;
 pub mod kicad;
 pub mod magnets;
 pub mod physics;
+pub mod project;
 
 pub use coils::*;
 pub use config::*;
@@ -46,3 +49,4 @@ pub use enums::*;
 pub use kicad::*;
 pub use magnets::*;
 pub use physics::*;
+pub use project::*;
