@@ -202,6 +202,11 @@ impl<'a> BoardHandle<'a> {
     pub fn document(&self) -> &DocumentSpecifier;
     pub fn name(&self) -> Result<String, KiCadError>;            // "board.kicad_pcb"
     pub fn get_copper_layer_count(&mut self) -> Result<u32, KiCadError>;
+    // Diagnostics queries (kata ze9f):
+    pub fn get_net_names(&mut self) -> Result<Vec<String>, KiCadError>;
+    pub fn get_effective_net_classes(&mut self, net_names: &[String]) -> Result<Vec<String>, KiCadError>;
+    pub fn get_edge_cut_bbox_mm(&mut self) -> Result<Option<BoardBBoxMm>, KiCadError>;
+    pub fn get_board_origin(&mut self, origin_type: BoardOriginType) -> Result<Vector2, KiCadError>;
     pub fn write_coils(
         &mut self,
         coils: &[PhaseCoil], num_layers: u32, rules: &DesignRules, active_area_length_mm: f64,
@@ -218,6 +223,38 @@ impl<'a> BoardHandle<'a> {
         &mut self,
         result: &RoutingResult, num_layers: u32, rules: &DesignRules, active_area_length_mm: f64,
     ) -> Result<WriteCoilsResult, KiCadError>;                   // no IPC traffic
+}
+```
+
+The diagnostics queries (added in kata ze9f):
+
+- `get_net_names` — `GetNets` (no netclass filter); nets with an empty name
+  are skipped.
+- `get_effective_net_classes` — `GetNetClassForNets`, returning the distinct,
+  sorted names of the net classes **effectively in use** by the given nets. A
+  net's effective class is KiCad's merged/composite class when the net belongs
+  to several classes; composite classes have no name of their own, so their
+  constituent explicit class names are surfaced. This is *not* the project's
+  global netclass list — the IPC has no such command, and classes with no nets
+  assigned do not appear here.
+- `get_edge_cut_bbox_mm` — `GetItems` restricted to `KOT_PCB_SHAPE`, filtered
+  client-side to the `Edge.Cuts` layer, with the axis-aligned bounding box
+  computed client-side in exact geometry (arc axis extremes and bezier
+  interior extrema included). The IPC has no `GetBoardBounds` command, so this
+  derivation is the real source of the diagnostics bounding box. Returns
+  `Ok(None)` when the board has no edge-cut graphics. Edge-cut graphics inside
+  footprints are not returned by `GetItems` at the top level and are not part
+  of the box.
+- `get_board_origin` — `GetBoardOrigin` for the grid (`BotGrid`) or
+  drill/place-file (`BotDrill`) origin point. This is a single *point*, not
+  board bounds, and no `BoardDiagnostics` field represents one; it is exposed
+  for callers that need the origin and is deliberately not folded into the
+  edge-cut bounding box.
+
+```rust
+pub struct BoardBBoxMm {          // result of get_edge_cut_bbox_mm
+    pub x_min_mm: f64, pub y_min_mm: f64,
+    pub x_max_mm: f64, pub y_max_mm: f64,
 }
 ```
 
@@ -304,6 +341,23 @@ pub struct CoilPreviewLayer {
 }
 ```
 
+#### Diagnostics field provenance (kata ze9f)
+
+Since kata ze9f the snapshot is real per-field. It is **best-effort**: each
+backing query degrades to its neutral default on failure (unsupported
+command, empty board) without failing the whole call.
+
+| Field | Backing IPC command(s) | Degraded default | Notes |
+| ----- | ---------------------- | ---------------- | ----- |
+| `board_name` | document specifier (no IPC) | `""` | always real |
+| `copper_layer_count` | `GetBoardEnabledLayers` | `0` | always real |
+| `board_x/y_min/max_mm` | `GetItems` (`KOT_PCB_SHAPE`) → `Edge.Cuts` filter → client-side exact bbox | `0.0` | no `GetBoardBounds` command in the KiCad IPC; zeros when the board has no edge-cut graphics or the query fails |
+| `available_net_classes` | `GetNets` + `GetNetClassForNets` | `[]` | **effective per-net classes** (sorted, distinct) — not the project's global netclass list (no IPC command for that); classes with no nets assigned do not appear; composite classes surface their constituents |
+
+`GetBoardOrigin` also exists in the IPC but returns a single grid/drill origin
+*point*, not bounds; it is exposed via `BoardHandle::get_board_origin` and is
+deliberately not mixed into the edge-cut bounding box.
+
 ### 2.7 Layer map / units — `layer_map`
 
 ```rust
@@ -332,7 +386,9 @@ AxisAlignment, DocumentSpecifier, DocumentType, Distance, ItemHeader,
 ItemRequestStatus, Kiid, KiCadVersion, LibraryIdentifier, LockedState,
 ProjectSpecifier, Vector2, Vector3,
 // board types
-Arc, BoardLayer, Footprint, FootprintInstance, Net, Pad, PadType, Track, Via,
+Arc, BoardLayer, BoardOriginType, Footprint, FootprintInstance, Net, Pad, PadType, Track, Via,
+// diagnostics (kata ze9f)
+BoardBBoxMm,
 ```
 
 ---
@@ -399,7 +455,7 @@ let result = board.write_coils(&coils, num_layers, &rules, active_area_mm)?;
 | `layer_map`   | KiCad  | layer mapping + mm/nm conversion            |
 | `writer`      | KiCad  | `coils_to_board_items` / `io_elements_to_board_items` + item emitters (`track_writer`, `via_writer`, `pad_writer`) |
 | `commit`      | KiCad  | `Commit` atomic commit handle               |
-| `board`       | KiCad  | `BoardHandle`, `WriteCoilsResult`           |
+| `board`       | KiCad  | `BoardHandle`, `WriteCoilsResult`, `BoardBBoxMm` |
 | `diagnostics` | KiCad  | diagnostics, preconditions, preview         |
 
 ---

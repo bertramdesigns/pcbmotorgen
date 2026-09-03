@@ -8,9 +8,9 @@
 //! Three top-level helpers live here and in the submodules:
 //!
 //! 1. [`get_board_diagnostics`] (this module) — query the open board for its
-//!    name, copper layer count, and (where supported by the IPC) its
-//!    edge-cut bounding box and available net classes. Returns a
-//!    [`BoardDiagnostics`] struct.
+//!    name, copper layer count, edge-cut bounding box (via `GetItems` +
+//!    client-side geometry) and the net classes in use (via `GetNets` +
+//!    `GetNetClassForNets`). Returns a [`BoardDiagnostics`] struct.
 //!
 //! 2. [`precondition::validate_write_preconditions`] — pure function
 //!    comparing the generation spec against the live [`BoardDiagnostics`].
@@ -55,11 +55,11 @@ pub use preview::{preview_coils, CoilPreview, CoilPreviewLayer};
 /// the mismatch after the fact.
 ///
 /// `board_x_min_mm` / `board_x_max_mm` / `board_y_min_mm` / `board_y_max_mm`
-/// are populated from the board's edge cuts when the IPC supports that query.
-/// If the query is not available, they default to `0.0` and
-/// `available_net_classes` is empty — but `board_name` and
-/// `copper_layer_count` are always populated (the latter from
-/// `GetBoardEnabledLayers`, which is supported on KiCad 10).
+/// and `available_net_classes` are populated from the live board
+/// (kata ze9f). A snapshot is best-effort: if an individual backing query
+/// fails (e.g. KiCad does not handle it, or the board is empty), that field
+/// degrades to its neutral default — `0.0` for the bounding box, an empty
+/// list for the net classes — while the remaining fields stay real.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoardDiagnostics {
     /// File name of the open board, e.g. `"board.kicad_pcb"`. Empty if no
@@ -68,8 +68,11 @@ pub struct BoardDiagnostics {
     /// Number of copper layers enabled on the board (from
     /// `GetBoardEnabledLayers`).
     pub copper_layer_count: u32,
-    /// Bounding box of the board's edge cuts [mm]. Defaults to `0.0` if not
-    /// queryable — see [`board_x_min_mm`].
+    /// Bounding box of the board's edge-cut graphics [mm], derived from
+    /// `GetItems` (`KOT_PCB_SHAPE`) filtered to the `Edge.Cuts` layer and
+    /// computed client-side — the IPC has no `GetBoardBounds` command.
+    /// Defaults to `0.0` when the board has no edge-cut graphics or the
+    /// query fails — see [`board_x_min_mm`].
     pub board_x_min_mm: f64,
     /// See [`board_x_min_mm`].
     pub board_x_max_mm: f64,
@@ -77,8 +80,12 @@ pub struct BoardDiagnostics {
     pub board_y_min_mm: f64,
     /// See [`board_x_min_mm`].
     pub board_y_max_mm: f64,
-    /// Net class names defined on the board. Empty until the KiCad IPC
-    /// exposes a net-class query (kata ze9f).
+    /// Names of the net classes effectively in use on the board, sorted.
+    /// Backed by `GetNets` + `GetNetClassForNets` (the effective/merged
+    /// class per net). This is the set of classes **in use** — not the
+    /// project's full netclass list, which the IPC cannot list; a class
+    /// with no nets assigned does not appear. Composite (implicit) classes
+    /// surface their constituent explicit class names.
     pub available_net_classes: Vec<String>,
 }
 
@@ -101,31 +108,60 @@ impl BoardDiagnostics {
 
 /// Query the open KiCad board and return a [`BoardDiagnostics`] snapshot.
 ///
-/// `BoardHandle::get_copper_layer_count` always succeeds when the connection
-/// is up; `board_name` comes from the document specifier. The edge-cut
-/// bounding box and net-class list are **not** currently queryable via the
-/// KiCad 10 IPC (no matching `.proto` command in `kiapi.board.commands`), so
-/// they default to `0.0` and an empty list respectively — tracked for the
-/// real queries in kata ze9f.
+/// Per-field provenance (kata ze9f):
 ///
-/// Returns `Err` on connection failure or missing PCB document.
+/// | Field                | Backing IPC command(s)                             | Degraded default |
+/// |----------------------|----------------------------------------------------|------------------|
+/// | `board_name`         | document specifier (no IPC)                        | `""`             |
+/// | `copper_layer_count` | `GetBoardEnabledLayers`                            | `0`              |
+/// | `board_*_min/max_mm` | `GetItems` (`KOT_PCB_SHAPE`) → `Edge.Cuts` filter, | `0.0`            |
+/// |                      | client-side exact bbox (no `GetBoardBounds` in IPC)|                  |
+/// | `available_net_classes` | `GetNets` + `GetNetClassForNets` (effective     | `[]`             |
+/// |                      | per-net classes; no global netclass list in IPC)   |                  |
+///
+/// The snapshot is **best-effort**: each backing query degrades to its
+/// neutral default on failure (unsupported command, empty board, connection
+/// hiccup mid-snapshot) without failing the whole call, so the UI always
+/// gets a usable snapshot.
+///
+/// Note on `GetBoardOrigin`: the IPC exposes it, but it returns a single
+/// grid/drill origin *point*, not bounds, and no diagnostics field represents
+/// one — it is available separately via [`BoardHandle::get_board_origin`]
+/// and deliberately not mixed into the edge-cut bounding box.
+///
+/// Returns `Err` on connection failure before any query is made.
 pub fn get_board_diagnostics(
     board: &mut BoardHandle<'_>,
 ) -> Result<BoardDiagnostics, KiCadError> {
     let board_name = board.name().unwrap_or_default();
     let copper_layer_count = board.get_copper_layer_count().unwrap_or(0);
 
-    // Placeholder zeros / empty list until the KiCad IPC grows the
-    // GetBoardBounds / GetNetClasses commands (kata ze9f); the populated
-    // fields (name, layer count) are always real.
+    // Edge-cut bounding box: real via GetItems + client-side geometry.
+    // Degrades to placeholder zeros when the board has no edge-cut graphics
+    // or the query fails.
+    let bbox = board.get_edge_cut_bbox_mm().ok().flatten();
+    let (board_x_min_mm, board_x_max_mm, board_y_min_mm, board_y_max_mm) = match bbox {
+        Some(b) => (b.x_min_mm, b.x_max_mm, b.y_min_mm, b.y_max_mm),
+        None => (0.0, 0.0, 0.0, 0.0),
+    };
+
+    // Net classes: real via GetNets + GetNetClassForNets (effective class
+    // per net). Degrades to an empty list when the board has no nets or a
+    // query fails. An empty board sends no GetNetClassForNets request.
+    let available_net_classes = board
+        .get_net_names()
+        .ok()
+        .and_then(|nets| board.get_effective_net_classes(&nets).ok())
+        .unwrap_or_default();
+
     Ok(BoardDiagnostics {
         board_name,
         copper_layer_count,
-        board_x_min_mm: 0.0,
-        board_x_max_mm: 0.0,
-        board_y_min_mm: 0.0,
-        board_y_max_mm: 0.0,
-        available_net_classes: Vec::new(),
+        board_x_min_mm,
+        board_x_max_mm,
+        board_y_min_mm,
+        board_y_max_mm,
+        available_net_classes,
     })
 }
 
