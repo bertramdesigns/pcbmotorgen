@@ -22,6 +22,8 @@
 //! | `preview_coils`               | REAL (pure)   | Dry-run coil geometry preview (no IPC).  |
 //! | `sample_b_field`              | REAL          | Uses core `MagnetArray::bfield_grid`.    |
 //! | `export_coils_dxf`            | REAL          | Pure DXF R12 ASCII export (`pcbmotorgen-export`). |
+//! | `save_project`                | REAL          | Versioned `.pmproj` artifact, atomic write. |
+//! | `load_project`                | REAL          | Parse + migrate + validate a `.pmproj` artifact. |
 //! | `list_routing_patterns`       | REAL          | Routing-pattern plugin catalog.          |
 //! | `register_routing_plugin`     | REAL          | Load + persist a native/Python plugin.   |
 //! | `routing_pattern_parameters`  | REAL          | User-editable pattern params.            |
@@ -53,6 +55,7 @@
 //! - [`physics`] — config derived/validation, force, stackup, power, B-field.
 //! - [`kicad`] — KiCad IPC bridge (connect, write, diagnostics, preview).
 //! - [`dxf`] — DXF export.
+//! - [`project`] — project save/load (versioned `.pmproj`, kata 0cgm).
 //!
 //! Every public item is re-exported at this level, so `main.rs` can register
 //! handlers as `commands::routing_plugins::list_routing_patterns` or via the
@@ -61,6 +64,7 @@
 pub mod dxf;
 pub mod kicad;
 pub mod physics;
+pub mod project;
 pub mod routing_plugins;
 
 // Flat re-exports keep `commands::Foo` paths working for any consumer that
@@ -73,5 +77,7 @@ pub use dxf::*;
 pub use kicad::*;
 #[allow(unused_imports)]
 pub use physics::*;
+#[allow(unused_imports)]
+pub use project::*;
 #[allow(unused_imports)]
 pub use routing_plugins::*;
