@@ -42,6 +42,7 @@ app crate or on `pcbmotorgen-export`. It depends on:
 | `magnetic::force_eval` | `ForceEvaluator`, `CommutationMode`, `ForceResult`. |
 | `stackup` | `HeightStackCalculator`, `PowerEstimator`, `FrictionEstimator`. |
 | `equilibrium` | Mover equilibrium rest positions + travel envelope (Clarke baseline). |
+| `equilibrium::charge` | Charge-based travel endpoints (kata k5r5) — first/last magnet equilibrium under the phase-band charge state. |
 
 ### Re-exported routing types
 
@@ -708,6 +709,75 @@ rest-snapped revisions after field verification):
 
 Exposed to the desktop UI as the `travel_envelope` command
 (`TravelEnvelopeIpc`).
+
+## 10c. Charge-based travel endpoints: `equilibrium::charge` (kata k5r5)
+
+The ELECTROMAGNETIC refinement of §10b's endpoints: the true min/max mover
+position derives from the charge within the first and last phase bands of
+each phase. With the reference phase's first (resp. last) band fully charged
+and the remaining phases at their commutation-model offsets, that three-phase
+charge state fixes where the FIRST (resp. LAST) magnet settles; with 1:1
+spacing only the two end magnets need solving (rigid mover, interior magnets
+follow at fixed pitch — pinned by test).
+
+```rust
+pub enum EndMagnet { First, Last }
+
+pub struct PhaseCharge { pub label: String, pub charge: f64 }  // normalized, peak = 1
+
+// Charge state of the first/last phase-band triplet (declared bands when
+// present — hzs2 discipline — analytic slot-model fallback otherwise).
+pub fn band_charge_state(config: &SimulationInput, end: EndMagnet,
+                         copper_region_start_m: f64, copper_region_end_m: f64)
+    -> Option<Vec<PhaseCharge>>;
+
+// Clarke electrical angle [rad] of a 3-phase charge state, (−π, π] — the
+// analytic reference (baseline (1, 0, −1) → π/6, the P_e/12 lattice pin).
+pub fn charge_state_electrical_angle(charge: &[f64]) -> Option<f64>;
+
+// THE SOLVE: stable rest of the end magnet [m] (track coords of its centre)
+// under the fixed charge excitation — zero of the end magnet's force curve
+// (single-magnet assembly, the exact per-magnet decomposition of the
+// ForceEvaluator model), deterministic grid bracketing + bisection to
+// REST_TOLERANCE_M = 1e-9 m; zeros classified by the rigid mover's
+// total-force slope (restoring = stable). First: window
+// [copper_start − P_e/2, copper_start + P_e], leftmost stable zero;
+// Last: [copper_end − P_e, copper_end + P_e/2], rightmost stable zero.
+pub fn solve_end_magnet_rest_m(config: &SimulationInput, coils: &[PhaseCoil],
+                               charge: &[PhaseCharge], end: EndMagnet,
+                               copper_region_start_m: f64, copper_region_end_m: f64)
+    -> Option<f64>;
+
+// RAW endpoints (array centre) from both end solves. May sit outside the
+// design limits; None when either solve is undefined.
+pub fn charge_based_endpoints_m(config: &SimulationInput, coils: &[PhaseCoil],
+                                copper_region_start_m: f64, copper_region_end_m: f64)
+    -> Option<(f64, f64)>;
+
+// Refined envelope: the raw endpoints CLAMPED INTO the span-aware flush
+// limits of travel_envelope_over_slots — the geometric clamp is the
+// documented mechanical LIMIT (the refinement only pulls endpoints inward)
+// and the FALLBACK (no coils / non-3-phase / degenerate copper → the flush
+// envelope unchanged). rest_phase_m / electrical_period_m unchanged.
+pub fn travel_envelope_charge_based(config: &SimulationInput, coils: &[PhaseCoil],
+                                    copper_region_start_m: f64, copper_region_end_m: f64)
+    -> TravelEnvelope;
+```
+
+Measured reference-fixture behaviour (N = 12, P_e = 12 mm, copper [0, 147] mm,
+serpentine fixture): the first-band charge state `(1, 0.5, −0.5)` settles the
+first magnet at ≈ −2.89 mm and the last-band state `(1, −0.5, 0.5)` the last
+magnet at ≈ +147.02 mm — BOTH raw rests overhang the copper-bounded design
+limits (raw endpoints ≈ [30.11, 114.02] mm array centre), so the refined
+envelope EQUALS the flush clamp **[36, 111] mm**: the authority's reference
+output is unchanged by the refinement (no desktop pin churn; kata ab30 pins
+stay valid). On other fixtures the rests can land inside the limits and the
+refinement pulls the endpoints inward. The pinned invariants: interior zero
+recurrence at exactly P_e, reversed-charge half-period (P_e/2) symmetry, and
+the interior rigid pitch τ_p. The requester's "120° offset" phrasing is the
+classic balanced-law convention (glossary "Commutation"); the solver consumes
+whatever offsets the commutation model declares (60° for the default 3-phase
+1:1 layout — the general per-coil offset law).
 
 ## 11. Re-exports
 
