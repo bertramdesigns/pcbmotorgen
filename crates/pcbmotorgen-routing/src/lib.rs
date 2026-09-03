@@ -59,8 +59,9 @@ pub use dimensions::{
 };
 pub use error::RoutingError;
 pub use generate::{
-    available_pattern_ids, available_pattern_metadata, bundled_registry,
-    generate_coils_from_context, generate_routing_report, generate_routing_result,
+    IoFanoutEdge, IoFanoutOptions, available_pattern_ids, available_pattern_metadata,
+    bundled_registry, generate_coils_from_context, generate_io_fanout, generate_routing_report,
+    generate_routing_report_with_io, generate_routing_result, generate_routing_result_with_io,
     pattern_metadata, pattern_parameters, register_native_plugin, register_python_runner,
     register_runtime_pattern, routing_result_to_phase_coils, unregister_runtime_pattern,
     validate_routing_params,

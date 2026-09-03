@@ -9,8 +9,10 @@
 //!
 //! This module is DEFINITIONS ONLY. A routing pattern declares the pads it
 //! needs and the fanout traces connecting coil terminals to them; the host,
-//! validator, and export crate only transport, validate, and emit them. No
-//! IO-routing generation lives here (tracked separately).
+//! validator, and export crate only transport, validate, and emit them.
+//! Host-side IO fanout *generation* (kata xa0f) lives in the generate
+//! facade (`generate::io_fanout`) and appends these elements after pattern
+//! generation, before validation.
 //!
 //! - [`IoPad`] — one connector/IC pad: position, pad-stack dimensions, net,
 //!   copper layer(s), and pad kind (SMD / THT / board-edge).
