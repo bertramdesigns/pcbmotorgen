@@ -40,6 +40,15 @@
 //! Per the glossary the braid is slotless (no physical slots): the declaration
 //! is the equivalent leg-pitch model of its interleaved active segments, and
 //! each strand remains a single-trace leg for the per-record slot width.
+//!
+//! ## Declared phase bands
+//!
+//! The braid also declares its phase bands on the result
+//! (`RoutingResult::phase_bands`, kata hzs2): one record per `(layer, net)`
+//! with the band's first-repeat centerline taken from its first pole region,
+//! the full along-travel span of its pole regions as extent, the full board
+//! width as y-extent, and the braided shape. The declaration is consistent
+//! with the `pole_regions` emission by construction.
 
 mod diamonds;
 mod peaks_valleys;
@@ -47,7 +56,9 @@ mod segments;
 
 use crate::context::RoutingContext;
 use crate::error::{RoutingError, RoutingErrorKind};
-use crate::model::{LegGrid, Point, PoleRegion, RouteSegment, RoutingResult, Via};
+use crate::model::{
+    LegGrid, PhaseBand, PhaseBandShape, Point, PoleRegion, RouteSegment, RoutingResult, Via,
+};
 use crate::pattern::RoutingPattern;
 
 use self::diamonds::{compute_diamonds, compute_endpoints, compute_pole_region_xs};
@@ -130,6 +141,7 @@ impl RoutingPattern for InfinityBraidPattern {
             vias: geometry.vias,
             pole_regions: geometry.pole_regions,
             leg_grid,
+            phase_bands: geometry.phase_bands,
             ..Default::default()
         })
     }
@@ -250,6 +262,7 @@ struct BraidGeometry {
     segments: Vec<RouteSegment>,
     vias: Vec<Via>,
     pole_regions: Vec<PoleRegion>,
+    phase_bands: Vec<PhaseBand>,
 }
 
 /// Emit the per-phase diamond geometry: two segment layers (top / bottom),
@@ -266,6 +279,7 @@ fn braid_geometry(
         segments: Vec::new(),
         vias: Vec::new(),
         pole_regions: Vec::new(),
+        phase_bands: Vec::new(),
     };
 
     for i in 0..phases {
@@ -282,15 +296,33 @@ fn braid_geometry(
             amplitude_mm,
         );
         let (points_obj, flatlist) = compute_endpoints(&diamonds);
-        for (pole_index, (start_x, end_x)) in
-            compute_pole_region_xs(&diamonds).into_iter().enumerate()
-        {
+        let region_xs = compute_pole_region_xs(&diamonds);
+        for (pole_index, (start_x, end_x)) in region_xs.iter().enumerate() {
             geometry.pole_regions.push(PoleRegion {
                 phase: net.clone(),
                 pole_index: pole_index as u32,
-                start: Point::new(start_x, amplitude_mm),
-                end: Point::new(end_x, amplitude_mm),
+                start: Point::new(*start_x, amplitude_mm),
+                end: Point::new(*end_x, amplitude_mm),
             });
+        }
+        // Declared phase bands (kata hzs2), consistent with the pole regions:
+        // the centerline is the first region's center (the band's first
+        // repeat — adjacent phases sit one phase-band pitch apart), the
+        // extent spans all of the phase's pole regions, and the diamonds map
+        // onto the full board width [0, 2a].
+        if let (Some(first), Some(last)) = (region_xs.first(), region_xs.last()) {
+            for layer in 0..2u32 {
+                geometry.phase_bands.push(PhaseBand {
+                    layer,
+                    net: net.clone(),
+                    centerline_x_mm: (first.0 + first.1) / 2.0,
+                    start_x_mm: first.0,
+                    end_x_mm: last.1,
+                    y_min_mm: 0.0,
+                    y_max_mm: 2.0 * amplitude_mm,
+                    shape: PhaseBandShape::Braided,
+                });
+            }
         }
 
         for (s, e) in compute_top_layer_segments(&points_obj) {
@@ -558,6 +590,77 @@ mod tests {
             let slot = band.slot_width_mm.expect("single-leg slot width");
             assert!(slot < band.band_width_mm, "slot {slot} vs band {}", band.band_width_mm);
         }
+    }
+
+    #[test]
+    fn declares_phase_bands_consistent_with_its_pole_regions() {
+        // Magnet-aware braid: one band per (layer, net), centerline at the
+        // first pole region's center, extent spanning all of the phase's
+        // pole regions, braided shape across the full board width.
+        let report = crate::generate_routing_report(&magnet_ctx(), "infinity-braid")
+            .expect("reference braid report");
+        let bands = &report.result.phase_bands;
+        assert_eq!(bands.len(), 2 * magnet_ctx().phases as usize);
+
+        for phase in ["A", "B", "C"] {
+            let regions: Vec<&crate::model::PoleRegion> = report
+                .result
+                .pole_regions
+                .iter()
+                .filter(|region| region.phase == phase)
+                .collect();
+            assert!(!regions.is_empty());
+            for layer in [0u32, 1u32] {
+                let band = bands
+                    .iter()
+                    .find(|band| band.net == phase && band.layer == layer)
+                    .expect("declared band per (layer, net)");
+                assert_eq!(band.shape, crate::model::PhaseBandShape::Braided);
+                assert_eq!(band.y_min_mm, 0.0);
+                assert_eq!(band.y_max_mm, magnet_ctx().board_width_mm);
+                assert_eq!(band.start_x_mm, regions[0].start.x);
+                assert_eq!(band.end_x_mm, regions.last().unwrap().end.x);
+                let first_center = (regions[0].start.x + regions[0].end.x) / 2.0;
+                assert_eq!(band.centerline_x_mm, first_center);
+                assert!(band.start_x_mm < band.centerline_x_mm);
+                assert!(band.centerline_x_mm < band.end_x_mm);
+            }
+        }
+
+        // Adjacent phase centerlines sit exactly one phase-band pitch apart:
+        // the commutation offsets read from the declaration equal the
+        // analytic pi * tau_band / tau_p law.
+        let pitch = magnet_ctx().magnet_pitch().unwrap();
+        let tau_band = pitch / f64::from(magnet_ctx().phases);
+        let center = |phase: &str, layer: u32| {
+            bands
+                .iter()
+                .find(|band| band.net == phase && band.layer == layer)
+                .unwrap()
+                .centerline_x_mm
+        };
+        assert!((center("B", 0) - center("A", 0) - tau_band).abs() < 1e-9);
+        assert!((center("C", 0) - center("B", 0) - tau_band).abs() < 1e-9);
+        // Layer copies share the phase geometry.
+        assert_eq!(center("A", 0), center("A", 1));
+
+        // The declared sidecar records carry derived = false.
+        assert!(report
+            .dimensions
+            .phase_bands
+            .iter()
+            .all(|record| !record.derived));
+        assert_eq!(report.dimensions.phase_bands.len(), bands.len());
+
+        // Fallback braid (no magnet layout) declares bands too.
+        let fallback = crate::generate_routing_report(&ctx(), "infinity-braid")
+            .expect("fallback braid report");
+        assert_eq!(fallback.result.phase_bands.len(), 2 * ctx().phases as usize);
+        assert!(fallback
+            .dimensions
+            .phase_bands
+            .iter()
+            .all(|record| !record.derived));
     }
 
     #[test]

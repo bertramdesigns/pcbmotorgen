@@ -118,6 +118,7 @@ The canonical geometry document. Every element carries its own `layer` and
 | `vias[]`         | via       | Inter-layer connections: `position`, `from_layer`, `to_layer`, `net`. |
 | `pole_regions[]` | region    | Optional pattern-defined phase/pole-pitch regions.                |
 | `leg_grid`       | `object?` | Optional pattern-declared leg grid `{ slot_count, strands_per_leg? }` — the equivalent slot model of the generated active legs; drives the host's per-slot metrics. Additive; omit when the pattern has no regular leg grid. |
+| `phase_bands[]`  | band      | Optional pattern-declared phase-band geometry (kata hzs2): one record per `(layer, net)` band with `centerline_x_mm`, `start_x_mm`/`end_x_mm`, `y_min_mm`/`y_max_mm` [mm] and `shape` (`linear` \| `braided`). Additive; omit when the pattern has no band layout to declare. |
 
 `is_active` distinguishes **force-producing conductors** (`true`) from
 **end-turn connectors** (`false`).
@@ -204,6 +205,7 @@ complete validated pattern output.
 | `interleave_step_mm` | `f64?` | Effective leg pitch of braided slotless patterns, `tau_p / (phases × strands)` [mm]. |
 | `phase_band_widths` | array | Per-active `(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries for each phase and pole pitch [mm]. |
+| `phase_bands` | array | Resolved per-`(layer, net)` phase-band geometry (kata hzs2): the pattern's declared bands (`derived: false`) or host-derived bands from the ideal phase-band pitch `τ_p/phases` (`derived: true`). Empty when there is no declaration and no pole pitch. |
 
 Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
 (`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), `band_width_mm`, the
@@ -216,6 +218,18 @@ the ideal phase-band pitch `tau_p / phases`; it is separate from the conductor
 band width in each `phase_band_widths[]` record, and separate from the true
 slot pitch `slot_pitch_mm` (see the routing API reference §10.2 for the
 pattern-declared `leg_grid` that drives the per-slot fields).
+
+`phase_bands[]` in the sidecar is the first-class position + shape record
+for phase bands (kata hzs2): patterns may declare their bands on the result
+(`RoutingResult.phase_bands`, additive serde default) and the host resolves
+them — declared records pass through marked `derived: false`; when a pattern
+declares none, the host derives one band per active `(layer, net)` group from
+the ideal phase-band pitch `τ_band = τ_p/phases` (net `p` among the distinct
+nets takes extent `[p·τ_band, (p+1)·τ_band]`, centerline
+`p·τ_band + τ_band/2`, full board width as y-extent, linear shape) and marks
+it `derived: true`. Simulation commutation derives per-phase electrical
+offsets from the declared centerlines when present; the analytic
+`spacing_ratio·τ_p/phases` law remains the fallback.
 
 `pole_regions[]` is the authoritative region interface for magnet/pole
 placement. It is deliberately emitted by the pattern rather than inferred by

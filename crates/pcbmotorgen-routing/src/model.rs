@@ -109,6 +109,56 @@ pub struct LegGrid {
     pub strands_per_leg: Option<u32>,
 }
 
+/// How a declared phase band occupies its across-travel (y) extent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhaseBandShape {
+    /// Straight band: active legs cross the y-extent at a fixed angle
+    /// (e.g. a serpentine winding).
+    Linear,
+    /// Braided weave: the band's strands cross each other over the y-extent
+    /// (e.g. the infinity braid's diamonds).
+    Braided,
+}
+
+/// Pattern-declared phase-band geometry for one `(layer, net)` group (kata
+/// hzs2): the first-class position + shape contract that simulation
+/// commutation and equilibrium read.
+///
+/// This is the position/shape counterpart of the host-calculated
+/// [`PhaseBandWidth`](crate::dimensions::PhaseBandWidth) budget record: the
+/// pattern declares WHERE its phase band sits, the host derives how wide the
+/// conductor bundle is. Declaring is optional metadata; a pattern without a
+/// declaration gets host-derived bands in the dimension sidecar
+/// (`RoutingDimensions.phase_bands`, marked `derived`), built from the ideal
+/// phase-band pitch `tau_p / phases`.
+///
+/// All coordinates are millimetres, x = travel axis.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhaseBand {
+    /// Copper layer carrying this band.
+    pub layer: Layer,
+    /// Phase/net label carrying this band.
+    pub net: Net,
+    /// Centerline x of the band's first repeating instance [mm] — the phase
+    /// reference position. Consumers derive the per-phase electrical offsets
+    /// from the centerline distances to the reference phase (glossary
+    /// "Commutation": offset = pi · dx / tau_p). For a band laid out as a
+    /// single instance this is the band's own centerline.
+    pub centerline_x_mm: f64,
+    /// Along-travel extent start [mm], as the pattern lays the band out.
+    /// For a repeating layout this spans all repeats of the band.
+    pub start_x_mm: f64,
+    /// Along-travel extent end [mm]; must be greater than `start_x_mm`.
+    pub end_x_mm: f64,
+    /// Across-travel extent lower bound [mm].
+    pub y_min_mm: f64,
+    /// Across-travel extent upper bound [mm]; must be greater than `y_min_mm`.
+    pub y_max_mm: f64,
+    /// How the band occupies its y-extent.
+    pub shape: PhaseBandShape,
+}
+
 /// The complete geometry a routing pattern produces for a board.
 ///
 /// All elements carry their own `layer` and `net` — the pattern owns layer
@@ -129,6 +179,12 @@ pub struct RoutingResult {
     /// generated active legs). Additive; absent for legacy payloads.
     #[serde(default)]
     pub leg_grid: Option<LegGrid>,
+    /// Pattern-declared phase-band geometry, one record per `(layer, net)`
+    /// band (kata hzs2). Additive; absent for legacy payloads. When empty,
+    /// the host derives bands from the ideal phase-band pitch and marks them
+    /// as derived in the dimension sidecar.
+    #[serde(default)]
+    pub phase_bands: Vec<PhaseBand>,
 }
 
 impl Default for RoutingResult {
@@ -140,6 +196,7 @@ impl Default for RoutingResult {
             vias: Vec::new(),
             pole_regions: Vec::new(),
             leg_grid: None,
+            phase_bands: Vec::new(),
         }
     }
 }
@@ -191,6 +248,45 @@ mod tests {
         };
         let json = serde_json::to_string(&declared).expect("serialize");
         assert!(json.contains("\"slot_count\":975"));
+        let back: RoutingResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, declared);
+    }
+
+    #[test]
+    fn absent_phase_bands_default_to_empty_and_declared_bands_round_trip() {
+        // Legacy payloads without the additive `phase_bands` field.
+        let json = r#"{"segments": [], "curves": [], "vias": []}"#;
+        let r: RoutingResult = serde_json::from_str(json).expect("legacy result JSON");
+        assert!(r.phase_bands.is_empty());
+
+        let declared = RoutingResult {
+            phase_bands: vec![
+                PhaseBand {
+                    layer: 0,
+                    net: "A".into(),
+                    centerline_x_mm: 2.0,
+                    start_x_mm: 0.0,
+                    end_x_mm: 4.0,
+                    y_min_mm: 0.0,
+                    y_max_mm: 20.0,
+                    shape: PhaseBandShape::Linear,
+                },
+                PhaseBand {
+                    layer: 0,
+                    net: "B".into(),
+                    centerline_x_mm: 6.0,
+                    start_x_mm: 4.0,
+                    end_x_mm: 8.0,
+                    y_min_mm: 0.0,
+                    y_max_mm: 20.0,
+                    shape: PhaseBandShape::Braided,
+                },
+            ],
+            ..RoutingResult::default()
+        };
+        let json = serde_json::to_string(&declared).expect("serialize");
+        assert!(json.contains("\"centerline_x_mm\":2.0"));
+        assert!(json.contains("\"shape\":\"braided\""));
         let back: RoutingResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, declared);
     }

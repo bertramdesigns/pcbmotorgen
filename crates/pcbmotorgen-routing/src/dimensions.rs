@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::context::RoutingContext;
 use crate::error::{RoutingError, RoutingErrorKind};
-use crate::model::{Layer, Point, PoleRegion, RoutingResult};
+use crate::model::{Layer, PhaseBand, PhaseBandShape, Point, PoleRegion, RoutingResult};
 
 const EPS: f64 = 1e-12;
 
@@ -74,6 +74,22 @@ pub struct PhaseBandWidth {
     /// `max_band_width_mm - band_width_mm`, when a pole pitch is known [mm].
     #[serde(default)]
     pub margin_mm: Option<f64>,
+}
+
+/// One resolved phase-band record in the [`RoutingDimensions`] sidecar.
+///
+/// Either the pattern's declared [`PhaseBand`] (copied verbatim,
+/// `derived = false`) or a host-derived band built from the ideal phase-band
+/// pitch `tau_p / phases` (`derived = true`) when the pattern declares none.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedPhaseBand {
+    /// The band geometry (declaration or host derivation).
+    #[serde(flatten)]
+    pub band: PhaseBand,
+    /// True when the host derived this band from the ideal phase-band pitch
+    /// because the pattern declared no bands.
+    #[serde(default)]
+    pub derived: bool,
 }
 
 /// Dimensions needed to hand generated traces off to magnet-pattern and
@@ -156,6 +172,13 @@ pub struct RoutingDimensions {
     /// Pattern-defined pole regions copied from the canonical result.
     #[serde(default)]
     pub pole_regions: Vec<PoleRegion>,
+    /// Resolved per-`(layer, net)` phase-band geometry (kata hzs2): the
+    /// pattern's declared bands, or host-derived bands from the ideal
+    /// phase-band pitch `tau_p / phases` when the pattern declares none
+    /// (those are marked `derived`). Empty when there is no pole pitch and
+    /// no declaration.
+    #[serde(default)]
+    pub phase_bands: Vec<ResolvedPhaseBand>,
 }
 
 impl Default for RoutingDimensions {
@@ -177,6 +200,7 @@ impl Default for RoutingDimensions {
             interleave_step_mm: None,
             phase_band_widths: Vec::new(),
             pole_regions: Vec::new(),
+            phase_bands: Vec::new(),
         }
     }
 }
@@ -266,6 +290,8 @@ impl RoutingDimensions {
             declared_slot_metrics(result, ctx, pole_pitch_mm, phases);
 
         let groups = collect_active_paths(result);
+        let phase_bands =
+            resolve_phase_bands(result, &groups, phase_band_pitch_mm, ctx.board_width_mm);
         let phase_band_widths = phase_band_records(
             groups,
             ctx,
@@ -291,8 +317,67 @@ impl RoutingDimensions {
             interleave_step_mm,
             phase_band_widths,
             pole_regions: result.pole_regions.clone(),
+            phase_bands,
         })
     }
+}
+
+/// Resolve the sidecar phase-band records for a result.
+///
+/// Declared bands (`RoutingResult.phase_bands`) are copied verbatim and
+/// marked `derived = false`. When the pattern declares none, the host derives
+/// one band per active `(layer, net)` group from the ideal phase-band pitch
+/// `tau_band = tau_p / phases` (glossary "Phase Band"): the group's net takes
+/// phase slot `p` — its index among the distinct active nets — with extent
+/// `[p · tau_band, (p + 1) · tau_band]`, centerline `p · tau_band + tau_band / 2`,
+/// the full board width as y-extent, and a linear shape. Derived records are
+/// marked `derived = true`. Without a pole pitch there is nothing to derive
+/// from and the sidecar stays empty.
+fn resolve_phase_bands(
+    result: &RoutingResult,
+    groups: &BTreeMap<(Layer, String), Vec<(Point, Point)>>,
+    phase_band_pitch_mm: Option<f64>,
+    board_width_mm: f64,
+) -> Vec<ResolvedPhaseBand> {
+    if !result.phase_bands.is_empty() {
+        return result
+            .phase_bands
+            .iter()
+            .map(|band| ResolvedPhaseBand {
+                band: band.clone(),
+                derived: false,
+            })
+            .collect();
+    }
+    let Some(pitch) = phase_band_pitch_mm else {
+        return Vec::new();
+    };
+    let nets: Vec<&str> = {
+        let mut sorted: Vec<&str> = groups.keys().map(|(_, net)| net.as_str()).collect();
+        sorted.sort_unstable();
+        sorted.dedup();
+        sorted
+    };
+    groups
+        .keys()
+        .map(|(layer, net)| {
+            let slot = nets.iter().position(|candidate| *candidate == net.as_str()).unwrap_or(0);
+            let start_x = slot as f64 * pitch;
+            ResolvedPhaseBand {
+                band: PhaseBand {
+                    layer: *layer,
+                    net: net.clone(),
+                    centerline_x_mm: start_x + pitch / 2.0,
+                    start_x_mm: start_x,
+                    end_x_mm: start_x + pitch,
+                    y_min_mm: 0.0,
+                    y_max_mm: board_width_mm,
+                    shape: PhaseBandShape::Linear,
+                },
+                derived: true,
+            }
+        })
+        .collect()
 }
 
 /// Validated pole pitch from the context: `None` when the context carries no
@@ -837,6 +922,172 @@ mod tests {
         }"#;
         let result: Result<RoutingDimensions, _> = serde_json::from_str(payload);
         assert!(result.is_err(), "missing band_width_mm must be rejected");
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase-band geometry (kata hzs2): declared vs derived
+    // -----------------------------------------------------------------------
+
+    use crate::model::PhaseBandShape;
+
+    /// Two-band result: one band per net on layer 0 (serpentine-like).
+    fn two_band_result() -> RoutingResult {
+        RoutingResult {
+            segments: vec![RouteSegment {
+                start: Point::new(0.0, 0.0),
+                end: Point::new(10.0, 10.0),
+                layer: 0,
+                net: "A".to_string(),
+                is_active: true,
+            }],
+            phase_bands: vec![
+                crate::model::PhaseBand {
+                    layer: 0,
+                    net: "A".into(),
+                    centerline_x_mm: 2.0,
+                    start_x_mm: 0.0,
+                    end_x_mm: 4.0,
+                    y_min_mm: 0.0,
+                    y_max_mm: 20.0,
+                    shape: PhaseBandShape::Linear,
+                },
+                crate::model::PhaseBand {
+                    layer: 0,
+                    net: "B".into(),
+                    centerline_x_mm: 6.0,
+                    start_x_mm: 4.0,
+                    end_x_mm: 8.0,
+                    y_min_mm: 0.5,
+                    y_max_mm: 19.5,
+                    shape: PhaseBandShape::Braided,
+                },
+            ],
+            ..RoutingResult::default()
+        }
+    }
+
+    #[test]
+    fn declared_phase_bands_pass_through_marked_not_derived() {
+        let dimensions = RoutingDimensions::from_result(&two_band_result(), &context()).unwrap();
+        assert_eq!(dimensions.phase_bands.len(), 2);
+        for (record, expected) in dimensions.phase_bands.iter().zip(two_band_result().phase_bands) {
+            assert!(!record.derived, "declared bands must not be marked derived");
+            assert_eq!(record.band, expected);
+        }
+        // The sidecar round-trips as JSON with the flattened band fields.
+        let json = serde_json::to_string(&dimensions).unwrap();
+        let back: RoutingDimensions = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, dimensions);
+        assert!(json.contains("\"centerline_x_mm\":6.0"));
+        assert!(json.contains("\"derived\":false"));
+    }
+
+    #[test]
+    fn absent_phase_bands_are_derived_from_the_ideal_phase_band_pitch() {
+        // No declaration: the host derives one band per active (layer, net)
+        // group from tau_band = tau_p / phases = 4 mm. Two groups on two
+        // layers sharing net "A" -> both take phase slot 0.
+        let result = RoutingResult {
+            segments: vec![
+                RouteSegment {
+                    start: Point::new(0.0, 0.0),
+                    end: Point::new(10.0, 10.0),
+                    layer: 0,
+                    net: "A".to_string(),
+                    is_active: true,
+                },
+                RouteSegment {
+                    start: Point::new(0.0, 10.0),
+                    end: Point::new(10.0, 0.0),
+                    layer: 1,
+                    net: "A".to_string(),
+                    is_active: true,
+                },
+            ],
+            ..RoutingResult::default()
+        };
+        let dimensions = RoutingDimensions::from_result(&result, &context()).unwrap();
+        assert_eq!(dimensions.phase_bands.len(), 2);
+        for record in &dimensions.phase_bands {
+            assert!(record.derived, "fallback bands must be marked derived");
+            assert_eq!(record.band.net, "A");
+            // Phase slot 0: extent [0, tau_band], centerline tau_band / 2.
+            assert_eq!(record.band.start_x_mm, 0.0);
+            assert_eq!(record.band.end_x_mm, 4.0);
+            assert_eq!(record.band.centerline_x_mm, 2.0);
+            assert_eq!(record.band.y_min_mm, 0.0);
+            assert_eq!(record.band.y_max_mm, 20.0);
+            assert_eq!(record.band.shape, PhaseBandShape::Linear);
+        }
+        assert_eq!(dimensions.phase_bands[0].band.layer, 0);
+        assert_eq!(dimensions.phase_bands[1].band.layer, 1);
+    }
+
+    #[test]
+    fn derived_phase_bands_slot_nets_in_sorted_order() {
+        // Nets B and A on layer 0: sorted net order gives A slot 0, B slot 1.
+        let result = RoutingResult {
+            segments: vec![
+                RouteSegment {
+                    start: Point::new(0.0, 0.0),
+                    end: Point::new(10.0, 10.0),
+                    layer: 0,
+                    net: "B".to_string(),
+                    is_active: true,
+                },
+                RouteSegment {
+                    start: Point::new(0.0, 10.0),
+                    end: Point::new(10.0, 0.0),
+                    layer: 0,
+                    net: "A".to_string(),
+                    is_active: true,
+                },
+            ],
+            ..RoutingResult::default()
+        };
+        let dimensions = RoutingDimensions::from_result(&result, &context()).unwrap();
+        assert_eq!(dimensions.phase_bands.len(), 2);
+        let a = dimensions
+            .phase_bands
+            .iter()
+            .find(|record| record.band.net == "A")
+            .expect("band for net A");
+        let b = dimensions
+            .phase_bands
+            .iter()
+            .find(|record| record.band.net == "B")
+            .expect("band for net B");
+        // A slot 0: [0, 4]; B slot 1: [4, 8]; adjacent centerlines one
+        // phase-band pitch apart.
+        assert_eq!(a.band.start_x_mm, 0.0);
+        assert_eq!(a.band.end_x_mm, 4.0);
+        assert_eq!(b.band.start_x_mm, 4.0);
+        assert_eq!(b.band.end_x_mm, 8.0);
+        assert_eq!(b.band.centerline_x_mm - a.band.centerline_x_mm, 4.0);
+        assert!(a.derived && b.derived);
+    }
+
+    #[test]
+    fn no_pole_pitch_yields_no_derived_phase_bands() {
+        let mut ctx = context();
+        ctx.magnet_pitch_mm = None;
+        let result = RoutingResult {
+            segments: vec![RouteSegment {
+                start: Point::new(0.0, 0.0),
+                end: Point::new(10.0, 10.0),
+                layer: 0,
+                net: "A".to_string(),
+                is_active: true,
+            }],
+            ..RoutingResult::default()
+        };
+        let dimensions = RoutingDimensions::from_result(&result, &ctx).unwrap();
+        assert!(dimensions.phase_bands.is_empty());
+        // ... while a declaration still passes through without a pole pitch.
+        let declared = two_band_result();
+        let dimensions = RoutingDimensions::from_result(&declared, &ctx).unwrap();
+        assert_eq!(dimensions.phase_bands.len(), 2);
+        assert!(dimensions.phase_bands.iter().all(|record| !record.derived));
     }
 
     // -----------------------------------------------------------------------

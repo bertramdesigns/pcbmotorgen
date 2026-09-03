@@ -186,6 +186,19 @@ no trace widths, via sizes, or KiCad layer names.
       "start": { "x": 0.0, "y": 10.0 },
       "end": { "x": 12.0, "y": 10.0 }
     }
+  ],
+  "leg_grid": { "slot_count": 975, "strands_per_leg": 5 },
+  "phase_bands": [
+    {
+      "layer": 0,
+      "net": "A",
+      "centerline_x_mm": 7.6,
+      "start_x_mm": 1.6,
+      "end_x_mm": 781.6,
+      "y_min_mm": 0.0,
+      "y_max_mm": 20.0,
+      "shape": "braided"
+    }
   ]
 }
 ```
@@ -197,6 +210,8 @@ no trace widths, via sizes, or KiCad layer names.
 | `curves[]` | curve | Rounded corners / arcs — quadratic Bézier `start → mid → end`; `mid` is the control point on the arc (matches KiCad `(arc start mid end)`). |
 | `vias[]` | via | Inter-layer connections: `position`, `from_layer`, `to_layer`, `net`. |
 | `pole_regions[]` | region | Pattern-defined phase/pole-pitch boundaries: `phase`, zero-based `pole_index`, millimetre `start`/`end` points. Optional. |
+| `leg_grid` | `object?` | Optional pattern-declared leg grid (see §10.2). |
+| `phase_bands[]` | band | Optional pattern-declared phase-band geometry, one record per `(layer, net)` band (see §5.2). Additive; omit when the pattern has no band layout to declare. |
 
 `is_active` distinguishes **force-producing conductors** (`true`) from
 **end-turn connectors** (`false`).
@@ -216,6 +231,45 @@ the following region's start. Point 0 (the top vertex) is not used as the pole
 boundary. The first and last regions are centered/extrapolated from the
 neighboring median spacing so they have the same width as the interior regions
 rather than being clipped to the first or last generated point.
+
+### 5.2 Phase bands (declared geometry, kata hzs2)
+
+`phase_bands[]` is the first-class position + shape contract for phase bands —
+the position/shape counterpart of the host-calculated `phase_band_widths[]`
+budget records (§10.1): the pattern declares **where** each band sits, the
+host derives how **wide** the conductor bundle is. One record per
+`(layer, net)` band, in millimetres:
+
+```rust
+pub struct PhaseBand {
+    pub layer: Layer,            // copper layer carrying the band
+    pub net: Net,                // phase/net label
+    pub centerline_x_mm: f64,    // centerline x of the band's first repeat
+    pub start_x_mm: f64,         // along-travel extent start, as laid out
+    pub end_x_mm: f64,           // along-travel extent end (> start)
+    pub y_min_mm: f64,           // across-travel extent lower bound
+    pub y_max_mm: f64,           // across-travel extent upper bound
+    pub shape: PhaseBandShape,   // "linear" | "braided"
+}
+```
+
+- `centerline_x_mm` is the **phase reference position**: the centerline of the
+  band's first repeating instance (for a single-instance band, the band's own
+  centerline). Simulation commutation derives the per-phase electrical
+  offsets from the centerline distances between phases (glossary
+  "Commutation": offset = π·Δx/τ_p), so adjacent phase bands must sit one
+  phase-band pitch apart in the centerlines, matching the laid-out geometry.
+- `start_x_mm`/`end_x_mm` span the band **as the pattern lays it out** — for a
+  repeating layout that is the full span of all repeats.
+- `shape` says how the band occupies its y-extent: `linear` (straight legs at
+  a fixed angle, e.g. a serpentine) or `braided` (strands crossing over the
+  extent, e.g. the infinity braid's diamonds).
+
+Declaring is optional. When a pattern declares no bands, the host derives
+them in the `RoutingDimensions` sidecar from the ideal phase-band pitch
+`τ_band = τ_p/phases` and marks them `derived` (§10.4). Declared bands are
+validated like every other geometry (finite, in-bounds, non-degenerate
+extents, valid layer/net) and are never sanitised.
 
 ## 6. The `RoutingPattern` trait
 
@@ -330,7 +384,10 @@ never sanitised.** Rules:
 - **Layer range** — `layer` / `from_layer` / `to_layer` inside `[0, num_layers)`.
 - **Vias** — `from_layer` must differ from `to_layer`.
 - **Non-degenerate** — segments have non-zero length; arcs have start/mid/end
-  that do not collapse to a point; pole regions have non-zero length.
+  that do not collapse to a point; pole regions have non-zero length;
+  declared phase bands have non-degenerate along-travel and y extents.
+- **Declared phase bands** — finite, in-bounds (x within the routing area, y
+  within the board width), valid layer index and ASCII net label.
 - **Net labels** — non-empty and ASCII; duplicates allowed only for parallel
   conductors.
 - **Continuity** — when `expect_continuous` is set, consecutive elements sharing
@@ -398,7 +455,14 @@ existing SI/meter frontend DTO names for compatibility.
     "curves": [],
     "vias": [],
     "pole_regions": [ { "phase": "A", "pole_index": 0, "start": { "x": 0.0, "y": 10.0 }, "end": { "x": 12.0, "y": 10.0 } } ],
-    "leg_grid": { "slot_count": 975, "strands_per_leg": 5 }
+    "leg_grid": { "slot_count": 975, "strands_per_leg": 5 },
+    "phase_bands": [
+      {
+        "layer": 0, "net": "A",
+        "centerline_x_mm": 7.6, "start_x_mm": 1.6, "end_x_mm": 781.6,
+        "y_min_mm": 0.0, "y_max_mm": 20.0, "shape": "braided"
+      }
+    ]
   },
   "dimensions": {
     "active_area_length_mm": 800.0,
@@ -429,7 +493,15 @@ existing SI/meter frontend DTO names for compatibility.
         "margin_mm": 2.540
       }
     ],
-    "pole_regions": []
+    "pole_regions": [],
+    "phase_bands": [
+      {
+        "layer": 0, "net": "A",
+        "centerline_x_mm": 7.6, "start_x_mm": 1.6, "end_x_mm": 781.6,
+        "y_min_mm": 0.0, "y_max_mm": 20.0, "shape": "braided",
+        "derived": false
+      }
+    ]
   }
 }
 ```
@@ -452,6 +524,7 @@ existing SI/meter frontend DTO names for compatibility.
 | `interleave_step_mm` | `f64?` | Effective leg pitch of braided slotless patterns, `tau_p / (phases × strands)` from the declared leg grid [mm]. |
 | `phase_band_widths` | array | Per-active-`(layer, net)` bottom-up width records. |
 | `pole_regions` | array | Pattern-defined start/end boundaries, copied from the result. |
+| `phase_bands` | array | Resolved per-`(layer, net)` phase-band geometry (§5.2): the pattern's declared bands (`derived: false`) or host-derived bands from the ideal phase-band pitch (`derived: true`). Empty when there is no declaration and no pole pitch. |
 
 Each `phase_band_widths[]` record includes `trace_count` (`N`), `trace_width_mm`
 (`w_t`), `trace_spacing_mm` (`s`), `angle_rad` (`theta`), the calculated
@@ -600,6 +673,48 @@ The braid also declares its leg grid on the result (see §10.2):
 `slot_count = periods × phases × strands` and `strands_per_leg = num_strands`,
 from which the host reports the true slot pitch and the
 `tau_p / (phases × strands)` interleave step.
+
+And it declares its phase bands on the result (see §5.2 and §10.4): one
+record per `(layer, net)`, with the first-repeat centerline taken from the
+phase's first pole region (adjacent phase centerlines sit exactly
+`τ_p/phases` apart), the full span of the phase's pole regions as the
+along-travel extent, the full board width as the y-extent, and the `braided`
+shape — consistent with the `pole_regions` emission by construction.
+
+### 10.4 Resolved phase-band geometry (declared vs derived, kata hzs2)
+
+`RoutingDimensions.phase_bands` carries one `ResolvedPhaseBand` record per
+`(layer, net)` band — the position/shape counterpart of the
+`phase_band_widths[]` budget records:
+
+```rust
+pub struct ResolvedPhaseBand {
+    #[serde(flatten)]
+    pub band: PhaseBand,   // the §5.2 declaration fields, flattened on the wire
+    pub derived: bool,     // true = host-derived fallback, false = declared
+}
+```
+
+Resolution rules:
+
+1. **Declared wins.** A non-empty `RoutingResult.phase_bands` is copied
+   verbatim into the sidecar with `derived: false`.
+2. **Host fallback.** When the pattern declares no bands and a pole pitch is
+   known, the host derives one band per active `(layer, net)` group from the
+   ideal phase-band pitch `τ_band = τ_p/phases` (glossary "Phase Band"): the
+   group's net takes phase slot `p` — its index among the distinct active
+   nets — with extent `[p·τ_band, (p+1)·τ_band]`, centerline
+   `p·τ_band + τ_band/2`, the full board width as y-extent, a linear shape,
+   and `derived: true`. These are a model of the ideal layout, not measured
+   geometry.
+3. **No pole pitch, no declaration** ⇒ empty sidecar (nothing to derive
+   from); declared bands still pass through.
+
+Consumers (simulation commutation and equilibrium, and the open travel-
+endpoints work) read the declared positions when present; the analytic
+derivations from `pole_pitch`/`phases` remain the fallback. The bundled
+infinity braid declares its real bands (see §10.3), so a braid payload never
+contains derived records.
 
 ## 11. Presentation projection: `PhaseCoil` / `CoilPathIpc`
 
@@ -808,6 +923,8 @@ needed when a user installs a Python runner.
 - NaN/Infinity, bounds, layer, degenerate-shape, net, and continuity rejection;
 - exact bottom-up and top-down phase-band width equations;
 - exact per-slot width and slot-pitch equations plus leg-grid-derived slot metrics;
+- phase-band declaration round-trip, host fallback derivation (marked
+  `derived`), and braid-declared bands matching its pole regions (kata hzs2);
 - exact pole-pitch alignment for the bundled infinity braid;
 - per-layer/per-net dimension reporting; and
 - Python runner parsing and malformed-output rejection.
@@ -832,6 +949,14 @@ human-readable message; it is never repaired in place.
   change): MUST bump `format_version` (and the `pcbmotorgen_ROUTING_PLUGIN_API`
   constant) and update this document. Version 2 is the millimetre contract;
   version-1 metre payloads must not be mixed into version 2.
+- **v-next first-class phase-band geometry (kata hzs2):** patterns may
+  declare phase bands on the result (`RoutingResult.phase_bands:
+  Vec<PhaseBand>`, additive with `#[serde(default)]`) — per-`(layer, net)`
+  centerline x, along-travel extent, y-extent/shape, and net label (§5.2).
+  `RoutingDimensions` gains `phase_bands: Vec<ResolvedPhaseBand>` (additive,
+  serde default empty): declared bands copied through, or host-derived bands
+  from the ideal phase-band pitch `τ_p/phases` marked `derived: true` (§10.4).
+  No version bump: legacy payloads without the fields deserialize unchanged.
 - **v-next terminology alignment:** slot-width dimension fields were renamed to
   phase-band terminology (`band_width_mm`, `max_band_width_mm`,
   `phase_band_pitch_mm`, `phase_band_widths`). The old key names are no longer
@@ -923,6 +1048,15 @@ context rather than copied into parameters.
 ## Motor dimensions
 State how pole pitch, phase-band pitch, phase-band width, trace angle, and any pattern
 period are calculated, with equations and units.
+
+## Phase bands
+State whether the pattern declares `phase_bands` (kata hzs2) and what each
+record means: per `(layer, net)` first-repeat `centerline_x_mm` (the phase
+reference position; adjacent phase bands one phase-band pitch apart),
+`start_x_mm`/`end_x_mm` as laid out, `y_min_mm`/`y_max_mm`, and `shape`
+(`linear` or `braided`). If the pattern does not declare bands, say so and
+note that the host derives them from the ideal phase-band pitch and marks
+them `derived`.
 
 ## Build and install
 # Python runner

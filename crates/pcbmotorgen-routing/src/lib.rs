@@ -16,8 +16,9 @@
 //!   that the simulation crate and the KiCad writer consume.
 //! - [`design`] — [`DesignRules`]: DFM trace width / clearance / via sizing,
 //!   the authority downstream consumers read sizes from.
-//! - [`dimensions`] — pole pitch, phase-band budget, and bottom-up phase-band
-//!   width calculations returned in [`RoutingReport`].
+//! - [`dimensions`] — pole pitch, phase-band budget, bottom-up phase-band
+//!   width calculations, and the resolved phase-band geometry (declared or
+//!   host-derived) returned in [`RoutingReport`].
 //! - [`interference`] — [`check_interference`]: DRC overlap / via-pad
 //!   clearance checks against the [`DesignRules`].
 //! - [`generate`] — the app-facing facade: registry, plugin loading, and
@@ -55,7 +56,7 @@ pub use design::DesignRules;
 pub use dimensions::{
     max_phase_band_width_from_pole_pitch_mm, phase_band_width_from_trace_geometry_mm,
     slot_pitch_from_leg_grid_mm, slot_width_from_leg_geometry_mm, PhaseBandWidth,
-    RoutingDimensions,
+    ResolvedPhaseBand, RoutingDimensions,
 };
 pub use error::RoutingError;
 pub use generate::{
@@ -66,7 +67,8 @@ pub use generate::{
 };
 pub use interference::{check_interference, InterferenceViolation};
 pub use model::{
-    Layer, LegGrid, Net, Point, PoleRegion, RouteCurve, RouteSegment, RoutingResult, Via,
+    Layer, LegGrid, Net, PhaseBand, PhaseBandShape, Point, PoleRegion, RouteCurve, RouteSegment,
+    RoutingResult, Via,
 };
 pub use pattern::{ParamType, PatternParameter, PluginMetadata, RoutingPattern};
 pub use report::RoutingReport;
