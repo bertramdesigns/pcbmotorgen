@@ -26,9 +26,10 @@ reverse-engineer its source.
 
 Start with a short description of the crate and list what it owns. For this
 package that includes the pattern trait, raw geometry model, validator,
-loaders, DFM diagnostics, and the dimension sidecar. Explicitly say what it
-does **not** own: KiCad layer-name mapping, copper widths supplied by the core,
-and the physics model.
+loaders, and the dimension sidecar (DFM rules and DRC diagnostics moved to the
+downstream `pcbmotorgen-dfm` crate, kata 0rgs). Explicitly say what it
+does **not** own: KiCad layer-name mapping, DFM/design rules, copper widths
+supplied by the core, and the physics model.
 
 ### 2. Units and axes
 

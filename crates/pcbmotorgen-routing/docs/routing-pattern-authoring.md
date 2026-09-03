@@ -19,12 +19,14 @@ layer count, phase count, DFM trace/space limits, plus user parameters) into a
 _vias_, each carrying its own `layer` and `net`.
 
 - The plugin supplies **only raw geometry**. It does **NOT** set trace width,
-  via drill size, or annular ring — those are owned by the **`pcbmotorgen-routing`
-  crate** (`DesignRules`) and applied to the geometry there, before the KiCad
-  adapter (`pcbmotorgen-export`) converts the generic model to board items.
-- The plugin does **NOT** do interference checking. The `pcbmotorgen-routing`
-  crate runs all clearance / via-pad DRC (`check_interference`) after the plugin
-  returns.
+  via drill size, or annular ring — those are owned by the **`pcbmotorgen-dfm`
+  crate** (`DesignRules`, downstream of routing since kata 0rgs) and consumed
+  when the KiCad adapter (`pcbmotorgen-export`) converts the generic model to
+  board items.
+- The plugin does **NOT** do interference checking. The `pcbmotorgen-dfm`
+  crate runs all clearance / via-pad DRC (`check_interference`) downstream,
+  after the plugin returns — any routing is allowed in the generator; DFM is
+  reported as diagnostics only.
 - Any malformed shape (NaN, out-of-bounds, bad layer, degenerate segment/arc,
   bad net, empty result) is **rejected** at upload with a field-level error. It
   is never silently patched.
@@ -59,7 +61,8 @@ RoutingResult {
 - `io_pads` / `io_traces` are optional and additive (serde-defaulted): declare
   connector/IC pads and terminal fanout traces only when your pattern routes
   IO to the controlling IC. Pad `size` comes from the DFM rules
-  (`DesignRules::io_tht_pad_diameter_mm()` for THT stacks) — the writers carry
+  (`DesignRules::io_tht_pad_diameter_mm()` for THT stacks, `pcbmotorgen-dfm`
+  crate) — the writers carry
   sizes through and never decide them. THT pads require `drill_mm`; surface
   pads (`smd` / `board_edge`) reject it. See `docs/API.md` §5.3.
 
@@ -352,7 +355,8 @@ list.
 - [ ] Implement metadata (author, version, description) — Rust accessors or the
       Python `--metadata` block.
 - [ ] Keep output to raw geometry only — never set widths / via sizes / DRC
-      (the routing crate applies `DesignRules` and runs interference checks).
+      (the downstream `pcbmotorgen-dfm` crate owns `DesignRules` and runs
+      interference checks).
 - [ ] Keep Python output to strict `RoutingResult` JSON — do not emit the
       host-side `RoutingReport` envelope.
 - [ ] Emit `io_pads` / `io_traces` only when your pattern actually routes IO;

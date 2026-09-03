@@ -14,6 +14,7 @@ The KiCad `.proto` schema is re-synced with `scripts/sync_protos.sh`
 (regenerates the bindings at build time via `protox` + `prost-build`).
 
 [`pcbmotorgen-routing`]: ../pcbmotorgen-routing/
+[`pcbmotorgen-dfm`]: ../pcbmotorgen-dfm/
 [`PhaseCoil`]: ../pcbmotorgen-routing/src/coil.rs
 [`RoutingResult`]: ../pcbmotorgen-routing/src/coil.rs
-[`DesignRules`]: ../pcbmotorgen-routing/src/design.rs
+[`DesignRules`]: ../pcbmotorgen-dfm/src/rules.rs

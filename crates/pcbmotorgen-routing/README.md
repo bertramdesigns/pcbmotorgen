@@ -12,13 +12,14 @@ and the plugin authoring guide into one document.
 ## Scope and ownership
 
 The crate owns the routing-pattern plugin contract, raw geometry model, strict
-validator, loaders, DFM/design rules, interference diagnostics, the bundled
-two-layer `infinity-braid` pattern, and the pole-pitch / phase-band width dimension
-sidecar.
+validator, loaders, the bundled two-layer `infinity-braid` pattern, and the
+pole-pitch / phase-band width dimension sidecar.
 
 It does **not** own KiCad layer-name mapping (stays in `pcbmotorgen-export`),
-copper widths supplied by the core, or the physics/force model
-(`pcbmotorgen-simulation`).
+DFM/design rules or interference diagnostics (stays downstream in
+`pcbmotorgen-dfm` since kata 0rgs — any routing is allowed in the generator;
+DFM is checked later as diagnostics), copper widths supplied by the core, or
+the physics/force model (`pcbmotorgen-simulation`).
 
 ## Units and axes
 
