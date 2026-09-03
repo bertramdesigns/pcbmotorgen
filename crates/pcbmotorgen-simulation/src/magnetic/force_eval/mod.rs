@@ -156,6 +156,9 @@ impl ForceEvaluator {
             .enumerate()
             .map(|(i, coil)| (i, coil_model.build_phase_samples(coil)))
             .collect();
+        // Phase labels drive the declared phase-band offset matching
+        // (kata hzs2); coil order defines the current slot order.
+        let phase_labels: Vec<&str> = coils.iter().map(|coil| coil.phase_name.as_str()).collect();
 
         // Parallel sweep over positions
         let results: Vec<(f64, f64, f64, f64, Vec<f64>)> = positions
@@ -166,7 +169,7 @@ impl ForceEvaluator {
                     self.phase_shift,
                     config,
                     pos,
-                    n_phases,
+                    &phase_labels,
                 );
                 let assembly = magnet_array.build_assembly(pos);
 
@@ -350,13 +353,13 @@ impl ForceEvaluator {
         coils: &[PhaseCoil],
         mover_position_m: f64,
     ) -> ([f64; 3], [f64; 3]) {
-        let n_phases = coils.len();
+        let phase_labels: Vec<&str> = coils.iter().map(|coil| coil.phase_name.as_str()).collect();
         let currents = commutation_currents(
             self.commutation,
             self.phase_shift,
             config,
             mover_position_m,
-            n_phases,
+            &phase_labels,
         );
         let magnet_array = MagnetArray::new(config);
         let coil_model = CoilCurrentModel::new(self.meshing, false, self.layer_z_m);
@@ -415,6 +418,7 @@ fn linspace(start: f64, end: f64, n: usize) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::params::PhaseBandPosition;
     use pcbmotorgen_routing::CoilSegment;
 
     /// Generate infinity-braid coils for a config (mirrors the old
@@ -502,6 +506,57 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    /// End-to-end declared-band consumption (kata hzs2): declared phase
+    /// bands at the ideal laid-out positions must produce the SAME force
+    /// sweep as the analytic fallback (parity on the reference fixture), and
+    /// a shifted declaration must CHANGE the sweep (the evaluator really
+    /// consumes the declared positions rather than ignoring them).
+    #[test]
+    fn test_declared_phase_bands_parity_and_engagement() {
+        let cfg = SimulationInput::default();
+        let coils = make_full_span_serpentine(&cfg);
+        assert_eq!(coils.len(), 3);
+
+        // Declared bands: phase p occupies the p-th phase-band slot, so the
+        // declared centerline deltas equal the analytic phase-band pitch.
+        let tau_band = cfg.phase_band_pitch_m();
+        let mut declared_cfg = cfg.clone();
+        declared_cfg.phase_bands = (0..cfg.phases)
+            .map(|p| PhaseBandPosition {
+                phase: format!("PHASE_{}", p + 1),
+                centerline_m: (p as f64 + 0.5) * tau_band,
+                start_m: p as f64 * tau_band,
+                end_m: (p as f64 + 1.0) * tau_band,
+            })
+            .collect();
+
+        let mut analytic_ev = ForceEvaluator::new(20, 5, CommutationMode::MaxThrust, 0.0);
+        let mut declared_ev = ForceEvaluator::new(20, 5, CommutationMode::MaxThrust, 0.0);
+        let analytic = analytic_ev.evaluate(&cfg, &coils).expect("analytic sweep");
+        let declared = declared_ev
+            .evaluate(&declared_cfg, &coils)
+            .expect("declared sweep");
+        assert_eq!(analytic.n_positions(), declared.n_positions());
+        for (a, b) in analytic.force_x_n.iter().zip(declared.force_x_n.iter()) {
+            assert!((a - b).abs() < 1e-9, "parity broken: {a} vs {b}");
+        }
+
+        // Shifting the declared B centerline must change the sweep.
+        let mut shifted_cfg = declared_cfg.clone();
+        shifted_cfg.phase_bands[1].centerline_m += 0.001;
+        let mut shifted_ev = ForceEvaluator::new(20, 5, CommutationMode::MaxThrust, 0.0);
+        let shifted = shifted_ev
+            .evaluate(&shifted_cfg, &coils)
+            .expect("shifted sweep");
+        let max_delta = analytic
+            .force_x_n
+            .iter()
+            .zip(shifted.force_x_n.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(max_delta > 1e-6, "shifted declaration had no effect (max delta {max_delta})");
     }
 
     #[test]

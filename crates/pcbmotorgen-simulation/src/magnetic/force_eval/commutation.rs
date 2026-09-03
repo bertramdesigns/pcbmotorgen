@@ -84,9 +84,18 @@ impl Default for CommutationMode {
 /// per-coil offset law). With `id = 0` (pure q-axis):
 ///
 /// ```text
-/// I_p = I_pk · cos(θ_e − p·π·τ_band/τ_p)
+/// I_p = I_pk · cos(θ_e − offset_p)
 /// θ_e = 2π·x/(2τ_p) + phase_shift
 /// ```
+///
+/// The per-coil offset `offset_p` comes from the **declared phase bands**
+/// (kata hzs2) when `config.phase_bands` carries a band for every coil slot
+/// in `phase_labels`: coil p runs `π·(x_p − x_ref)/τ_p` with `x_p` its
+/// band's declared centerline (matched by phase label) and `x_ref` the first
+/// coil slot's centerline — the general per-coil offset law read from the
+/// routing contract's laid-out band positions. The analytic fallback
+/// (uniform `p·π·τ_band/τ_p` with `τ_band = spacing_ratio·τ_p/phases`)
+/// applies when no bands are declared or any coil slot is unmatched.
 ///
 /// `phase_shift` is the dynamic polarity term set by the
 /// [`ForceEvaluator`](crate::magnetic::force_eval::ForceEvaluator)'s 3-point
@@ -101,12 +110,12 @@ pub(crate) fn commutation_currents(
     phase_shift: f64,
     config: &SimulationInput,
     mover_position_m: f64,
-    n_phases: usize,
+    phase_labels: &[&str],
 ) -> Vec<f64> {
     let i_pk = config.max_current_a;
 
     if commutation == CommutationMode::PhaseAOnly {
-        let mut currents = vec![0.0; n_phases];
+        let mut currents = vec![0.0; phase_labels.len()];
         currents[0] = i_pk;
         return currents;
     }
@@ -127,16 +136,57 @@ pub(crate) fn commutation_currents(
     // layout, r·π/3 for a Vernier spacing ratio r.
     let theta_e = 2.0 * std::f64::consts::PI * mover_position_m / (2.0 * config.pole_pitch_m())
         + phase_shift;
-    let phase_offset = std::f64::consts::PI * config.phase_band_pitch_m() / config.pole_pitch_m();
+    let offsets = declared_phase_offsets(config, phase_labels)
+        .unwrap_or_else(|| analytic_phase_offsets(config, phase_labels.len()));
 
-    (0..n_phases)
-        .map(|p| i_pk * (theta_e - p as f64 * phase_offset).cos())
+    (0..phase_labels.len())
+        .map(|p| i_pk * (theta_e - offsets[p]).cos())
         .collect()
+}
+
+/// Per-coil electrical offsets [rad] from the declared phase bands (kata
+/// hzs2): each coil slot is matched to a declared band by its phase label
+/// and runs `π·(x_p − x_ref)/τ_p` with `x_p` its band's declared centerline
+/// and `x_ref` the first coil slot's centerline (the general per-coil offset
+/// law — glossary "Commutation" — read from the laid-out band positions).
+/// Returns `None` — the caller falls back to the analytic law — unless every
+/// coil slot matches a declared band and the pole pitch is positive.
+fn declared_phase_offsets(config: &SimulationInput, phase_labels: &[&str]) -> Option<Vec<f64>> {
+    if phase_labels.is_empty() || config.phase_bands.is_empty() {
+        return None;
+    }
+    let tau_p = config.pole_pitch_m();
+    if !(tau_p > 0.0) {
+        return None;
+    }
+    let centerline = |label: &str| -> Option<f64> {
+        config
+            .phase_bands
+            .iter()
+            .find(|band| band.phase == label)
+            .map(|band| band.centerline_m)
+    };
+    let reference = centerline(phase_labels[0])?;
+    let mut offsets = Vec::with_capacity(phase_labels.len());
+    for label in phase_labels {
+        let x = centerline(label)?;
+        offsets.push(std::f64::consts::PI * (x - reference) / tau_p);
+    }
+    Some(offsets)
+}
+
+/// Analytic per-coil offsets [rad]: `p·π·τ_band/τ_p` for coils spaced one
+/// (Vernier-adjusted) phase-band pitch apart — the fallback when no phase
+/// bands are declared.
+fn analytic_phase_offsets(config: &SimulationInput, n_phases: usize) -> Vec<f64> {
+    let phase_offset = std::f64::consts::PI * config.phase_band_pitch_m() / config.pole_pitch_m();
+    (0..n_phases).map(|p| p as f64 * phase_offset).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::params::PhaseBandPosition;
 
     #[test]
     fn test_phase_a_only_commutation() {
@@ -145,7 +195,7 @@ mod tests {
             0.0,
             &SimulationInput::default(),
             0.0,
-            3,
+            &["A", "B", "C"],
         );
         assert!((currents[0] - 1.0).abs() < 1e-9);
         assert!((currents[1] - 0.0).abs() < 1e-9);
@@ -179,7 +229,7 @@ mod tests {
             0.0,
             &SimulationInput::default(),
             0.0,
-            3,
+            &["A", "B", "C"],
         );
         assert!((currents[0] - 1.0).abs() < 1e-9, "I_A should be ~1, got {}", currents[0]);
         assert!((currents[1] - 0.5).abs() < 1e-6, "I_B = {}, expected 0.5", currents[1]);
@@ -201,7 +251,7 @@ mod tests {
             0.0,
             &SimulationInput::default(),
             0.006,
-            3,
+            &["A", "B", "C"],
         );
         assert!(currents[0].abs() < 1e-6, "I_A = {}, expected ~0", currents[0]);
         let s3_2 = 3.0_f64.sqrt() / 2.0;
@@ -238,7 +288,7 @@ mod tests {
             0.0,
             &SimulationInput::default(),
             0.0,
-            3,
+            &["A", "B", "C"],
         );
         // I_A = cos(0) = 1
         assert!((currents[0] - 1.0).abs() < 1e-9, "I_A should be ~1, got {}", currents[0]);
@@ -267,7 +317,7 @@ mod tests {
             0.0,
             &SimulationInput::default(),
             0.006,
-            3,
+            &["A", "B", "C"],
         );
         assert!(currents[0].abs() < 1e-6, "I_A should be ~0, got {}", currents[0]);
         let s3_2 = 3.0_f64.sqrt() / 2.0;
@@ -308,7 +358,7 @@ mod tests {
             let theta_e = k as f64 * std::f64::consts::PI / 12.0;
             let x = theta_e * tau_p / std::f64::consts::PI;
             let currents =
-                commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, x, 3);
+                commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, x, &["A", "B", "C"]);
 
             // (a) Balanced 3-phase law: currents sum to zero at every θ_e.
             let sum: f64 = currents.iter().sum();
@@ -346,7 +396,7 @@ mod tests {
             0.0,
             &cfg,
             0.0,
-            3,
+            &["A", "B", "C"],
         );
         let offset = 0.8 * std::f64::consts::PI / 3.0;
         assert!((currents[0] - 1.0).abs() < 1e-9, "I_A should be ~1, got {}", currents[0]);
@@ -362,5 +412,133 @@ mod tests {
             currents[2],
             (-2.0 * offset).cos()
         );
+    }
+    // -------------------------------------------------------------------
+    // Declared phase-band positions (kata hzs2)
+    // -------------------------------------------------------------------
+
+    /// Commutation must consume declared band centerlines when present: with
+    /// non-uniform declared positions the offsets follow
+    /// `π·(x_p − x_ref)/τ_p` from the declaration, NOT the analytic
+    /// `p·π·τ_band/τ_p` law.
+    #[test]
+    fn test_declared_band_positions_override_analytic_offsets() {
+        // Declared centerlines 0 / 3 / 9 mm against τ_p = 12 mm: offsets
+        // 0, π/4, 3π/4 — the middle phase deviates from the analytic π/3
+        // and the third from 2π/3.
+        let mut cfg = SimulationInput::default();
+        cfg.phase_bands = vec![
+            PhaseBandPosition { phase: "A".into(), centerline_m: 0.0, start_m: 0.0, end_m: 0.003 },
+            PhaseBandPosition { phase: "B".into(), centerline_m: 0.003, start_m: 0.0, end_m: 0.003 },
+            PhaseBandPosition { phase: "C".into(), centerline_m: 0.009, start_m: 0.0, end_m: 0.003 },
+        ];
+        let labels = ["A", "B", "C"];
+        let tau_p = cfg.pole_pitch_m();
+
+        let currents = commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, 0.0, &labels);
+        let expected: Vec<f64> = [0.0, 0.003, 0.009]
+            .iter()
+            .map(|&x| (std::f64::consts::PI * x / tau_p).cos())
+            .collect();
+        for (got, want) in currents.iter().zip(expected) {
+            assert!((got - want).abs() < 1e-12, "got {got}, want {want}");
+        }
+
+        // Cross-check: the analytic law would give B the 1:1 offset π/3 and
+        // C 2π/3, but the declaration asks for π/4 and 3π/4 — distinct laws.
+        let analytic = analytic_phase_offsets(&cfg, 3);
+        assert!((analytic[1] - std::f64::consts::PI / 3.0).abs() < 1e-12);
+        assert!((analytic[2] - 2.0 * std::f64::consts::PI / 3.0).abs() < 1e-12);
+        assert!((std::f64::consts::PI * 0.003 / tau_p - std::f64::consts::PI / 4.0).abs() < 1e-12);
+        assert!((std::f64::consts::PI * 0.009 / tau_p - 3.0 * std::f64::consts::PI / 4.0).abs() < 1e-12);
+    }
+
+    /// The analytic fallback applies when no bands are declared — currents
+    /// are identical to the pre-hzs2 law.
+    #[test]
+    fn test_absent_declared_bands_keep_analytic_offsets() {
+        let cfg = SimulationInput::default();
+        let labels = ["A", "B", "C"];
+        let currents = commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, 0.0, &labels);
+        assert!((currents[0] - 1.0).abs() < 1e-12);
+        assert!((currents[1] - 0.5).abs() < 1e-12);
+        assert!((currents[2] + 0.5).abs() < 1e-12);
+    }
+
+    /// A partially-declared set (a coil slot without a band) falls back to
+    /// the analytic law instead of mixing laws.
+    #[test]
+    fn test_partially_declared_bands_fall_back_to_analytic() {
+        let mut cfg = SimulationInput::default();
+        cfg.phase_bands = vec![PhaseBandPosition {
+            phase: "A".into(),
+            centerline_m: 0.009,
+            start_m: 0.0,
+            end_m: 0.003,
+        }];
+        let labels = ["A", "B", "C"];
+        let currents = commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, 0.0, &labels);
+        let analytic_cfg = SimulationInput::default();
+        let analytic =
+            commutation_currents(CommutationMode::MaxThrust, 0.0, &analytic_cfg, 0.0, &labels);
+        assert_eq!(currents, analytic);
+    }
+
+    /// Parity on the reference fixture: declared bands at the ideal
+    /// phase-band pitch (`τ_band = τ_p/phases`, the default 3-phase 1:1
+    /// layout at its laid-out positions) produce currents identical to the
+    /// analytic fallback — the declared path is a strict generalization.
+    #[test]
+    fn test_declared_bands_match_analytic_on_reference_fixture() {
+        let tau_p = SimulationInput::default().pole_pitch_m();
+        let tau_band = tau_p / 3.0;
+        let mut cfg = SimulationInput::default();
+        cfg.phase_bands = (0..3)
+            .map(|p| PhaseBandPosition {
+                phase: ["A", "B", "C"][p].to_string(),
+                centerline_m: p as f64 * tau_band,
+                start_m: p as f64 * tau_band,
+                end_m: p as f64 * tau_band + tau_band,
+            })
+            .collect();
+        let labels = ["A", "B", "C"];
+
+        for k in 0..=24u32 {
+            let x = k as f64 * tau_p / 24.0;
+            let declared = commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, x, &labels);
+            let analytic_cfg = SimulationInput::default();
+            let analytic =
+                commutation_currents(CommutationMode::MaxThrust, 0.0, &analytic_cfg, x, &labels);
+            for (a, b) in declared.iter().zip(analytic.iter()) {
+                assert!((a - b).abs() < 1e-12, "x={x}: declared {a} vs analytic {b}");
+            }
+        }
+    }
+
+    /// Layer copies of one phase share the electrical offset: matching is by
+    /// phase label, so a duplicated label gets the same offset as its first
+    /// occurrence.
+    #[test]
+    fn test_layer_copies_share_the_phase_offset() {
+        let tau_p = SimulationInput::default().pole_pitch_m();
+        let tau_band = tau_p / 3.0;
+        let mut cfg = SimulationInput::default();
+        cfg.phase_bands = (0..3)
+            .map(|p| PhaseBandPosition {
+                phase: ["A", "B", "C"][p].to_string(),
+                centerline_m: p as f64 * tau_band,
+                start_m: 0.0,
+                end_m: tau_band,
+            })
+            .collect();
+        // Six coil slots (two layers × three phases), like the braid.
+        let labels = ["A", "B", "C", "A", "B", "C"];
+        let currents = commutation_currents(CommutationMode::MaxThrust, 0.0, &cfg, 0.0, &labels);
+        for p in 0..3 {
+            assert!(
+                (currents[p] - currents[p + 3]).abs() < 1e-12,
+                "layer copy of phase {p} must share its offset"
+            );
+        }
     }
 }
