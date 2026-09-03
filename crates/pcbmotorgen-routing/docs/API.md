@@ -198,6 +198,24 @@ no trace widths, via sizes, or KiCad layer names.
       "y_min_mm": 0.0,
       "y_max_mm": 20.0,
       "shape": "braided"
+  "io_pads": [
+    {
+      "position": { "x": 48.0, "y": 2.0 },
+      "size": { "x": 0.6, "y": 0.6 },
+      "drill_mm": null,
+      "layers": [1],
+      "kind": "smd",
+      "net": "A",
+      "number": "1"
+    }
+  ],
+  "io_traces": [
+    {
+      "start": { "x": 0.0, "y": 10.0 },
+      "end": { "x": 47.0, "y": 2.0 },
+      "layer": 1,
+      "net": "A",
+      "role": "fanout"
     }
   ]
 }
@@ -212,6 +230,8 @@ no trace widths, via sizes, or KiCad layer names.
 | `pole_regions[]` | region | Pattern-defined phase/pole-pitch boundaries: `phase`, zero-based `pole_index`, millimetre `start`/`end` points. Optional. |
 | `leg_grid` | `object?` | Optional pattern-declared leg grid (see §10.2). |
 | `phase_bands[]` | band | Optional pattern-declared phase-band geometry, one record per `(layer, net)` band (see §5.2). Additive; omit when the pattern has no band layout to declare. |
+| `io_pads[]` | pad | Connector/IC pads for IO routing: `position`, pad-stack `size` (`{x, y}` mm; `x == y` ⇒ circular), `drill_mm` (THT only), `layers` (empty ⇒ exporter default set for the kind), `kind` (`smd` / `tht` / `board_edge`), `net`, optional `number` (pad/pin label). Optional. |
+| `io_traces[]` | trace | Terminal fanout traces, typed distinctly from active conductors: `start`/`end`, `layer`, `net`, `role` (`fanout` / `tail`). Optional. |
 
 `is_active` distinguishes **force-producing conductors** (`true`) from
 **end-turn connectors** (`false`).
@@ -270,6 +290,38 @@ them in the `RoutingDimensions` sidecar from the ideal phase-band pitch
 `τ_band = τ_p/phases` and marks them `derived` (§10.4). Declared bands are
 validated like every other geometry (finite, in-bounds, non-degenerate
 extents, valid layer/net) and are never sanitised.
+### 5.3 IO elements: connector/IC pads and terminal fanout traces (additive)
+
+`io_pads[]` and `io_traces[]` are the DEFINITIONS-ONLY interface for
+input/output routing to the controlling IC (generation of IO routing is not
+part of this contract — a pattern that routes IO declares the elements; the
+host and the export crate only validate and emit them). Both fields are
+serde-defaulted, so legacy payloads and non-IO patterns deserialize unchanged
+and `FORMAT_VERSION` is unaffected (see §15).
+
+- `IoPad` carries the full pad-stack definition the writer needs: centre
+  `position`, copper `size` (`{x, y}` in mm — equal extents mean a circular
+  pad), optional plated `drill_mm`, the copper `layers` it occupies
+  (zero-based board-stack indices; empty means the exporter's default set for
+  the kind — all copper layers for `tht`, the top layer for surface pads),
+  the `kind` (`smd` / `tht` / `board_edge`, mapping onto KiCad's
+  `PT_SMD` / `PT_PTH` / `PT_EDGE_CONNECTOR`), the phase `net`, and an
+  optional pad `number` (carried through to KiCad as the pad number).
+- `IoTrace` is deliberately a distinct element family from `segments[]` so
+  later DFM checks can treat IO routing differently — it is never a
+  force-producing conductor. `role` distinguishes a `fanout` (coil terminal →
+  pad) from a `tail` (pad → board-edge exit).
+
+The strict-shape validator (§8) checks IO elements like every other element:
+domain bounds (the routing domain equals the active area — the epsilon lets
+board-edge pads sitting exactly on a boundary pass), positive finite pad
+sizes, `tht` pads require a positive `drill_mm` while `smd` / `board_edge`
+pads reject one, and layer/net rules.
+
+Sizing authority: pad dimensions remain governed by `DesignRules` — patterns
+read sizes from there (e.g. `DesignRules::io_tht_pad_diameter_mm()` for a
+THT pad stack) or size pads explicitly. The writers only carry the declared
+sizes through; they never decide dimensions.
 
 ## 6. The `RoutingPattern` trait
 
@@ -996,6 +1048,15 @@ human-readable message; it is never repaired in place.
   `phase_band_pitch_mm`, `phase_band_widths`). The old key names are no longer
   accepted on deserialize (clean break, pre-1.0); `RoutingContext` carries
   `magnet_array_span_mm` only.
+- **v-next IO routing definitions (kata htcq):** `RoutingResult` gains the
+  additive, serde-defaulted fields `io_pads: Vec<IoPad>` and
+  `io_traces: Vec<IoTrace>` (see §5.3) — connector/IC pad stacks and terminal
+  fanout traces typed distinctly from active conductors. No version bump:
+  payloads without the fields deserialize unchanged, and emission of IO
+  elements is optional for patterns. The export crate emits them
+  (KiCad `FootprintInstance`/`Pad` + fanout tracks; DXF `IO_Pad` circles /
+  rectangle outlines + normal track LINEs) and proves byte-identical legacy
+  exports with golden tests.
 - **v-next true per-slot metrics (kata mqw4):** patterns may declare a leg
   grid on the result (`RoutingResult.leg_grid: Option<LegGrid>`, additive);
   `RoutingDimensions` gains `slot_count`, `slot_pitch_mm` (true

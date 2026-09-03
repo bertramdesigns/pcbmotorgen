@@ -39,11 +39,14 @@ calculator; it does **not** change the strict plugin output shape.
 
 ```
 RoutingResult {
-  segments: [ RouteSegment { start: {x,y}, end: {x,y}, layer, net, is_active } ],
-  curves:   [ RouteCurve    { start: {x,y}, mid: {x,y}, end: {x,y}, layer, net, is_active } ],
-  vias:     [ Via          { position: {x,y}, from_layer, to_layer, net } ],
+  segments:  [ RouteSegment { start: {x,y}, end: {x,y}, layer, net, is_active } ],
+  curves:    [ RouteCurve    { start: {x,y}, mid: {x,y}, end: {x,y}, layer, net, is_active } ],
+  vias:      [ Via          { position: {x,y}, from_layer, to_layer, net } ],
   phase_bands: [ PhaseBand { layer, net, centerline_x_mm, start_x_mm, end_x_mm,
                              y_min_mm, y_max_mm, shape } ],   // optional (kata hzs2)
+  io_pads:   [ IoPad        { position: {x,y}, size: {x,y}, drill_mm?, layers: [..],
+                            kind: "smd"|"tht"|"board_edge", net, number? } ],   // optional
+  io_traces: [ IoTrace       { start: {x,y}, end: {x,y}, layer, net, role: "fanout"|"tail" } ], // optional
 }
 ```
 
@@ -53,6 +56,12 @@ RoutingResult {
 - `net` is a phase label (`"A"`, `"B"`, `"C"` …). The writer prefixes `/`.
 - `is_active` marks force-producing conductors vs end-turns (always allowed).
 - `curves` are optional (arcs), matching KiCad's `(arc start mid end)`.
+- `io_pads` / `io_traces` are optional and additive (serde-defaulted): declare
+  connector/IC pads and terminal fanout traces only when your pattern routes
+  IO to the controlling IC. Pad `size` comes from the DFM rules
+  (`DesignRules::io_tht_pad_diameter_mm()` for THT stacks) — the writers carry
+  sizes through and never decide them. THT pads require `drill_mm`; surface
+  pads (`smd` / `board_edge`) reject it. See `docs/API.md` §5.3.
 
 ---
 
@@ -346,3 +355,6 @@ list.
       (the routing crate applies `DesignRules` and runs interference checks).
 - [ ] Keep Python output to strict `RoutingResult` JSON — do not emit the
       host-side `RoutingReport` envelope.
+- [ ] Emit `io_pads` / `io_traces` only when your pattern actually routes IO;
+      they are optional, and IO traces must never be force-producing
+      conductors (that is what `segments[].is_active` is for).

@@ -134,8 +134,11 @@ What motor topology does this pattern generate? Is it single- or multi-layer?
 ## Contract
 - Units: millimetres; x = travel; y = board width.
 - Entry point: `generate(ctx)` or the Rust `RoutingPattern` implementation.
-- Output: strict `RoutingResult` with segments, curves, and vias.
-- Layer/net ownership: explain every layer and net emitted.
+- Output: strict `RoutingResult` with segments, curves, and vias (plus
+  `io_pads` / `io_traces` only when the pattern routes IO to the controlling
+  IC — see `docs/API.md` §5.2).
+- Layer/net ownership: explain every layer and net emitted, including any IO
+  pad layers and fanout traces.
 
 ## Parameters
 | key | type | default | range | meaning |
@@ -147,6 +150,12 @@ the context rather than copied into parameters.
 ## Motor dimensions
 State how pole pitch, phase-band pitch, phase-band width, trace angle, and any
 pattern period are calculated. Include the equations and units.
+
+## IO routing (omit if the pattern emits no IO elements)
+Declare which connector/IC pads (`io_pads`) and terminal fanout traces
+(`io_traces`) the pattern emits. State where pad sizes come from (the DFM
+rules — the writer never decides dimensions), the pad kinds used
+(`smd` / `tht` / `board_edge`), and why the fanout is routed the way it is.
 
 ## Build and install
 ```bash
@@ -177,6 +186,9 @@ metadata calculated after validation.
 
 - [ ] Scope and ownership are accurate.
 - [ ] Units, axes, layer indexes, and net semantics are explicit.
+- [ ] If the pattern emits IO elements, the IO section names pad kinds, pad
+      size authority, and fanout semantics; if not, the template section is
+      omitted.
 - [ ] Strict plugin JSON is not confused with `RoutingReport`.
 - [ ] Slot-width and pole-pitch equations include symbol definitions.
 - [ ] A worked example matches the Rust tests.
