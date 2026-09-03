@@ -60,11 +60,20 @@
 //! `SimulationInput.phase_bands` carries them (matched per distinct phase
 //! label, ordered spatially) and falls back to the analytic slot model
 //! (`slot s ∈ [s·τ_band, (s+1)·τ_band]` anchored at the copper start,
-//! `phase(s) = s mod phases`) otherwise. The requester's "120° offset"
-//! phrasing is the classic balanced-law convention (glossary "Commutation"):
-//! the crate's per-coil offset law `π·τ_band/τ_p` gives 60° for the default
-//! 3-phase 1:1 layout — the solver consumes whatever offsets the
-//! commutation model declares, which is the general case.
+//! `phase(s) = s mod phases`) otherwise. Both ends anchor on the phase
+//! owning the relevant TRACK edge band — spatially first for the min
+//! endpoint, spatially last for the max endpoint (the min state's mirror;
+//! the two owners coincide only when the layout's end permutation puts the
+//! reference phase last). The production endpoint solve
+//! ([`charge_based_endpoints_m`]) instead uses
+//! [`band_charge_state_from_coils`], which derives the end-band anchors
+//! from the generated coil geometry — the truthful end permutation, which
+//! the declared-band records (first-instance centerlines only) cannot
+//! express. The requester's "120° offset" phrasing is the classic
+//! balanced-law convention (glossary "Commutation"): the crate's per-coil
+//! offset law `π·τ_band/τ_p` gives 60° for the default 3-phase 1:1 layout
+//! — the solver consumes whatever offsets the commutation model declares,
+//! which is the general case.
 
 use std::f64::consts::PI;
 
@@ -195,20 +204,118 @@ pub fn band_charge_state(
         return None;
     }
 
-    // Reference phase = owner of the spatially first band (Clarke A axis);
-    // the same phase anchors both ends (its FIRST band for EndMagnet::First,
-    // its LAST band for EndMagnet::Last).
-    let reference = match end {
-        EndMagnet::First => per_label[0].1,
-        EndMagnet::Last => per_label[0].2,
+    // Reference anchor: the owner of the SPATIALLY FIRST band for
+    // EndMagnet::First, and — mirroring that construction exactly — the
+    // owner of the SPATIALLY LAST band (the track's edge band) for
+    // EndMagnet::Last. The two owners coincide only when the layout's end
+    // permutation puts the reference phase last (e.g. the 73-slot reference
+    // fixture, whose last slot is phase A); anchoring the reference phase's
+    // own last band instead mis-places the max-endpoint charge state by the
+    // end permutation whenever it does not (requester-reported: the max
+    // charges must be the min charges mirrored, A↔C with B unchanged, which
+    // is exactly this edge anchoring when phase C owns the last band).
+    let (reference, use_first) = match end {
+        EndMagnet::First => (per_label[0].1, true),
+        EndMagnet::Last => {
+            let edge = per_label
+                .iter()
+                .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("per_label is non-empty");
+            (edge.2, false)
+        }
     };
-    let use_first = end == EndMagnet::First;
     Some(
         per_label
             .iter()
             .map(|(label, first_cl, last_cl)| {
                 let cl = if use_first { *first_cl } else { *last_cl };
                 let delta = PI * (cl - reference) / tau_p;
+                PhaseCharge {
+                    label: label.clone(),
+                    charge: delta.cos(),
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Charge state of the FIRST or LAST phase-band triplet derived from the
+/// GENERATED COIL GEOMETRY [peak 1] — the authoritative endpoint state.
+///
+/// The end-band anchor positions come from the coils' active conductor
+/// segments — the same geometry the force solve consumes — so the state
+/// reflects the LAID-OUT end permutation (which phase actually owns the
+/// track's edge band) instead of the analytic slot model's assumption.
+/// The declared-band contract (kata hzs2) carries only each phase's
+/// FIRST-instance centerline, so it cannot express the end bands; the coil
+/// geometry can. For each phase the first (resp. last) active-segment x
+/// position plays the band-centerline role (routing geometry is
+/// millimetres, converted to SI), the anchor is the owner of the spatially
+/// first (resp. last) leg, and the charges follow the same per-coil offset
+/// law as [`band_charge_state`]: `cos(π·(x_p − x_anchor)/τ_p)`.
+///
+/// On fixtures whose leg layout matches the analytic slot model this
+/// reproduces [`band_charge_state`] exactly (the offsets are what the law
+/// consumes); on laid-out patterns whose end permutation differs — e.g. the
+/// infinity braid, whose last active leg belongs to phase C — it re-anchors
+/// the max state onto the true edge band.
+///
+/// Returns `None` when the coils carry no active conductor segments or the
+/// pole pitch is non-positive.
+#[must_use]
+pub fn band_charge_state_from_coils(
+    config: &SimulationInput,
+    coils: &[PhaseCoil],
+    end: EndMagnet,
+) -> Option<Vec<PhaseCharge>> {
+    let tau_p = config.pole_pitch_m();
+    if !(tau_p > 0.0) {
+        return None;
+    }
+    // (label, first active-segment x, last active-segment x) per phase
+    // [mm], ordered by the first position (spatial phase-axis order).
+    let mut per_label: Vec<(String, f64, f64)> = Vec::new();
+    for coil in coils {
+        let mut xs: Vec<f64> = coil
+            .segments
+            .iter()
+            .filter(|segment| segment.is_active)
+            .flat_map(|segment| [segment.start.0, segment.end.0])
+            .collect();
+        if xs.is_empty() {
+            continue;
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let (first, last) = (xs[0], xs[xs.len() - 1]);
+        if let Some(entry) = per_label.iter_mut().find(|(l, _, _)| *l == coil.phase_name) {
+            entry.1 = entry.1.min(first);
+            entry.2 = entry.2.max(last);
+        } else {
+            per_label.push((coil.phase_name.clone(), first, last));
+        }
+    }
+    if per_label.is_empty() {
+        return None;
+    }
+    per_label.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let (reference_mm, use_first) = match end {
+        EndMagnet::First => (per_label[0].1, true),
+        EndMagnet::Last => {
+            let edge = per_label
+                .iter()
+                .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("per_label is non-empty");
+            (edge.2, false)
+        }
+    };
+    let to_m = 1e-3;
+    Some(
+        per_label
+            .iter()
+            .map(|(label, first, last)| {
+                let x_mm = if use_first { *first } else { *last };
+                let delta = PI * (x_mm - reference_mm) * to_m / tau_p;
                 PhaseCharge {
                     label: label.clone(),
                     charge: delta.cos(),
@@ -250,8 +357,13 @@ pub fn charge_state_electrical_angle(charge: &[f64]) -> Option<f64> {
 /// positions `(min, max)`, from the force-model equilibrium solve.
 ///
 /// Runs [`solve_end_magnet_rest_m`] for both ends with the charge states of
-/// [`band_charge_state`] and converts each end-magnet rest to the array
-/// centre with the `(N−1)/2·τ_p` offset. The rests are the RAW
+/// [`band_charge_state_from_coils`] — the end-band charges derived from the
+/// generated coil geometry, so the max state anchors on the phase that
+/// actually owns the track's edge band (the min state's mirror, per the
+/// requester's symmetry observation) — falling back to the config-only
+/// [`band_charge_state`] when the coils carry no usable geometry, and
+/// converts each end-magnet rest to the array centre with the
+/// `(N−1)/2·τ_p` offset. The rests are the RAW
 /// electromagnetic equilibria — they may sit outside the copper-bounded
 /// design limits ([`super::travel_envelope_over_slots`]); the envelope
 /// composer clamps them.
@@ -270,18 +382,12 @@ pub fn charge_based_endpoints_m(
     if !(tau_p > 0.0) || config.magnet_count == 0 {
         return None;
     }
-    let q_first = band_charge_state(
-        config,
-        EndMagnet::First,
-        copper_region_start_m,
-        copper_region_end_m,
-    )?;
-    let q_last = band_charge_state(
-        config,
-        EndMagnet::Last,
-        copper_region_start_m,
-        copper_region_end_m,
-    )?;
+    let q_first = band_charge_state_from_coils(config, coils, EndMagnet::First).or_else(|| {
+        band_charge_state(config, EndMagnet::First, copper_region_start_m, copper_region_end_m)
+    })?;
+    let q_last = band_charge_state_from_coils(config, coils, EndMagnet::Last).or_else(|| {
+        band_charge_state(config, EndMagnet::Last, copper_region_start_m, copper_region_end_m)
+    })?;
     let first_rest = solve_end_magnet_rest_m(
         config,
         coils,
@@ -742,6 +848,108 @@ mod tests {
             (shifted_state[1].charge - declared_state[1].charge).abs() > 1e-6,
             "shifted declaration had no effect"
         );
+    }
+
+    /// End-band anchoring (requester symmetry fix): the MAX state anchors on
+    /// the phase owning the SPATIALLY LAST band — the mirror of the min
+    /// state's spatially-first anchoring. On the 73-slot reference fixture
+    /// phase A owns both edge bands, so the Last state is unchanged
+    /// (1, −0.5, 0.5); on a 72-slot layout (L = 144 mm) the last slot is
+    /// phase C, and the old reference-phase anchoring produced (1, 0.5, −0.5)
+    /// — the min state verbatim, 4 mm off the edge — where the mirrored
+    /// edge-anchored state is (−0.5, 0.5, 1).
+    #[test]
+    fn last_state_anchors_on_the_spatially_last_band() {
+        let cfg = SimulationInput {
+            magnet_dims_m: [4.5 * MM, 10.0 * MM, 4.0 * MM],
+            magnet_count: 12,
+            magnet_pitch_m: 6.0 * MM,
+            active_area_length_m: 144.0 * MM,
+            ..SimulationInput::default()
+        };
+        let last = band_charge_state(&cfg, EndMagnet::Last, 0.0, 144.0 * MM).expect("last");
+        assert!((last[0].charge + 0.5).abs() < 1e-12, "A {}", last[0].charge);
+        assert!((last[1].charge - 0.5).abs() < 1e-12, "B {}", last[1].charge);
+        assert!((last[2].charge - 1.0).abs() < 1e-12, "C owns the edge band");
+    }
+
+    /// Coil-derived endpoint states (the production path): on fixtures whose
+    /// leg layout matches the analytic slot model they reproduce
+    /// [`band_charge_state`] exactly; on the laid-out infinity braid — whose
+    /// last active leg belongs to phase C (A ends at 136.6 mm, B at
+    /// 138.6 mm, C at 140.6 mm against a 147 mm track) — the max state
+    /// re-anchors onto C, giving the requester's mirrored charges
+    /// (A −0.5, B +0.5, C +1) and pushing the max endpoint outward.
+    #[test]
+    fn coil_derived_states_reanchor_the_max_endpoint() {
+        use crate::equilibrium::travel_envelope_over_slots;
+        use pcbmotorgen_routing::{generate_coils_from_context, RoutingContext};
+
+        // Parity with the analytic model on the reference fixture.
+        let cfg = reference_config();
+        let coils = serpentine_coils(&cfg);
+        for end in [EndMagnet::First, EndMagnet::Last] {
+            let from_coils = band_charge_state_from_coils(&cfg, &coils, end).expect("coils");
+            let analytic = band_charge_state(&cfg, end, 0.0, 147.0 * MM).expect("analytic");
+            for (c, a) in from_coils.iter().zip(analytic.iter()) {
+                assert_eq!(c.label, a.label);
+                assert!(
+                    (c.charge - a.charge).abs() < 1e-12,
+                    "{end:?}: coil-derived {} vs analytic {}",
+                    c.charge,
+                    a.charge
+                );
+            }
+        }
+
+        // The laid-out braid: C owns the last active leg → mirrored max state.
+        let ctx = RoutingContext {
+            active_area_length_mm: 147.0,
+            board_width_mm: 20.0,
+            num_layers: 4,
+            phases: 3,
+            min_trace_mm: 0.127,
+            min_space_mm: 0.127,
+            expects_continuous: false,
+            params: Default::default(),
+            magnet_pitch_mm: Some(6.0),
+            magnet_array_span_mm: Some(72.0),
+            phase_clearance_mm: None,
+        };
+        let braid = generate_coils_from_context(&ctx, "infinity-braid");
+        let first = band_charge_state_from_coils(&cfg, &braid, EndMagnet::First).expect("first");
+        assert!((first[0].charge - 1.0).abs() < 1e-12);
+        assert!((first[1].charge - 0.5).abs() < 1e-12);
+        assert!((first[2].charge + 0.5).abs() < 1e-12);
+        let last = band_charge_state_from_coils(&cfg, &braid, EndMagnet::Last).expect("last");
+        assert!((last[0].charge + 0.5).abs() < 1e-9, "A {}", last[0].charge);
+        assert!((last[1].charge - 0.5).abs() < 1e-9, "B {}", last[1].charge);
+        assert!((last[2].charge - 1.0).abs() < 1e-9, "C owns the braid's edge band");
+
+        // The re-anchored max state pushes the max endpoint outward (toward
+        // the copper end) versus the old reference-phase anchor.
+        let config_only = band_charge_state(&cfg, EndMagnet::Last, 0.0, 147.0 * MM).expect("cfg");
+        let rest_new = solve_end_magnet_rest_m(
+            &cfg, &braid, &last, EndMagnet::Last, 0.0, 147.0 * MM,
+        )
+        .expect("edge-anchored rest");
+        let rest_old = solve_end_magnet_rest_m(
+            &cfg, &braid, &config_only, EndMagnet::Last, 0.0, 147.0 * MM,
+        )
+        .expect("old-anchor rest");
+        assert!(
+            rest_new > rest_old,
+            "edge-anchored rest {:.3} mm not outward of {:.3} mm",
+            rest_new / MM,
+            rest_old / MM
+        );
+
+        // The composed envelope keeps the flush-clamp discipline.
+        let env = travel_envelope_charge_based(&cfg, &braid, 0.0, 147.0 * MM);
+        let base = travel_envelope_over_slots(12.0 * MM, 12, 0.0, 147.0 * MM);
+        assert!(env.min_position_m >= base.min_position_m - 1e-9);
+        assert!(env.max_position_m <= base.max_position_m + 1e-9);
+        assert!(env.max_position_m > env.min_position_m);
     }
 
     /// The Clarke angle of the crate's baseline excitation (1, 0, −1) is the

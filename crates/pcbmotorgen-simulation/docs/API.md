@@ -708,17 +708,22 @@ rest-snapped revisions after field verification):
   analytic copper arguments.
 
 Exposed to the desktop UI as the `travel_envelope` command
-(`TravelEnvelopeIpc`).
+(`TravelEnvelopeIpc`) — composed with §10c's charge-based refinement, so the
+UI envelope is the refined (charge-based, flush-clamped) endpoints.
 
 ## 10c. Charge-based travel endpoints: `equilibrium::charge` (kata k5r5)
 
 The ELECTROMAGNETIC refinement of §10b's endpoints: the true min/max mover
 position derives from the charge within the first and last phase bands of
-each phase. With the reference phase's first (resp. last) band fully charged
-and the remaining phases at their commutation-model offsets, that three-phase
-charge state fixes where the FIRST (resp. LAST) magnet settles; with 1:1
-spacing only the two end magnets need solving (rigid mover, interior magnets
-follow at fixed pitch — pinned by test).
+each phase. Each end's charge state is the MIRROR of the other's (requester
+symmetry observation): the min state anchors on the phase owning the
+SPATIALLY FIRST band (fully charged, remaining phases at their
+commutation-model offsets), and the max state anchors on the phase owning
+the SPATIALLY LAST band the same way — the two owners coincide only when the
+layout's end permutation puts the reference phase last (e.g. the 73-slot
+reference fixture, whose last slot is phase A). With 1:1 spacing only the
+two end magnets need solving (rigid mover, interior magnets follow at fixed
+pitch — pinned by test).
 
 ```rust
 pub enum EndMagnet { First, Last }
@@ -727,8 +732,21 @@ pub struct PhaseCharge { pub label: String, pub charge: f64 }  // normalized, pe
 
 // Charge state of the first/last phase-band triplet (declared bands when
 // present — hzs2 discipline — analytic slot-model fallback otherwise).
+// Both ends anchor on the phase owning the relevant track EDGE band.
 pub fn band_charge_state(config: &SimulationInput, end: EndMagnet,
                          copper_region_start_m: f64, copper_region_end_m: f64)
+    -> Option<Vec<PhaseCharge>>;
+
+// AUTHORITATIVE endpoint states, derived from the generated coil geometry:
+// the end-band anchors come from the coils' first/last active-segment x
+// positions, reflecting the LAID-OUT end permutation (the declared-band
+// records carry only each phase's FIRST-instance centerline, so they cannot
+// express the end bands). Reproduces band_charge_state exactly on
+// analytic-layout fixtures; re-anchors on laid-out patterns whose edge band
+// differs (e.g. the infinity braid, whose last active leg is phase C —
+// giving the mirrored max charges (−0.5, 0.5, 1)).
+pub fn band_charge_state_from_coils(config: &SimulationInput, coils: &[PhaseCoil],
+                                    end: EndMagnet)
     -> Option<Vec<PhaseCharge>>;
 
 // Clarke electrical angle [rad] of a 3-phase charge state, (−π, π] — the
@@ -748,8 +766,9 @@ pub fn solve_end_magnet_rest_m(config: &SimulationInput, coils: &[PhaseCoil],
                                copper_region_start_m: f64, copper_region_end_m: f64)
     -> Option<f64>;
 
-// RAW endpoints (array centre) from both end solves. May sit outside the
-// design limits; None when either solve is undefined.
+// RAW endpoints (array centre) from both end solves (coil-derived charge
+// states, config-only fallback). May sit outside the design limits; None
+// when either solve is undefined.
 pub fn charge_based_endpoints_m(config: &SimulationInput, coils: &[PhaseCoil],
                                 copper_region_start_m: f64, copper_region_end_m: f64)
     -> Option<(f64, f64)>;
@@ -765,19 +784,29 @@ pub fn travel_envelope_charge_based(config: &SimulationInput, coils: &[PhaseCoil
 ```
 
 Measured reference-fixture behaviour (N = 12, P_e = 12 mm, copper [0, 147] mm,
-serpentine fixture): the first-band charge state `(1, 0.5, −0.5)` settles the
-first magnet at ≈ −2.89 mm and the last-band state `(1, −0.5, 0.5)` the last
-magnet at ≈ +147.02 mm — BOTH raw rests overhang the copper-bounded design
-limits (raw endpoints ≈ [30.11, 114.02] mm array centre), so the refined
-envelope EQUALS the flush clamp **[36, 111] mm**: the authority's reference
-output is unchanged by the refinement (no desktop pin churn; kata ab30 pins
-stay valid). On other fixtures the rests can land inside the limits and the
-refinement pulls the endpoints inward. The pinned invariants: interior zero
-recurrence at exactly P_e, reversed-charge half-period (P_e/2) symmetry, and
-the interior rigid pitch τ_p. The requester's "120° offset" phrasing is the
-classic balanced-law convention (glossary "Commutation"); the solver consumes
-whatever offsets the commutation model declares (60° for the default 3-phase
-1:1 layout — the general per-coil offset law).
+serpentine fixture — its leg layout matches the analytic slot model, so the
+coil-derived states reproduce the analytic ones): the first-band charge state
+`(1, 0.5, −0.5)` settles the first magnet at ≈ −2.89 mm and the last-band
+state `(1, −0.5, 0.5)` the last magnet at ≈ +147.02 mm — BOTH raw rests
+overhang the copper-bounded design limits (raw endpoints ≈ [30.11, 114.02] mm
+array centre), so the refined envelope EQUALS the flush clamp **[36, 111] mm**:
+the authority's reference output is unchanged by the refinement (no desktop
+pin churn; kata ab30 pins stay valid). On laid-out patterns the rests can
+land inside the limits and the refinement pulls the endpoints inward — on
+the desktop's default infinity-braid build the last active leg belongs to
+phase C (A ends ≈ 136.6 mm, B ≈ 138.6 mm, C ≈ 140.6 mm), so the max state
+re-anchors onto C (charges (−0.5, 0.5, 1) — the min state mirrored) and the
+measured refined envelope is **[36, 107.97] mm**. The pinned invariants:
+interior zero recurrence at exactly P_e, reversed-charge half-period (P_e/2)
+symmetry, and the interior rigid pitch τ_p. Residual end-offset asymmetry
+(first vs last magnet rest relative to the copper ends) on non-mirror-closed
+layouts is geometric — edge-band distances, the end permutation, and the
+end-magnet polarity (an even magnet count puts a −Z magnet at the max end,
+shifting its rest by up to half an electrical period) — not a charge-state
+defect. The requester's "120° offset" phrasing is the classic balanced-law
+convention (glossary "Commutation"); the solver consumes whatever offsets
+the commutation model declares (60° for the default 3-phase 1:1 layout —
+the general per-coil offset law).
 
 ## 11. Re-exports
 
