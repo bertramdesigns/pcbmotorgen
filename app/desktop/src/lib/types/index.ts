@@ -15,4 +15,5 @@ export * from "./enums";
 export * from "./kicad";
 export * from "./magnets";
 export * from "./physics";
+export * from "./project";
 export * from "./routing";

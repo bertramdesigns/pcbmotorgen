@@ -27,6 +27,8 @@
  * - `routing` — routing-pattern plugin catalog + DRC checks
  * - `kicad` — board connect / write / diagnostics / preview
  * - `dxf` — DXF export + native file dialog
+ * - `project` — project save/load (kata 0cgm; no mock fallback — these are
+ *   critical calls)
  * - `mocks` — deterministic offline implementations (internal)
  */
 
@@ -34,4 +36,5 @@ export * from "./core";
 export * from "./dxf";
 export * from "./kicad";
 export * from "./physics";
+export * from "./project";
 export * from "./routing";
