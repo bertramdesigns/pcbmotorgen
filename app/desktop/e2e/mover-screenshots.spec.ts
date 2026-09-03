@@ -14,17 +14,17 @@ import { fileURLToPath } from "node:url";
  * Run with: `pnpm shot:mover` (desktop-tauri project, 1280×800).
  * Output: screenshots/mover-at-min.png and screenshots/mover-at-max.png.
  *
- * The browser (vite dev) build runs on the deterministic mock IPC, whose
- * `mockTravelEnvelope` mirrors the Rust `travel_envelope_over_slots` 1:1,
- * so what is captured here is the same endpoint geometry the backend
- * computes. Frontend defaults (N=12, P_e=12 mm, active area 147 mm — the
- * copper active area is the whole track) under the FLUSH endpoint spec
- * (kata 5c7r): span 72 mm → envelope 36 → 111 mm, so the drawn strip
- * spans 0 → 72 mm at min and 75 → 147 mm at max — array edges EXACTLY on
- * the copper bounds at both endpoints, sweep = configured travel (75 mm)
- * exactly. (Note: the geometric fallback now equals the envelope limits,
- * so bounds cannot distinguish envelope arrival — pinned via the readout
- * values instead.)
+ * The browser (vite dev) build runs on the mock IPC, which since kata ab30
+ * returns a FIXED placeholder travel envelope — the pinned output of the
+ * authority `pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots`
+ * for the reference build — instead of re-derived TS math. The MotionStore
+ * flags that placeholder with the visible "Travel envelope unavailable —
+ * backend required" warning, which this spec asserts. Frontend defaults
+ * (N=12, P_e=12 mm, active area 147 mm — the copper active area is the
+ * whole track) with the placeholder envelope 36 → 111 mm: span 72 mm, so
+ * the drawn strip spans 0 → 72 mm at min and 75 → 147 mm at max — array
+ * edges EXACTLY on the copper bounds at both endpoints, sweep = configured
+ * travel (75 mm) exactly, matching the authority's output for this build.
  */
 
 const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
@@ -39,10 +39,16 @@ test("capture the mover at the min and max travel endpoints", async ({
   const slider = page.locator(SLIDER).first();
   await slider.waitFor({ state: "visible", timeout: 15_000 });
 
-  // Wait for the debounced preview/envelope stream to settle. Under the
-  // flush endpoint spec (kata 5c7r) the geometric fallback equals the
-  // envelope limits, so the sweep width (75 mm at defaults) cannot
-  // distinguish them — the readout pins below carry the assertion instead.
+  // Kata ab30: mock mode runs on the fixed placeholder travel envelope.
+  // The "travel envelope unavailable" warning must be VISIBLE so the
+  // placeholder numbers are never silently mistaken for real physics.
+  await expect(
+    page.getByText("Travel envelope unavailable — backend required").first(),
+  ).toBeVisible({ timeout: 10_000 });
+
+  // Wait for the debounced preview/envelope stream to settle. The
+  // placeholder envelope (36 → 111 mm at defaults) gives the 75 mm sweep
+  // the readout prints — the readout pins below carry the assertion.
   const readout = page.locator(READOUT).first();
   await expect(readout).toContainText("/ 75.0 mm", { timeout: 10_000 });
 
@@ -78,9 +84,9 @@ test("capture the mover at the min and max travel endpoints", async ({
     });
   };
 
-  // Frontend defaults, flush spec (kata 5c7r): envelope 36 → 111 mm,
-  // span 72 mm → strip 0 → 72 mm at min, 75 → 147 mm at max — array
-  // edges EXACTLY on the copper bounds, sweep = configured travel.
+  // Frontend defaults with the placeholder envelope (36 → 111 mm), span
+  // 72 mm → strip 0 → 72 mm at min, 75 → 147 mm at max — array edges
+  // EXACTLY on the copper bounds, sweep = configured travel.
   await shoot("min", "0.0 - 72.0 mm");
   await shoot("max", "75.0 - 147.0 mm");
 });
