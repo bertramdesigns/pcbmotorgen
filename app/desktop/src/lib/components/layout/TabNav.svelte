@@ -34,8 +34,18 @@
   }
 </script>
 
-<nav aria-label="Motor workflow">
-  <div class="flex gap-1" role="tablist" aria-label="Motor workflow tabs">
+<!--
+  Zone 2 of the slim top bar: browser-style file tabs attached to the
+  header's bottom divider. The active tab shares the page background and
+  overlaps the divider by 1px (-mb-px), so it reads as "open" onto the
+  content below.
+-->
+<nav aria-label="Motor workflow" class="px-3">
+  <div
+    class="flex items-end gap-1 border-b border-slate-800"
+    role="tablist"
+    aria-label="Motor workflow tabs"
+  >
     {#each tabs as tab (tab.id)}
       {@const status = statusFor(tab.id)}
       <button
@@ -46,8 +56,8 @@
         aria-selected={activeTab === tab.id}
         tabindex={activeTab === tab.id ? 0 : -1}
         class={activeTab === tab.id
-          ? "rounded-md bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-emerald-500/60"
-          : "rounded-md px-4 py-2 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"}
+          ? "-mb-px rounded-t-md border border-b-0 border-slate-800 bg-slate-900 px-3.5 py-1.5 text-sm font-semibold text-slate-100"
+          : "-mb-px rounded-t-md border border-b-0 border-transparent px-3.5 py-1.5 text-sm text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-200"}
         onclick={() => onSelect(tab.id)}
         onkeydown={(event) => handleTabKeydown(event, tab.id)}
       >

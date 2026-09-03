@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default capability set",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "fs:default", "fs:write-all"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "dialog:default",
+    "fs:default",
+    "fs:write-all"
+  ]
 }

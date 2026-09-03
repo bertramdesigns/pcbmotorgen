@@ -7,15 +7,30 @@
 //!
 //! Linear mode only (PRODUCT_GOALS.md §7.A). No radial commands are exposed.
 
+use tauri::Emitter;
+
 mod commands;
 mod config;
 mod ipc;
+mod menu;
 mod plugins;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            menu::install(app.handle())?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            // File-menu project actions run in the webview flows
+            // (ProjectStore); forward the item ids as events — ids equal
+            // event names (see `menu.rs` / `bindProjectMenuActions`).
+            if matches!(event.id().as_ref(), menu::OPEN_ID | menu::SAVE_ID | menu::SAVE_AS_ID) {
+                let _ = app.emit(event.id().as_ref(), ());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::physics::compute_config_derived,
             commands::physics::validate_config,

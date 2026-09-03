@@ -13,6 +13,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { confirm, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type {
   LoadProjectResult,
@@ -107,4 +108,31 @@ export async function loadProject(path: string): Promise<LoadProjectResult> {
     throw new Error("Tauri backend unavailable — loading projects requires the desktop app");
   }
   return await invoke<LoadProjectResult>("load_project", { path });
+}
+
+/**
+ * Wire the native File menu to the project flows. The Rust menu bar owns
+ * the items and accelerators (`src-tauri/src/menu.rs`) and forwards each
+ * click as a Tauri event whose name equals the item id. Handlers run the
+ * same `ProjectStore` flows the former header buttons used; the store's
+ * `busy` guard serializes overlapping events. Resolves with an unbind
+ * function (no-op outside the Tauri shell — plain browser dev has no
+ * native menu).
+ */
+export async function bindProjectMenuActions(handlers: {
+  open: () => void;
+  save: () => void;
+  saveAs: () => void;
+}): Promise<() => void> {
+  if (!isTauriAvailable()) {
+    return () => {};
+  }
+  const unlisteners = await Promise.all([
+    listen("menu:open-project", handlers.open),
+    listen("menu:save-project", handlers.save),
+    listen("menu:save-project-as", handlers.saveAs),
+  ]);
+  return () => {
+    for (const unlisten of unlisteners) unlisten();
+  };
 }

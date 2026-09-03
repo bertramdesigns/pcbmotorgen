@@ -1,15 +1,16 @@
 <script lang="ts">
   import { config } from "./lib/stores/config.svelte";
-  import {
-    evaluateForceSweep,
-    generateCoils,
-    fetchTravelEnvelope,
-    computeFriction,
-    computePowerBudget,
-    computeHeightStack,
-    computeStackup,
-    debounce,
-  } from "./lib/ipc";
+import {
+  evaluateForceSweep,
+  generateCoils,
+  fetchTravelEnvelope,
+  computeFriction,
+  computePowerBudget,
+  computeHeightStack,
+  computeStackup,
+  bindProjectMenuActions,
+  debounce,
+} from "./lib/ipc";
   import type {
     ForceSweepResult,
     CoilPathDto,
@@ -25,8 +26,7 @@
   import { measureTrace } from "./lib/previewGeometry";
 
   import TabNav from "./lib/components/layout/TabNav.svelte";
-  import StatusIndicator from "./lib/components/layout/StatusIndicator.svelte";
-  import ProjectControls from "./lib/components/layout/ProjectControls.svelte";
+  import TitleBar from "./lib/components/layout/TitleBar.svelte";
   import StatusBanner from "./lib/components/ui/StatusBanner.svelte";
   import TravelDiagram from "./lib/components/design/TravelDiagram.svelte";
   import CoilPreview from "./lib/components/design/CoilPreview.svelte";
@@ -73,6 +73,20 @@
   // backend behind save_project/load_project; this store is the interface
   // half (DTO mapping + dirty tracking + dialog flows).
   const projects = new ProjectStore(config, motion);
+
+  // Native File menu (Open / Save / Save As, kata 0cgm): menu clicks land
+  // here as Tauri events and dispatch into the same store flows. The
+  // store's busy guard serializes overlapping menu events.
+  $effect(() => {
+    const unbind = bindProjectMenuActions({
+      open: () => void projects.open(),
+      save: () => void projects.save(false),
+      saveAs: () => void projects.save(true),
+    });
+    return () => {
+      void unbind.then((done) => done());
+    };
+  });
 
   // -----------------------------------------------------------------------
   // Design preview generation
@@ -340,25 +354,14 @@
 <main
   class="flex min-h-screen flex-col bg-slate-900 text-slate-100 lg:h-screen lg:overflow-hidden"
 >
-  <header
-    class="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 px-6 py-4 backdrop-blur"
-  >
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-bold tracking-tight">pcbmotorgen</h1>
-        <p class="text-xs text-slate-400">PCB stator motor generator</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-4">
-        <ProjectControls {projects} />
-        <TabNav
-          tabs={TABS}
-          {activeTab}
-          statusFor={tabStatus}
-          onSelect={selectTab}
-        />
-        <StatusIndicator {loading} />
-      </div>
-    </div>
+  <header class="shrink-0 bg-slate-900">
+    <TitleBar {projects} {loading} />
+    <TabNav
+      tabs={TABS}
+      {activeTab}
+      statusFor={tabStatus}
+      onSelect={selectTab}
+    />
   </header>
 
   {#if projects.error || projects.notice}
