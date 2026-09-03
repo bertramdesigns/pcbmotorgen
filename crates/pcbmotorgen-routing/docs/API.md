@@ -281,14 +281,30 @@ pub trait RoutingPattern: Send + Sync {
     fn version(&self) -> &str { "" }
     fn description(&self) -> &str { "" }
     fn parameters(&self) -> Vec<PatternParameter> { Vec::new() }
+    fn min_layers(&self) -> Option<u32> { None }           // layer-range metadata
+    fn max_layers(&self) -> Option<u32> { None }
+    fn layers_multiple_of(&self) -> Option<u32> { None }   // e.g. Some(2) = even-only stacks
     fn expects_continuous(&self) -> bool { false }
     fn generate(&self, ctx: &RoutingContext) -> Result<RoutingResult, RoutingError>;
 }
 ```
 
 `author` / `version` / `description` default to empty; `parameters()` defaults to
-none; `expects_continuous()` defaults to `false`. `metadata()` composes all of
-the above into a `PluginMetadata`.
+none; the layer-range accessors default to `None` (unconstrained);
+`expects_continuous()` defaults to `false`. `metadata()` composes all of the
+above into a `PluginMetadata`.
+
+**Layer-range metadata.** `min_layers()` / `max_layers()` declare the copper
+stack sizes a pattern supports, and `layers_multiple_of()` adds a
+multiple-of constraint (e.g. `Some(2)` = even-only stacks). All three default
+to `None` = unconstrained, so existing patterns are unaffected (additive).
+The host validates the context against them at generate-time
+(`generate_routing_report` rejects a context whose `num_layers` violates the
+declared range with a helpful error, e.g. `pattern "my-braid" requires at
+least 2 copper layer(s), got 1`) and exposes them through the plugin catalog
+(`available_pattern_metadata`) so the app can constrain its layer selector.
+The bundled infinity braid declares `min_layers = Some(2)` (its top/bottom
+braid needs two distinct copper layers).
 
 ### 6.1 Parameters
 
@@ -303,9 +319,18 @@ A pattern declares its user-editable knobs with `PatternParameter`:
 | `default` | `f64` | Default when unset. |
 | `min` / `max` | `f64?` | Inclusive range clamp, validated by the routing crate. |
 | `step` | `f64?` | Spinner step. |
+| `multiple_of` | `f64?` | "Value must be a multiple of this" constraint (e.g. `2.0` = even-only strand counts), validated by the routing crate. |
 
 Constructors: `PatternParameter::int(key, label, default, min, max)` and
-`PatternParameter::float(key, label, default)`, plus `.with_description(...)`.
+`PatternParameter::float(key, label, default)`, plus `.with_description(...)`
+and `.with_multiple_of(m)`.
+
+`multiple_of` is enforced by `validate_routing_params` with the same `1e-9`
+epsilon discipline as the min/max checks: a value within `1e-9` of a valid
+multiple passes (float noise), everything else is rejected before generation,
+e.g. `Strands = 3 is not a multiple of 2 for pattern "my-braid"`. The app
+mirrors the constraint onto the input's step + invalid state so an incorrect
+value cannot be submitted; the routing crate remains the authority.
 
 At generate-time the user's values arrive in `ctx.params.get(key)`; the pattern
 reads them with `ctx.param("num_strands", 5.0)`. A parameter representing a
@@ -338,14 +363,20 @@ PLUGIN = {
     "author": "You <you@example.com>",
     "version": "1.2.0",
     "description": "A nifty winding.",
+    "min_layers": 2,                      # optional layer-range metadata
+    "max_layers": None,                   # None/absent = unconstrained
+    "layers_multiple_of": 2,              # even-only stacks
     "parameters": [                       # optional
         {"key": "num_strands", "label": "Strands", "description": "Braided paths per period",
-         "param_type": "int", "default": 5, "min": 2, "max": 99, "step": 1},
+         "param_type": "int", "default": 5, "min": 2, "max": 99, "step": 1,
+         "multiple_of": 2},
     ],
 }
 ```
 
-Each dict in `parameters` maps 1:1 onto `PatternParameter`.
+Each dict in `parameters` maps 1:1 onto `PatternParameter`; the top-level
+`min_layers` / `max_layers` / `layers_multiple_of` keys map onto the trait's
+layer-range accessors and flow into `PluginMetadata`.
 
 ## 7. Design rules (DFM)
 
@@ -850,6 +881,7 @@ pub fn generate_coils_from_context(ctx: &RoutingContext, id: &str) -> Vec<PhaseC
 
 // Registry
 pub fn available_pattern_ids() -> Vec<(String, String)>;   // (id, display_name) catalog pairs
+pub fn available_pattern_metadata() -> Vec<PluginMetadata>; // catalog incl. layer-range metadata
 pub fn bundled_registry() -> RoutingRegistry;
 pub fn register_runtime_pattern(pattern: Box<dyn RoutingPattern>) -> Result<(), String>;
 pub fn unregister_runtime_pattern(id: &str);               // no-op for bundled patterns
@@ -875,7 +907,9 @@ pub fn check_interference(rules: &DesignRules, result: &RoutingResult) -> Vec<In
 ```
 
 Generation flow: `generate_routing_report` validates user parameters against the
-pattern's declared schema, calls `pattern.generate(ctx)`, runs the result
+pattern's declared schema (including `multiple_of`), validates the context's
+`num_layers` against the pattern's declared layer-range metadata, calls
+`pattern.generate(ctx)`, runs the result
 through the validator, then computes the dimension sidecar from the exact same
 context (`RoutingDimensions::for_infinity` for `"infinity-braid"`,
 `RoutingDimensions::from_result` for generic patterns). `generate_coils_from_context`
@@ -978,6 +1012,19 @@ human-readable message; it is never repaired in place.
   the inter-phase clearance `g_phase` an explicit input; when `None` it falls
   back to `min_space_mm` by documented contract. The `trace_count` hint no
   longer accepts whole-coil counts (`turns`, `windings_per_phase`).
+- **v-next pattern layer-range + param multiple-of metadata (kata we8r):**
+  additive-only, no API-version bump. The `RoutingPattern` trait gains three
+  defaulted methods (`min_layers`, `max_layers`, `layers_multiple_of` — all
+  `None` = unconstrained) that flow into `PluginMetadata` (serde-defaulted
+  fields, so older metadata payloads still deserialize), and
+  `PatternParameter` gains a serde-defaulted `multiple_of: Option<f64>`
+  constraint enforced by `validate_routing_params`. The host rejects
+  generate-time contexts whose `num_layers` violates the pattern's declared
+  layer range. Because the methods are defaulted and the wire shapes are
+  serde-defaulted, a previously compiled plugin still loads and runs against
+  the updated host; newly compiled plugins can opt into the metadata.
+  `available_pattern_metadata()` is a new facade function (the existing
+  `available_pattern_ids()` is unchanged).
 
 ## 16. Maintaining these documents
 

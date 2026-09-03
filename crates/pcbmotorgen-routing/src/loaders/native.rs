@@ -122,6 +122,18 @@ impl RoutingPattern for NativePlugin {
         self.pattern.parameters()
     }
 
+    fn min_layers(&self) -> Option<u32> {
+        self.pattern.min_layers()
+    }
+
+    fn max_layers(&self) -> Option<u32> {
+        self.pattern.max_layers()
+    }
+
+    fn layers_multiple_of(&self) -> Option<u32> {
+        self.pattern.layers_multiple_of()
+    }
+
     fn expects_continuous(&self) -> bool {
         self.pattern.expects_continuous()
     }

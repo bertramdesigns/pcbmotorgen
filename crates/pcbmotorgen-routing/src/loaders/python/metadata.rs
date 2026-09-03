@@ -52,4 +52,11 @@ pub struct RunnerMeta {
     /// Declared user-editable parameters.
     #[serde(default)]
     pub parameters: Vec<PatternParameter>,
+    /// Optional declared layer-range metadata (`None` = unconstrained).
+    #[serde(default)]
+    pub min_layers: Option<u32>,
+    #[serde(default)]
+    pub max_layers: Option<u32>,
+    #[serde(default)]
+    pub layers_multiple_of: Option<u32>,
 }

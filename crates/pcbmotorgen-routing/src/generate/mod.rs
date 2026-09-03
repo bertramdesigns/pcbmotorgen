@@ -25,5 +25,6 @@ pub use dispatch::{
 };
 pub use params_api::{pattern_metadata, pattern_parameters, validate_routing_params};
 pub use runtime_registry::{
-    available_pattern_ids, bundled_registry, register_runtime_pattern, unregister_runtime_pattern,
+    available_pattern_ids, available_pattern_metadata, bundled_registry, register_runtime_pattern,
+    unregister_runtime_pattern,
 };

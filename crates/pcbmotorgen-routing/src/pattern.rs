@@ -41,6 +41,12 @@ pub struct PatternParameter {
     pub max: Option<f64>,
     /// Optional step for the spinner.
     pub step: Option<f64>,
+    /// Optional "value must be a multiple of this" constraint (e.g. `2.0` =
+    /// even-only strand counts). Validated by the routing crate before
+    /// generation (`validate_routing_params`); the app mirrors it onto the
+    /// input's step + invalid state. `None` = unconstrained.
+    #[serde(default)]
+    pub multiple_of: Option<f64>,
 }
 
 impl PatternParameter {
@@ -60,6 +66,7 @@ impl PatternParameter {
             min: Some(min),
             max: Some(max),
             step: Some(1.0),
+            multiple_of: None,
         }
     }
 
@@ -77,11 +84,20 @@ impl PatternParameter {
             min: None,
             max: None,
             step: None,
+            multiple_of: None,
         }
     }
 
     pub fn with_description(mut self, d: impl Into<String>) -> Self {
         self.description = d.into();
+        self
+    }
+
+    /// Declare that valid values are multiples of `m` (e.g. `2.0` =
+    /// even-only counts). The routing crate rejects non-multiples in
+    /// [`crate::validate_routing_params`] before generation.
+    pub fn with_multiple_of(mut self, m: f64) -> Self {
+        self.multiple_of = Some(m);
         self
     }
 }
@@ -99,6 +115,16 @@ pub struct PluginMetadata {
     pub version: String,
     /// One-line description.
     pub description: String,
+    /// Minimum supported copper-layer count (`None` = unconstrained).
+    #[serde(default)]
+    pub min_layers: Option<u32>,
+    /// Maximum supported copper-layer count (`None` = unconstrained).
+    #[serde(default)]
+    pub max_layers: Option<u32>,
+    /// The copper-layer count must be a multiple of this (e.g. `Some(2)` =
+    /// even-only stacks). `None` = unconstrained.
+    #[serde(default)]
+    pub layers_multiple_of: Option<u32>,
 }
 
 impl PluginMetadata {
@@ -138,6 +164,26 @@ pub trait RoutingPattern: Send + Sync {
         ""
     }
 
+    /// Minimum supported copper-layer count. Defaults to `None` = any stack
+    /// size the board provides; patterns whose geometry needs a minimum
+    /// stack (e.g. a two-sided braid) override this. The host validates the
+    /// context against it before generation.
+    fn min_layers(&self) -> Option<u32> {
+        None
+    }
+
+    /// Maximum supported copper-layer count. Defaults to `None` = no upper
+    /// bound beyond the board's copper stack.
+    fn max_layers(&self) -> Option<u32> {
+        None
+    }
+
+    /// The copper-layer count must be a multiple of this (e.g. `Some(2)` =
+    /// even-only stacks). Defaults to `None` = unconstrained.
+    fn layers_multiple_of(&self) -> Option<u32> {
+        None
+    }
+
     /// The user-editable parameters this pattern exposes. Defaults to none.
     ///
     /// Derived-from-board quantities must NOT be listed here.
@@ -153,6 +199,9 @@ pub trait RoutingPattern: Send + Sync {
             author: self.author().to_string(),
             version: self.version().to_string(),
             description: self.description().to_string(),
+            min_layers: self.min_layers(),
+            max_layers: self.max_layers(),
+            layers_multiple_of: self.layers_multiple_of(),
         }
     }
 
@@ -164,4 +213,96 @@ pub trait RoutingPattern: Send + Sync {
 
     /// Produce the coil geometry for the given context.
     fn generate(&self, ctx: &RoutingContext) -> Result<RoutingResult, RoutingError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::RoutingContext;
+    use crate::model::RoutingResult;
+
+    /// A pattern with no metadata overrides: every layer-range field must
+    /// default to `None` (unconstrained).
+    struct BarePattern;
+
+    impl RoutingPattern for BarePattern {
+        fn id(&self) -> &str {
+            "bare"
+        }
+        fn display_name(&self) -> &str {
+            "Bare"
+        }
+        fn generate(&self, _ctx: &RoutingContext) -> Result<RoutingResult, RoutingError> {
+            Ok(RoutingResult::default())
+        }
+    }
+
+    /// A pattern declaring the full layer-range metadata.
+    struct EvenStackPattern;
+
+    impl RoutingPattern for EvenStackPattern {
+        fn id(&self) -> &str {
+            "even-stack"
+        }
+        fn display_name(&self) -> &str {
+            "Even Stack"
+        }
+        fn min_layers(&self) -> Option<u32> {
+            Some(2)
+        }
+        fn max_layers(&self) -> Option<u32> {
+            Some(8)
+        }
+        fn layers_multiple_of(&self) -> Option<u32> {
+            Some(2)
+        }
+        fn generate(&self, _ctx: &RoutingContext) -> Result<RoutingResult, RoutingError> {
+            Ok(RoutingResult::default())
+        }
+    }
+
+    #[test]
+    fn layer_range_metadata_defaults_to_unconstrained() {
+        let m = BarePattern.metadata();
+        assert_eq!(m.min_layers, None);
+        assert_eq!(m.max_layers, None);
+        assert_eq!(m.layers_multiple_of, None);
+    }
+
+    #[test]
+    fn layer_range_metadata_flows_into_plugin_metadata() {
+        let m = EvenStackPattern.metadata();
+        assert_eq!(m.min_layers, Some(2));
+        assert_eq!(m.max_layers, Some(8));
+        assert_eq!(m.layers_multiple_of, Some(2));
+    }
+
+    #[test]
+    fn plugin_metadata_layer_fields_are_serde_defaulted() {
+        // Additive change: payloads written before the layer fields existed
+        // must still deserialize (serde default = unconstrained).
+        let json = r#"{"id":"p","display_name":"P","author":"","version":"","description":""}"#;
+        let m: PluginMetadata = serde_json::from_str(json).expect("old payload parses");
+        assert_eq!(m.min_layers, None);
+        assert_eq!(m.max_layers, None);
+        assert_eq!(m.layers_multiple_of, None);
+    }
+
+    #[test]
+    fn pattern_parameter_multiple_of_defaults_to_none() {
+        let p = PatternParameter::int("n", "N", 4.0, 2.0, 8.0);
+        assert_eq!(p.multiple_of, None);
+        let p = PatternParameter::float("a", "A", 1.0);
+        assert_eq!(p.multiple_of, None);
+    }
+
+    #[test]
+    fn pattern_parameter_multiple_of_builder_and_serde_default() {
+        let p = PatternParameter::int("n", "N", 4.0, 2.0, 8.0).with_multiple_of(2.0);
+        assert_eq!(p.multiple_of, Some(2.0));
+        // Old JSON without the field still parses (serde default).
+        let json = r#"{"key":"n","label":"N","description":"","param_type":"int","default":4.0,"min":2.0,"max":8.0,"step":1.0}"#;
+        let p: PatternParameter = serde_json::from_str(json).expect("old payload parses");
+        assert_eq!(p.multiple_of, None);
+    }
 }

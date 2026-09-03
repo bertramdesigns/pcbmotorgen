@@ -69,6 +69,12 @@ impl RoutingPattern for MyGenerator {
     fn author(&self) -> &str { "You <you@example.com>" }
     fn version(&self) -> &str { "1.2.0" }
     fn description(&self) -> &str { "A nifty winding." }
+    // Optional layer-range metadata (default None = unconstrained). Declare
+    // it so the app can constrain its layer selector and reject unsupported
+    // stacks at generate time instead of inside your `generate`.
+    fn min_layers(&self) -> Option<u32> { Some(2) }          // e.g. needs two distinct copper layers
+    fn max_layers(&self) -> Option<u32> { None }             // no upper bound
+    fn layers_multiple_of(&self) -> Option<u32> { Some(2) }  // even-only stacks
     // ...
 }
 ```
@@ -88,9 +94,13 @@ PLUGIN = {
     "author": "You <you@example.com>",
     "version": "1.2.0",
     "description": "A nifty winding.",
+    "min_layers": 2,                     # optional layer-range metadata
+    "max_layers": None,                  # None/absent = unconstrained
+    "layers_multiple_of": 2,             # even-only stacks
     "parameters": [                      # optional
         {"key": "num_strands", "label": "Strands", "description": "Braided paths per period",
-         "param_type": "int", "default": 5, "min": 2, "max": 99, "step": 1},
+         "param_type": "int", "default": 5, "min": 2, "max": 99, "step": 1,
+         "multiple_of": 2},
     ],
 }
 
@@ -117,6 +127,7 @@ Patterns declare their **user-editable knobs** with `PatternParameter`:
 | `default`     | f64                  | default value when unset                       |
 | `min` / `max` | f64? (any type)      | inclusive range clamp (validated in routing) |
 | `step`        | f64?                 | spinner step                                   |
+| `multiple_of` | f64?                 | "value must be a multiple of this" constraint (validated in routing) |
 
 ### Rust
 
@@ -124,10 +135,16 @@ Patterns declare their **user-editable knobs** with `PatternParameter`:
 fn parameters(&self) -> Vec<PatternParameter> {
     vec![
         PatternParameter::int("num_strands", "Strands per period", 5.0, 2.0, 99.0)
-            .with_description("Number of braided paths in each period."),
+            .with_description("Number of braided paths in each period.")
+            .with_multiple_of(2.0),  // the braid needs an even strand count
     ]
 }
 ```
+
+`multiple_of` (optional, serde-defaulted) is enforced by the routing crate with
+the same `1e-9` epsilon discipline as the min/max clamp; the app mirrors it
+onto the input's step + invalid state so an off-multiple value cannot be
+submitted.
 
 At generate time the user's values arrive in `ctx.params.get("num_strands")`;
 the pattern calls `ctx.param("num_strands", 5.0)` to read it with a fallback.
@@ -320,6 +337,9 @@ list.
 - [ ] Net labels are non-empty ASCII phase names.
 - [ ] Derive board-sized quantities from the context; expose only true knobs
       as `parameters`.
+- [ ] Declare layer-range metadata (`min_layers` / `max_layers` /
+      `layers_multiple_of`) when your pattern needs a specific stack; declare
+      `multiple_of` on parameters whose values must be multiples.
 - [ ] Implement metadata (author, version, description) — Rust accessors or the
       Python `--metadata` block.
 - [ ] Keep output to raw geometry only — never set widths / via sizes / DRC
