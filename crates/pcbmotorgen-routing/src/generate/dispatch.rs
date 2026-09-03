@@ -1,4 +1,5 @@
 use super::adapters::routing_result_to_phase_coils;
+use super::io_fanout::{IoFanoutOptions, generate_io_fanout};
 use super::params_api::validate_routing_params;
 use super::runtime_registry::{bundled_registry, register_runtime_pattern, runtime};
 use crate::context::RoutingContext;
@@ -13,11 +14,56 @@ use crate::RoutingPattern;
 /// id.  The report contains the canonical geometry plus the calculated
 /// pole/phase-band dimensions used to hand the traces off to magnet-pattern code.
 pub fn generate_routing_report(ctx: &RoutingContext, id: &str) -> Result<RoutingReport, String> {
+    dispatch(ctx, id, None)
+}
+
+/// Generate a validated [`RoutingReport`] with host-side IO fanout generation
+/// enabled (kata xa0f): after the pattern produces its geometry and before
+/// validation, the host appends connector pads + fanout traces connecting
+/// every coil terminal to a board-edge connector row (see
+/// [`IoFanoutOptions`] / [`generate_io_fanout`]).
+///
+/// This is the opt-in IO toggle: [`generate_routing_report`] keeps payloads
+/// byte-identical to the pre-IO behavior. The generated IO must pass the same
+/// strict validator as pattern geometry — a failure is a generation error,
+/// never a sanitised result.
+pub fn generate_routing_report_with_io(
+    ctx: &RoutingContext,
+    id: &str,
+    io: &IoFanoutOptions,
+) -> Result<RoutingReport, String> {
+    dispatch(ctx, id, Some(io))
+}
+
+/// Generate a validated [`RoutingResult`] for the given context and pattern id.
+///
+/// Rejects out-of-range user parameters (validated against the pattern's
+/// declared schema) before generation. Prefers a runtime-loaded pattern, then
+/// falls back to the bundled registry.
+pub fn generate_routing_result(ctx: &RoutingContext, id: &str) -> Result<RoutingResult, String> {
+    generate_routing_report(ctx, id).map(|report| report.result)
+}
+
+/// [`generate_routing_result`] with host-side IO fanout generation enabled
+/// (see [`generate_routing_report_with_io`]).
+pub fn generate_routing_result_with_io(
+    ctx: &RoutingContext,
+    id: &str,
+    io: &IoFanoutOptions,
+) -> Result<RoutingResult, String> {
+    generate_routing_report_with_io(ctx, id, io).map(|report| report.result)
+}
+
+fn dispatch(
+    ctx: &RoutingContext,
+    id: &str,
+    io: Option<&IoFanoutOptions>,
+) -> Result<RoutingReport, String> {
     validate_routing_params(id, &ctx.params)?;
 
     if let Ok(guard) = runtime().lock() {
         if let Some(p) = guard.get(id) {
-            return generate_with_report(p, ctx, id);
+            return generate_with_report(p, ctx, id, io);
         }
     }
 
@@ -28,16 +74,7 @@ pub fn generate_routing_report(ctx: &RoutingContext, id: &str) -> Result<Routing
             reg.ids().join(", ")
         )
     })?;
-    generate_with_report(pattern, ctx, id)
-}
-
-/// Generate a validated [`RoutingResult`] for the given context and pattern id.
-///
-/// Rejects out-of-range user parameters (validated against the pattern's
-/// declared schema) before generation. Prefers a runtime-loaded pattern, then
-/// falls back to the bundled registry.
-pub fn generate_routing_result(ctx: &RoutingContext, id: &str) -> Result<RoutingResult, String> {
-    generate_routing_report(ctx, id).map(|report| report.result)
+    generate_with_report(pattern, ctx, id, io)
 }
 
 /// Reject contexts whose copper-layer count violates the pattern's declared
@@ -79,12 +116,22 @@ fn generate_with_report(
     pattern: &dyn RoutingPattern,
     ctx: &RoutingContext,
     id: &str,
+    io: Option<&IoFanoutOptions>,
 ) -> Result<RoutingReport, String> {
     validate_layer_range(pattern, ctx, id)?;
 
-    let result = pattern
+    let mut result = pattern
         .generate(ctx)
         .map_err(|e| format!("pattern \"{id}\" failed: {e}"))?;
+
+    // Host-side IO fanout generation (kata xa0f): pattern-agnostic, opt-in,
+    // always BEFORE the strict validator — generated IO is held to the same
+    // rejected-not-sanitised standard as pattern geometry.
+    if let Some(io_opts) = io {
+        generate_io_fanout(&mut result, ctx, io_opts)
+            .map_err(|e| format!("pattern \"{id}\" IO fanout generation failed: {e}"))?;
+    }
+
     Validator::validate(&result, ctx, pattern.expects_continuous()).map_err(|e| {
         format!("pattern \"{id}\" produced a malformed shape and was rejected: {e}")
     })?;
@@ -358,5 +405,79 @@ mod tests {
         );
         assert!(generate_routing_result(&ctx_for(4), &id).is_ok());
         crate::unregister_runtime_pattern(&id);
+    }
+
+    // --- Host-side IO fanout generation (kata xa0f) ------------------------
+
+    fn braid_ctx() -> RoutingContext {
+        let mut params = std::collections::HashMap::new();
+        params.insert("num_strands".to_string(), 5.0);
+        params.insert("n_periods".to_string(), 4.0);
+        RoutingContext {
+            active_area_length_mm: 600.0,
+            board_width_mm: 20.0,
+            num_layers: 2,
+            phases: 3,
+            min_trace_mm: 0.1,
+            min_space_mm: 0.1,
+            expects_continuous: false,
+            params,
+            ..RoutingContext::default()
+        }
+    }
+
+    #[test]
+    fn io_generation_is_opt_in_and_default_payloads_stay_io_free() {
+        let ctx = braid_ctx();
+        let plain = generate_routing_result(&ctx, "infinity-braid").expect("braid generates");
+        assert!(
+            plain.io_pads.is_empty() && plain.io_traces.is_empty(),
+            "the default entry points must not emit IO elements"
+        );
+    }
+
+    #[test]
+    fn generated_io_passes_the_strict_validator_end_to_end() {
+        use crate::io::IoTraceRole;
+
+        let ctx = braid_ctx();
+        let io = crate::generate::IoFanoutOptions::tht(0.4, 0.2);
+        let result = generate_routing_result_with_io(&ctx, "infinity-braid", &io)
+            .expect("braid + IO generates and validates");
+
+        // The bundled braid groups into 2 layers × 3 phase nets = 6 coils,
+        // each with a start and an end terminal.
+        assert_eq!(result.io_pads.len(), 12, "one pad per coil terminal");
+        assert_eq!(result.io_traces.len(), 12);
+        assert!(result.io_pads.iter().all(|p| p.drill_mm == Some(0.2)));
+
+        // Every generated trace is strictly non-degenerate, on a valid layer,
+        // and carries the fanout role.
+        for t in &result.io_traces {
+            let dx = t.end.x - t.start.x;
+            let dy = t.end.y - t.start.y;
+            assert!((dx * dx + dy * dy).sqrt() > 1e-6, "non-degenerate fanout");
+            assert_eq!(t.role, IoTraceRole::Fanout);
+            assert!(t.layer < ctx.num_layers);
+        }
+
+        // The host validates the IO-augmented result — explicitly re-run the
+        // strict gate to prove generated IO passes it standalone.
+        crate::Validator::validate(&result, &ctx, false)
+            .expect("generated IO must pass the strict validator");
+    }
+
+    #[test]
+    fn io_generation_failure_surfaces_as_a_generation_error() {
+        let ctx = braid_ctx();
+        let io = crate::generate::IoFanoutOptions {
+            pad_diameter_mm: 0.0,
+            ..crate::generate::IoFanoutOptions::tht(0.4, 0.2)
+        };
+        let err = generate_routing_result_with_io(&ctx, "infinity-braid", &io).unwrap_err();
+        assert!(
+            err.contains("IO fanout generation failed"),
+            "unexpected: {err}"
+        );
     }
 }

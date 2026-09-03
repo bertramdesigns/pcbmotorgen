@@ -37,6 +37,13 @@ impl Point {
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
+
+    /// Euclidean distance to another point [mm].
+    pub fn distance_to(&self, other: Point) -> f64 {
+        let dx = other.x - self.x;
+        let dy = other.y - self.y;
+        (dx * dx + dy * dy).sqrt()
+    }
 }
 
 /// Index into the board's copper stack `[0, num_layers)`.
