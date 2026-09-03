@@ -11,15 +11,21 @@ The crate owns:
 
 - **`DesignRules`** (`rules`) — the trace width / clearance / via sizing
   authority, including the plated IO pad sizing helper
-  `io_tht_pad_diameter_mm()` (drill + 2 × annular ring). Downstream consumers
+  `io_tht_pad_diameter_mm()` (drill + 2 × annular ring) and the
+  `io_fanout_options()` bridge that hands rule-derived sizes to the host IO
+  fanout generator (kata xa0f). Downstream consumers
   (the KiCad writer, the DXF exporter) read sizes from this spec — they never
   decide them.
 - **`check_interference` / `InterferenceViolation`** (`interference`) — DRC
   copper-clearance diagnostics over a validated `RoutingResult`:
-  same-layer different-net segment clearance (`min_trace_mm + min_space_mm`)
-  and via-pad-to-trace clearance (`via_pad_radius + trace_width/2 +
-  min_space`). Violations are **diagnostics only** — reported, never used to
-  silently alter geometry.
+  same-layer different-net segment clearance (`min_trace_mm + min_space_mm`),
+  via-pad-to-trace clearance (`via_pad_radius + trace_width/2 +
+  min_space`), and — since kata xa0f — the IO elements: `io_traces[]` join
+  the same-layer clearance checks (against segments and each other, and as
+  via-pad clearance targets), and `io_pads[]` are checked against
+  different-net copper / other pads on the layers they declare
+  (`io_pad_clearance`). Violations are **diagnostics only** — reported, never
+  used to silently alter geometry.
 
 The strict-shape validator (bounds / finite / degenerate / continuity) is wire
 -contract validation and stays in `pcbmotorgen-routing` — it is not DFM.

@@ -78,6 +78,18 @@ impl DesignRules {
     pub fn io_tht_pad_diameter_mm(&self) -> f64 {
         self.via_pad_diameter_mm()
     }
+
+    /// Bridge: the canonical host IO fanout options from this rule snapshot
+    /// (kata xa0f) — a THT connector row sized by this authority
+    /// (`io_tht_pad_diameter_mm` pad copper, `min_via_drill_mm` drill). The
+    /// routing crate's IO generator reads sizes from its options and never
+    /// decides them, so this bridge is the sizing handoff.
+    pub fn io_fanout_options(&self) -> pcbmotorgen_routing::IoFanoutOptions {
+        pcbmotorgen_routing::IoFanoutOptions::tht(
+            self.io_tht_pad_diameter_mm(),
+            self.min_via_drill_mm,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -119,5 +131,14 @@ mod tests {
         );
         let back: DesignRules = serde_json::from_str(&json).unwrap();
         assert_eq!(back, rules);
+    }
+
+    #[test]
+    fn io_fanout_options_bridge_sizes_from_the_rules() {
+        let rules = DesignRules::default();
+        let opts = rules.io_fanout_options();
+        assert_eq!(opts.pad_diameter_mm, rules.io_tht_pad_diameter_mm());
+        assert_eq!(opts.drill_mm, Some(rules.min_via_drill_mm));
+        assert!(opts.drill_mm.unwrap() > 0.0, "drill is positive");
     }
 }
