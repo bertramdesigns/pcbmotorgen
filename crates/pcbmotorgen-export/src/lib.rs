@@ -14,8 +14,8 @@
 //!   board item production ([`coils_to_board_items`], and the additive
 //!   [`io_elements_to_board_items`] for IO pads / fanout traces), high-level
 //!   board operations ([`BoardHandle`]) and diagnostics / preview
-//!   ([`get_board_diagnostics`], [`validate_write_preconditions`],
-//!   [`preview_coils`]).
+//!   ([`get_board_diagnostics`] — live edge-cut bounding box + net classes
+//!   in use, [`validate_write_preconditions`], [`preview_coils`]).
 //!
 //! Both exporters consume [`pcbmotorgen_routing`] types ([`PhaseCoil`],
 //! [`RoutingResult`]) and the [`pcbmotorgen_dfm`] DFM sizing snapshot
@@ -344,9 +344,10 @@ pub use proto::common::types::{
     KiCadVersion, LibraryIdentifier, LockedState, ProjectSpecifier, Vector2, Vector3,
 };
 pub use proto::board::types::{Arc, BoardLayer, Footprint, FootprintInstance, Net, Pad, PadType, Track, Via};
+pub use proto::board::commands::BoardOriginType;
 
 // Phase 7 re-exports.
-pub use board::BoardHandle;
+pub use board::{BoardBBoxMm, BoardHandle};
 pub use commit::Commit;
 pub use diagnostics::{
     get_board_diagnostics, preview_coils, validate_write_preconditions, BoardDiagnostics,
