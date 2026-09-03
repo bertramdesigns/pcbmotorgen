@@ -6,6 +6,7 @@
 
 use crate::context::RoutingContext;
 use crate::error::{RoutingError, RoutingErrorKind};
+use crate::io::IoPadKind;
 use crate::model::{Point, RoutingResult, FORMAT_VERSION};
 
 /// The single validation gate.
@@ -59,6 +60,8 @@ impl Validator {
         validate_vias(result, ctx, &bounds)?;
         validate_pole_regions(result, &bounds)?;
         validate_phase_bands(result, ctx, &bounds)?;
+        validate_io_pads(result, ctx, &bounds)?;
+        validate_io_traces(result, ctx, &bounds)?;
 
         // Continuity (per layer+net chain).
         if expect_continuous {
@@ -253,6 +256,105 @@ fn validate_phase_bands(
         }
         check_layer(band.layer, ctx.num_layers, &format!("phase_bands[{i}].layer"), idx)?;
         check_net(&band.net, &format!("phase_bands[{i}].net"), idx)?;
+    }
+    Ok(())
+}
+
+/// Validate the additive IO pad elements (`io_pads[]`).
+///
+/// Same geometric domain as every other element (the routing domain equals
+/// the active area; the epsilon lets pads sitting exactly on a boundary —
+/// e.g. board-edge connector pads — pass). Pad-stack integrity: sizes must
+/// be finite and positive; THT pads require a positive `drill_mm`, surface
+/// pads (SMD / board-edge) reject one.
+fn validate_io_pads(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, pad) in result.io_pads.iter().enumerate() {
+        let idx = i + 1;
+        check_point(&pad.position, bounds, &format!("io_pads[{i}].position"), idx)?;
+        if !pad.size.x.is_finite()
+            || !pad.size.y.is_finite()
+            || pad.size.x <= 0.0
+            || pad.size.y <= 0.0
+        {
+            return Err(RoutingError::new(
+                idx,
+                format!("io_pads[{i}].size"),
+                RoutingErrorKind::Malformed,
+                format!(
+                    "pad size {:.3}×{:.3} mm — pad dimensions must be finite and positive",
+                    pad.size.x, pad.size.y
+                ),
+            ));
+        }
+        if let Some(drill) = pad.drill_mm {
+            if !drill.is_finite() || drill <= 0.0 {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("io_pads[{i}].drill_mm"),
+                    RoutingErrorKind::Malformed,
+                    format!("drill_mm = {drill} — drill diameters must be finite and positive"),
+                ));
+            }
+        }
+        match pad.kind {
+            IoPadKind::Tht if pad.drill_mm.is_none() => {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("io_pads[{i}]"),
+                    RoutingErrorKind::Missing,
+                    "THT IO pad without drill_mm — a plated through-hole pad must declare its drill diameter",
+                ));
+            }
+            IoPadKind::Smd | IoPadKind::BoardEdge if pad.drill_mm.is_some() => {
+                return Err(RoutingError::new(
+                    idx,
+                    format!("io_pads[{i}]"),
+                    RoutingErrorKind::Malformed,
+                    format!(
+                        "{:?} IO pad with drill_mm — surface pads have no drill; use kind \"tht\" for plated pads",
+                        pad.kind
+                    ),
+                ));
+            }
+            _ => {}
+        }
+        for (j, &layer) in pad.layers.iter().enumerate() {
+            check_layer(layer, ctx.num_layers, &format!("io_pads[{i}].layers[{j}]"), idx)?;
+        }
+        check_net(&pad.net, &format!("io_pads[{i}].net"), idx)?;
+    }
+    Ok(())
+}
+
+/// Validate the additive IO fanout trace elements (`io_traces[]`).
+fn validate_io_traces(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, t) in result.io_traces.iter().enumerate() {
+        let idx = i + 1;
+        check_point(&t.start, bounds, &format!("io_traces[{i}].start"), idx)?;
+        check_point(&t.end, bounds, &format!("io_traces[{i}].end"), idx)?;
+        let len = length(t.start, t.end);
+        if !len.is_finite() || len <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("io_traces[{i}]"),
+                RoutingErrorKind::Degenerate,
+                format!(
+                    "zero-length IO trace {} ↦ {} — a fanout trace cannot have zero length",
+                    fmt_pt(t.start),
+                    fmt_pt(t.end)
+                ),
+            ));
+        }
+        check_layer(t.layer, ctx.num_layers, &format!("io_traces[{i}].layer"), idx)?;
+        check_net(&t.net, &format!("io_traces[{i}].net"), idx)?;
     }
     Ok(())
 }

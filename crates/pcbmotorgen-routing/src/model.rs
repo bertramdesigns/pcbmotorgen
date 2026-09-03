@@ -13,6 +13,10 @@
 //! reinterpreting a field, or changing the coordinate/unit conventions, is
 //! breaking and MUST bump `FORMAT_VERSION`. See `docs/routing-pattern-handoff.md`.
 
+//! IO (connector/IC pads + terminal fanout traces) is one such additive
+//! extension — see [`crate::io`].
+
+use crate::io::{IoPad, IoTrace};
 use serde::{Deserialize, Serialize};
 
 /// The current routing handoff contract version (see `model.rs` docs).
@@ -185,6 +189,14 @@ pub struct RoutingResult {
     /// as derived in the dimension sidecar.
     #[serde(default)]
     pub phase_bands: Vec<PhaseBand>,
+    /// Connector/IC pads the pattern declares for IO routing (additive;
+    /// empty for legacy payloads and non-IO patterns). See [`IoPad`].
+    #[serde(default)]
+    pub io_pads: Vec<IoPad>,
+    /// IO fanout traces connecting coil terminals to IO pads (additive;
+    /// empty for legacy payloads and non-IO patterns). See [`IoTrace`].
+    #[serde(default)]
+    pub io_traces: Vec<IoTrace>,
 }
 
 impl Default for RoutingResult {
@@ -197,18 +209,29 @@ impl Default for RoutingResult {
             pole_regions: Vec::new(),
             leg_grid: None,
             phase_bands: Vec::new(),
+            io_pads: Vec::new(),
+            io_traces: Vec::new(),
         }
     }
 }
 
 impl RoutingResult {
     pub fn is_empty(&self) -> bool {
-        self.segments.is_empty() && self.curves.is_empty() && self.vias.is_empty()
+        self.segments.is_empty()
+            && self.curves.is_empty()
+            && self.vias.is_empty()
+            && self.io_pads.is_empty()
+            && self.io_traces.is_empty()
     }
 
-    /// Total number of geometric elements.
+    /// Total number of geometric elements (segments, curves, vias, IO pads,
+    /// and IO traces).
     pub fn element_count(&self) -> usize {
-        self.segments.len() + self.curves.len() + self.vias.len()
+        self.segments.len()
+            + self.curves.len()
+            + self.vias.len()
+            + self.io_pads.len()
+            + self.io_traces.len()
     }
 }
 

@@ -58,6 +58,17 @@ impl DesignRules {
     pub fn via_pad_radius_mm(&self) -> f64 {
         self.via_pad_diameter_mm() / 2.0
     }
+
+    /// Default plated IO pad diameter [mm] — identical to the via pad
+    /// diameter (`drill + 2 × annular ring`).
+    ///
+    /// This is the sizing authority for THT
+    /// [`IoPad`](crate::io::IoPad) stacks: patterns read the diameter from
+    /// here (or size pads explicitly) and the writers carry the declared
+    /// size through — nothing downstream decides pad dimensions.
+    pub fn io_tht_pad_diameter_mm(&self) -> f64 {
+        self.via_pad_diameter_mm()
+    }
 }
 
 #[cfg(test)]
@@ -72,5 +83,6 @@ mod tests {
         assert_eq!(rules.min_via_drill_mm, 0.2);
         assert_eq!(rules.min_via_annular_ring_mm, 0.1);
         assert_eq!(rules.via_pad_diameter_mm(), 0.4);
+        assert_eq!(rules.io_tht_pad_diameter_mm(), 0.4);
     }
 }

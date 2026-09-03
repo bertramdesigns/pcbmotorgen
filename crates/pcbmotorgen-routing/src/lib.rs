@@ -21,6 +21,8 @@
 //!   host-derived) returned in [`RoutingReport`].
 //! - [`interference`] — [`check_interference`]: DRC overlap / via-pad
 //!   clearance checks against the [`DesignRules`].
+//! - [`io`] — additive IO result elements (connector/IC pads + terminal
+//!   fanout traces), typed distinctly from active conductors.
 //! - [`generate`] — the app-facing facade: registry, plugin loading, and
 //!   `RoutingContext` → `RoutingResult`/`PhaseCoil` generation.
 //! - [`pattern`] — the [`RoutingPattern`] trait that crate plugins and Python
@@ -42,6 +44,7 @@ pub mod dimensions;
 pub mod error;
 pub mod generate;
 pub mod interference;
+pub mod io;
 pub mod loaders;
 pub mod model;
 pub mod pattern;
@@ -67,6 +70,7 @@ pub use generate::{
     validate_routing_params,
 };
 pub use interference::{check_interference, InterferenceViolation};
+pub use io::{IoPad, IoPadKind, IoTrace, IoTraceRole, PadSize};
 pub use model::{
     Layer, LegGrid, Net, PhaseBand, PhaseBandShape, Point, PoleRegion, RouteCurve, RouteSegment,
     RoutingResult, Via,
