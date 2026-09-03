@@ -164,10 +164,12 @@ fn normal_pad_layer(pad_diameter_nm: i64) -> PadStackLayer {
     }
 }
 
-/// Drill properties for a stock PTH via: circular, uncapped, unfilled. The
+/// Drill properties for a stock PTH hole: circular, uncapped, unfilled. The
 /// proto3 `*_UNKNOWN = 0` sentinels are rejected by KiCad's `PCB_VIA`
 /// unpacker, so the modes are set to real variants.
-fn through_drill(drill_nm: i64) -> DrillProperties {
+///
+/// Shared with the IO-pad writer (`pad_writer`) for plated THT pad stacks.
+pub(crate) fn through_drill(drill_nm: i64) -> DrillProperties {
     DrillProperties {
         start_layer: BoardLayer::BlFCu as i32,
         end_layer: BoardLayer::BlBCu as i32,

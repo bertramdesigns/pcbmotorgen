@@ -1,9 +1,11 @@
 //! LINE, ARC and CIRCLE entity emitters.
 //!
 //! Segments become LINE entities, curves become ARC entities (with a LINE
-//! fallback when the three defining points are collinear), and vias become
-//! CIRCLE entities on the `Via` layer. All emitters append `"code\nvalue"`
-//! pairs to the shared fragment buffer.
+//! fallback when the three defining points are collinear), vias become
+//! CIRCLE entities on the `Via` layer, and IO pads become CIRCLE entities
+//! (circular pads) or closed four-LINE rectangle outlines (rectangular pads)
+//! on the `IO_Pad` layer. All emitters append `"code\nvalue"` pairs to the
+//! shared fragment buffer.
 
 use crate::groups::{dxf_group, dxf_group_f64};
 use crate::helpers::{circle_from_three_points, normalise_angle_deg, rad_to_deg, routing_mm};
@@ -60,13 +62,41 @@ pub(crate) fn write_arc(
     }
 }
 
-/// Emit a CIRCLE entity (via pad) on the `Via` layer, in millimetres.
-pub(crate) fn write_circle(out: &mut Vec<String>, cx: f64, cy: f64, radius: f64) {
+/// Emit a CIRCLE entity (via pad) on the given layer, in millimetres.
+pub(crate) fn write_circle(out: &mut Vec<String>, layer: &str, cx: f64, cy: f64, radius: f64) {
     dxf_group(out, 0, "CIRCLE");
-    dxf_group(out, 8, "Via");
+    dxf_group(out, 8, layer);
     dxf_group_f64(out, 10, cx);
     dxf_group_f64(out, 20, cy);
     dxf_group_f64(out, 40, radius);
+}
+
+/// Emit one pad on the given layer, in millimetres.
+///
+/// Circular pads (`x == y`) become a single CIRCLE of half the pad size.
+/// Rectangular pads become a closed four-LINE rectangle outline — DXF R12
+/// has no filled-pad primitive, and the outline is what CAM tooling expects
+/// for a pad footprint. Sizes come straight from the declared pad dimensions
+/// (the sizing authority lives upstream in `DesignRules` / the pattern).
+pub(crate) fn write_pad(
+    out: &mut Vec<String>,
+    layer: &str,
+    cx: f64,
+    cy: f64,
+    size_x: f64,
+    size_y: f64,
+) {
+    if (size_x - size_y).abs() <= 1e-9 {
+        write_circle(out, layer, cx, cy, size_x / 2.0);
+        return;
+    }
+    let (hw, hh) = (size_x / 2.0, size_y / 2.0);
+    let (x0, x1) = (cx - hw, cx + hw);
+    let (y0, y1) = (cy - hh, cy + hh);
+    write_line(out, layer, x0, y0, x1, y0);
+    write_line(out, layer, x1, y0, x1, y1);
+    write_line(out, layer, x1, y1, x0, y1);
+    write_line(out, layer, x0, y1, x0, y0);
 }
 
 #[cfg(test)]
@@ -254,5 +284,96 @@ mod tests {
             dxf.contains("40\n0.200000"),
             "via circle radius should be 0.2 mm"
         );
+    }
+
+    // --- IO elements (kata htcq) ---------------------------------------
+
+    use pcbmotorgen_routing::{IoPad, IoPadKind, IoTrace, IoTraceRole, PadSize};
+
+    fn io_result(pads: Vec<IoPad>, traces: Vec<IoTrace>) -> RoutingResult {
+        RoutingResult {
+            io_pads: pads,
+            io_traces: traces,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_dxf_contains_circle_for_round_io_pad() {
+        let result = io_result(
+            vec![IoPad {
+                position: Point::new(48.0, 2.0),
+                size: PadSize { x: 0.6, y: 0.6 },
+                drill_mm: None,
+                layers: vec![1],
+                kind: IoPadKind::Smd,
+                net: "A".into(),
+                number: None,
+            }],
+            vec![],
+        );
+        let dxf = routing_result_to_dxf(&result, &sample_rules(), 48.0, true);
+        assert!(dxf.contains("0\nCIRCLE"), "round IO pad must emit a CIRCLE");
+        // Centre at x = 48 - 24 = 0, y = 2; radius = 0.3 mm, on the IO_Pad layer.
+        assert!(dxf.contains("8\nIO_Pad"), "pad entity must sit on the IO_Pad layer");
+        assert!(dxf.contains("40\n0.300000"), "circle radius = size/2");
+        // The IO_Pad layer must be declared in the TABLES section.
+        assert!(dxf.contains("0\nLAYER\n2\nIO_Pad"), "IO_Pad layer must be registered");
+    }
+
+    #[test]
+    fn test_dxf_contains_rectangle_outline_for_rect_io_pad() {
+        let result = io_result(
+            vec![IoPad {
+                position: Point::new(48.0, 2.0),
+                size: PadSize { x: 1.0, y: 0.6 },
+                drill_mm: None,
+                layers: vec![],
+                kind: IoPadKind::Smd,
+                net: "A".into(),
+                number: None,
+            }],
+            vec![],
+        );
+        let dxf = routing_result_to_dxf(&result, &sample_rules(), 48.0, true);
+        // A 1.0 × 0.6 mm rectangle outline: four LINEs. With centring the
+        // pad centre lands at x = 48 - 24 = 24 mm, y = 2 mm.
+        let line_count = dxf.matches("0\nLINE\n").count();
+        assert_eq!(line_count, 4, "rectangular IO pad must emit a closed 4-LINE outline");
+        assert!(dxf.contains("10\n23.500000"), "left edge x = 24 - 0.5 mm");
+        assert!(dxf.contains("11\n24.500000"), "right edge x = 24 + 0.5 mm");
+        assert!(dxf.contains("20\n1.700000"), "bottom edge y = 2 - 0.3 mm");
+        assert!(dxf.contains("21\n2.300000"), "top edge y = 2 + 0.3 mm");
+        assert!(!dxf.contains("0\nCIRCLE"), "rectangular pad must not emit a CIRCLE");
+    }
+
+    #[test]
+    fn test_dxf_io_traces_emit_as_normal_track_lines() {
+        let result = io_result(
+            vec![],
+            vec![IoTrace {
+                start: Point::new(0.0, 10.0),
+                end: Point::new(47.0, 2.0),
+                layer: 1,
+                net: "A".into(),
+                role: IoTraceRole::Fanout,
+            }],
+        );
+        let dxf = routing_result_to_dxf(&result, &sample_rules(), 48.0, true);
+        assert!(dxf.contains("0\nLINE"), "IO fanout traces emit as normal tracks");
+        assert!(
+            dxf.contains("0\nLAYER\n2\nL1_A"),
+            "IO traces share the segment layer naming (L<layer>_<net>)"
+        );
+        // With centring: x1 = 0 - 24 = -24.
+        assert!(dxf.contains("10\n-24.000000"));
+    }
+
+    #[test]
+    fn test_dxf_legacy_payload_has_no_io_layers_or_entities() {
+        let result = io_result(vec![], vec![]);
+        let dxf = routing_result_to_dxf(&result, &sample_rules(), 48.0, true);
+        assert!(!dxf.contains("IO_Pad"), "no IO pads → no IO_Pad layer");
+        assert_eq!(dxf.matches("0\nCIRCLE\n").count(), 0, "no IO pads → no extra circles");
     }
 }

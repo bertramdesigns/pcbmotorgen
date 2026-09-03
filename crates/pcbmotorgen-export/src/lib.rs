@@ -11,8 +11,9 @@
 //!   [`helpers`].
 //! - [`KiCadClient`] — KiCad 10 IPC adapter over an NNG `req0` socket,
 //!   including the protobuf API tree ([`proto`]), atomic commits ([`Commit`]),
-//!   board item production ([`coils_to_board_items`]), high-level board
-//!   operations ([`BoardHandle`]) and diagnostics / preview
+//!   board item production ([`coils_to_board_items`], and the additive
+//!   [`io_elements_to_board_items`] for IO pads / fanout traces), high-level
+//!   board operations ([`BoardHandle`]) and diagnostics / preview
 //!   ([`get_board_diagnostics`], [`validate_write_preconditions`],
 //!   [`preview_coils`]).
 //!
@@ -44,6 +45,12 @@
 //! | `RouteSegment`   | `LINE`     | Straight trace segment                              |
 //! | `RouteCurve`     | `ARC`      | Three-point (start/mid/end) → centre/radius/angles  |
 //! | `Via`            | `CIRCLE`   | Pad diameter from design rules                      |
+//! | `IoTrace`        | `LINE`     | IO fanout traces emit as normal tracks              |
+//! | `IoPad`          | `CIRCLE` / `LINE`×4 | `IO_Pad` layer; circle for round pads, closed rectangle outline for rectangular pads |
+//!
+//! Payloads without IO elements produce byte-identical output to previous
+//! releases (the IO emission loops are no-ops when the additive fields are
+//! empty); a golden test pins this in `tests/golden_compat.rs`.
 //!
 //! ## Layer naming (DXF)
 //!
@@ -75,6 +82,8 @@
 //! // ... resolve an open PCB `DocumentSpecifier` via GetOpenDocuments ...
 //! let mut board = BoardHandle::new(&mut client, document);
 //! board.write_coils(&coils, num_layers, &rules, active_area_length_mm)?;
+//! // IO elements (pads + fanout traces) go through the additive writer:
+//! // board.write_io_elements(&result, num_layers, &rules, active_area_length_mm)?;
 //! ```
 
 pub mod board;
@@ -160,6 +169,17 @@ pub fn routing_result_to_dxf(
     if !result.vias.is_empty() && !layer_names.contains(&"Via".to_string()) {
         layer_names.push("Via".to_string());
     }
+    // IO fanout traces share the segment layer naming; IO pads get one
+    // dedicated `IO_Pad` layer.
+    for trace in &result.io_traces {
+        let name = format!("L{}_{}", trace.layer, trace.net);
+        if !layer_names.contains(&name) {
+            layer_names.push(name);
+        }
+    }
+    if !result.io_pads.is_empty() && !layer_names.contains(&"IO_Pad".to_string()) {
+        layer_names.push("IO_Pad".to_string());
+    }
 
     // Sort for deterministic output.
     layer_names.sort();
@@ -210,9 +230,34 @@ pub fn routing_result_to_dxf(
     for via in &result.vias {
         entities::write_circle(
             &mut fragments,
+            "Via",
             via.position.x - x_offset_mm,
             via.position.y,
             via_radius_mm,
+        );
+    }
+
+    // --- LINE entities (IO fanout traces — normal tracks) ---
+    for trace in &result.io_traces {
+        entities::write_line(
+            &mut fragments,
+            &format!("L{}_{}", trace.layer, trace.net),
+            trace.start.x - x_offset_mm,
+            trace.start.y,
+            trace.end.x - x_offset_mm,
+            trace.end.y,
+        );
+    }
+
+    // --- CIRCLE / rectangle-outline entities (IO pads) ---
+    for pad in &result.io_pads {
+        entities::write_pad(
+            &mut fragments,
+            "IO_Pad",
+            pad.position.x - x_offset_mm,
+            pad.position.y,
+            pad.size.x,
+            pad.size.y,
         );
     }
 
@@ -297,7 +342,7 @@ pub use proto::common::types::{
     AxisAlignment, DocumentSpecifier, DocumentType, Distance, ItemHeader, ItemRequestStatus, Kiid,
     KiCadVersion, LibraryIdentifier, LockedState, ProjectSpecifier, Vector2, Vector3,
 };
-pub use proto::board::types::{Arc, BoardLayer, Net, Track, Via};
+pub use proto::board::types::{Arc, BoardLayer, Footprint, FootprintInstance, Net, Pad, PadType, Track, Via};
 
 // Phase 7 re-exports.
 pub use board::BoardHandle;
@@ -307,7 +352,7 @@ pub use diagnostics::{
     CoilPreview, CoilPreviewLayer, PreconditionLevel, PreconditionWarning,
 };
 pub use layer_map::{layer_idx_to_board_layer, mm_to_nm, via_pad_diameter_nm};
-pub use writer::coils_to_board_items;
+pub use writer::{coils_to_board_items, io_elements_to_board_items};
 
 // ---------------------------------------------------------------------------
 // Tests
