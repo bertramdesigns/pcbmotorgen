@@ -107,60 +107,53 @@ export function mockConfigDerived(c: LinearMotorConfig): ConfigDerived {
 }
 
 /**
- * Mock travel envelope — mirrors the Rust `travel_envelope_over_slots`
- * (flush, span-aware spec, kata 5c7r).
+ * The ONE TypeScript-side placeholder travel envelope (kata ab30) — a FIXED
+ * literal, never computed from config.
  *
- * The endpoints are the TRAVEL LIMITS of the array CENTRE: the span-aware
- * flush clamp that keeps the whole mover inside the copper active area —
- *   centre ∈ [span/2, active_area_length − span/2]
- * with the glossary "Mover Span" span = N·τ_p (τ_p = P_e/2). At min the
- * leading array edge sits exactly on the copper start; at max the trailing
- * edge sits exactly on the copper end, so the sweep equals the configured
- * free travel (travel = active_area_length − span) EXACTLY. The copper
- * active area is the whole track [0, active_area_length]: there is no
- * padding offset (kata hrd8). The endpoints are limits, NOT stable rest
- * positions — the rests stay on the x ≡ φ (mod P_e) lattice and are
- * reported via `rest_phase_m` for the holding-force chart zeros (the
- * slider may park between rests; a closed-loop drive compensates the
- * non-zero fixed-excitation force there). History: the endpoints were
- * rest-snapped under kata xb16 (inward, then nearest snap); both variants
- * fought the flush geometry and were replaced after field verification.
- * Defaults (N=12, τ_p=6 mm → P_e=12 mm, copper [0,147] mm): span 72 mm →
- * **[36, 111] mm**, a 75 mm sweep = the configured travel exactly.
- * N=4 widens the clamp to [12, 135] mm.
- * When the copper is shorter than the mover span, max clamps to min —
- * the envelope never inverts.
+ * AUTHORITY for the travel-envelope math (span-aware flush clamp + rest
+ * phase): `pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots`
+ * (kata 5c7r), reached over IPC via the `travel_envelope` Tauri command
+ * (`src-tauri/src/commands/physics.rs`). Earlier mock revisions re-derived
+ * that math here; the duplicate has been removed — the desktop app must not
+ * re-derive envelope physics in TypeScript.
+ *
+ * The numbers are the pinned reference output of the authority for the UI
+ * reference build (N=12, P_e=12 mm, copper [0, 147] mm): min 36 mm, max
+ * 111 mm, rest phase 10 mm, period 12 mm. They exist ONLY so the UI has
+ * something to draw before a backend envelope arrives (or in browser-dev
+ * mock mode) — they are not valid for other configurations, so MotionStore
+ * pairs this placeholder with a visible "travel envelope unavailable —
+ * backend required" warning whenever it is the active envelope.
  */
-export function mockTravelEnvelope(c: LinearMotorConfig): TravelEnvelopeDto {
-  const P_e = 2 * c.magnet_pitch_m; // electrical period
-  if (!(P_e > 0)) {
-    return {
-      min_position_m: 0,
-      max_position_m: 0,
-      rest_phase_m: 0,
-      electrical_period_m: P_e,
-    };
-  }
-  const tau_p = P_e / 2; // pole pitch
-  let phi =
-    (Math.PI / 6) * (P_e / (2 * Math.PI)) + ((c.magnet_count - 1) / 2) * tau_p;
-  phi %= P_e;
-  if (phi < 0) phi += P_e;
-  // Copper active area = the whole track [0, active_area_length]; there is
-  // no padding offset (kata hrd8). Track-frame rest phase: every stable
-  // rest centre ≡ φ_track (mod P_e).
-  const phaseTrack = (phi % P_e + P_e) % P_e;
-  // Span-aware flush clamp: the array edges sit exactly on the copper
-  // bounds at the endpoints (kata 5c7r — no lattice snapping).
-  const span = c.magnet_count * tau_p;
-  const min = span / 2;
-  const max = Math.max(c.active_area_length_m - span / 2, min);
-  return {
-    min_position_m: min,
-    max_position_m: max,
-    rest_phase_m: phaseTrack,
-    electrical_period_m: P_e,
-  };
+export const PLACEHOLDER_TRAVEL_ENVELOPE: TravelEnvelopeDto = {
+  min_position_m: 0.036,
+  max_position_m: 0.111,
+  rest_phase_m: 0.01,
+  electrical_period_m: 0.012,
+};
+
+/**
+ * True when `dto` IS the shared placeholder instance (object identity). A
+ * real backend envelope is always a fresh object decoded from the IPC
+ * bridge, so it can never collide with the constant; the mock returns this
+ * exact constant, which keeps the "unavailable" warning visible in
+ * browser-dev mock mode.
+ */
+export function isPlaceholderEnvelope(
+  dto: TravelEnvelopeDto | null | undefined,
+): boolean {
+  return dto === PLACEHOLDER_TRAVEL_ENVELOPE;
+}
+
+/**
+ * Mock travel envelope — returns the fixed placeholder above. NO math is
+ * re-derived here: the authority is
+ * `equilibrium::travel_envelope_over_slots` (see PLACEHOLDER_TRAVEL_ENVELOPE).
+ * The config parameter is kept for call-site parity with the real
+ * `travel_envelope` command but is intentionally unused.
+ */
+export function mockTravelEnvelope(_c: LinearMotorConfig): TravelEnvelopeDto {
+  return PLACEHOLDER_TRAVEL_ENVELOPE;
 }
 
 export function mockCoils(c: LinearMotorConfig): CoilPathDto {

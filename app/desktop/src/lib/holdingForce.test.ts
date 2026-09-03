@@ -11,7 +11,6 @@ import {
   restPositions,
   phaseStroke,
 } from "./holdingForce";
-import { fallbackRestPhaseMm } from "./stores/motion.svelte";
 
 describe("holdingForceAt", () => {
   it("zeros exactly at the rest phase and at every period multiple", () => {
@@ -41,17 +40,6 @@ describe("holdingForceAt", () => {
   it("returns 0 for a non-positive period", () => {
     expect(holdingForceAt(5, 0, 0)).toBe(0);
     expect(holdingForceAt(5, 0, -3)).toBe(0);
-  });
-});
-
-describe("fallbackRestPhaseMm (mirrors the backend equilibrium formula)", () => {
-  it("gives φ = 10 mm for N=4, P_e=12 mm (the reference worked example)", () => {
-    expect(fallbackRestPhaseMm(4, 12)).toBeCloseTo(10, 12);
-  });
-
-  it("gives φ = 4 mm for N=6 and φ = 10 mm for the default N=12", () => {
-    expect(fallbackRestPhaseMm(6, 12)).toBeCloseTo(4, 12);
-    expect(fallbackRestPhaseMm(12, 12)).toBeCloseTo(10, 12);
   });
 });
 
@@ -96,7 +84,10 @@ describe("holdingForceAtPhase (per-phase waves)", () => {
 
   it("offsets each phase by P_e/N in space (120° for 3 phases)", () => {
     // Phase A zero at φ; phase B zero at φ + 4; phase C zero at φ + 8.
-    const phi = fallbackRestPhaseMm(12, PE); // 10
+    // Pinned reference rest phase (authority:
+    // `equilibrium::travel_envelope_over_slots`; the TS re-derivation
+    // `fallbackRestPhaseMm` was removed by kata ab30).
+    const phi = 10;
     expect(holdingForceAtPhase(phi, 0, 3, phi, PE)).toBeCloseTo(0, 12);
     expect(holdingForceAtPhase(phi + 4, 1, 3, phi, PE)).toBeCloseTo(0, 12);
     expect(holdingForceAtPhase(phi + 8, 2, 3, phi, PE)).toBeCloseTo(0, 12);

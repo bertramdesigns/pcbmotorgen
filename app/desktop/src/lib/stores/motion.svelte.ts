@@ -6,83 +6,115 @@
  * position in one place moves the magnet overlay in the other.
  *
  * The value is the CENTER of the magnet array in ABSOLUTE TRACK coordinates
- * (the routing/domain frame: the copper active area is [0, active_area_length_m],
- * no padding offset) — the same frame every preview draws in. Motion input is
- * continuous: a coreless motor has no detent/cogging force. The RANGE
- * endpoints come from the backend travel envelope — the span-aware FLUSH
- * limits of the copper active area (kata 5c7r, mirroring the Rust
- * `travel_envelope_over_slots`): centre ∈ [span/2, active_area_length_m −
- * span/2] with the glossary "Mover Span" span = N·τ_p, so the array edges
- * sit exactly on the copper bounds at both endpoints and the swept range
- * equals the configured free travel EXACTLY. The endpoints are MECHANICAL
- * LIMITS, NOT stable rest positions — the rests (x ≡ φ (mod P_e)) are
- * reported by the envelope's rest_phase_m/electrical_period_m and marked on
- * the holding-force chart; the mover may hold position between rests. The
- * pre-xb16 edge rule (leading edge ≥ track start at min, trailing edge ≤
- * track end at max) is superseded by the flush clamp — the clamp bounds the
- * CENTRE, not the array edges. Until an envelope arrives the store falls
- * back to the geometric "array flush inside the copper" range below.
+ * (the routing/domain frame: the copper active area is
+ * [0, active_area_length_m], no padding offset) — the same frame every
+ * preview draws in. Motion input is continuous: a coreless motor has no
+ * detent/cogging force.
+ *
+ * Travel envelope (kata ab30): the RANGE endpoints and the rest phase come
+ * EXCLUSIVELY from the backend — the `travel_envelope` Tauri command backed
+ * by `pcbmotorgen_simulation::equilibrium::travel_envelope_over_slots`
+ * (span-aware flush clamp, kata 5c7r). This store does NOT re-derive that
+ * math. Until a plausible envelope is installed — and whenever the
+ * browser-dev placeholder mock is active — the bounds come from the shared
+ * fixed PLACEHOLDER_TRAVEL_ENVELOPE (lib/ipc/mocks.ts) and the
+ * "travel envelope unavailable — backend required" warning is raised via
+ * `envelopeWarning`, so placeholder numbers are never mistaken for real
+ * physics.
  */
 
 import type { ConfigStore } from "./config.svelte";
 import type { TravelEnvelopeDto } from "../types";
+import type { Finding } from "../validation";
+import {
+  PLACEHOLDER_TRAVEL_ENVELOPE,
+  isPlaceholderEnvelope,
+} from "../ipc/mocks";
+
+/** The validation warning raised while only the placeholder envelope is
+ *  active. The message text is the kata ab30 contract — keep the wording. */
+const ENVELOPE_PLACEHOLDER_WARNING: Finding = {
+  id: "travel-envelope-unavailable",
+  level: "warning",
+  message:
+    "Travel envelope unavailable — backend required. Showing the fixed " +
+    "placeholder envelope (reference pin 36–111 mm), which is not " +
+    "derived from this configuration.",
+};
 
 export class MotionStore {
   /** Raw mover-centre input (mm) before clamping. */
   positionMm = $state(60);
 
-  /** Backend travel envelope (SI, metres); null until fetched. */
+  /**
+   * Envelope installed from the backend (SI metres); null until a plausible
+   * one arrives. Null ⇒ the shared placeholder is active and
+   * `envelopeWarning` is raised.
+   */
   envelope = $state<TravelEnvelopeDto | null>(null);
 
   constructor(private config: ConfigStore) { }
 
   moverSpanMm = $derived.by(() => this.config.mover_span_mm);
 
-  /** Electrical period P_e (mm): one full 360° cycle = 2 pole pitches. */
+  /**
+   * Electrical period P_e (mm): one full 360° cycle = 2 pole pitches.
+   * P_e is a user INPUT echoed back by the envelope, so the config remains
+   * its source — this is not envelope math re-derivation.
+   */
   electricalPeriodMm = $derived(this.config.pole_pitch_mm * 2);
 
   /**
+   * The envelope currently driving the bounds: the backend value when one is
+   * installed, otherwise the shared fixed placeholder (lib/ipc/mocks.ts;
+   * authority: `equilibrium::travel_envelope_over_slots`). Never re-computed
+   * from config — that duplication was removed by kata ab30.
+   */
+  activeEnvelope = $derived.by(
+    () => this.envelope ?? PLACEHOLDER_TRAVEL_ENVELOPE,
+  );
+
+  /**
    * Rest phase φ (mm): stable rest centres satisfy x ≡ φ (mod P_e).
-   * Mirrors the backend equilibrium formula for the baseline currents.
-   * Used before/without an envelope.
+   * Comes from the backend envelope, or the flagged placeholder while none
+   * is installed.
    */
-  restPhaseMm = $derived.by(() => {
-    if (this.envelope) return this.envelope.rest_phase_m * 1000;
-    return fallbackRestPhaseMm(this.config.magnet_count, this.electricalPeriodMm);
-  });
+  restPhaseMm = $derived(this.activeEnvelope.rest_phase_m * 1000);
 
-  // --- Geometric fallback bounds ------------------------------------------
-  // This IS the same flush clamp the backend computes (kata 5c7r):
-  // centre ∈ [span/2, active_area_length − span/2] — array flush inside
-  // the copper active area — so fallback and backend envelope agree on the
-  // limits by construction; only the rest phase (φ, N-dependent) arrives
-  // with the envelope, which the client approximates via fallbackRestPhaseMm
-  // until then.
-  private geometricMinMm = $derived.by(() => this.moverSpanMm / 2);
-  private geometricMaxMm = $derived.by(() =>
-    Math.max(
-      this.geometricMinMm,
-      this.config.active_area_length_mm - this.moverSpanMm / 2,
-    ),
+  /**
+   * Leftmost allowed mover centre (mm) — from the backend envelope, or the
+   * flagged placeholder. A mechanical limit, not a stable rest position.
+   */
+  moverMinMm = $derived(this.activeEnvelope.min_position_m * 1000);
+
+  /**
+   * Rightmost allowed mover centre (mm). The backend never inverts the
+   * envelope (on a degenerate copper region max clamps to min); the
+   * Math.max guard only preserves that ordering defensively — it derives no
+   * geometry.
+   */
+  moverMaxMm = $derived.by(() =>
+    Math.max(this.moverMinMm, this.activeEnvelope.max_position_m * 1000),
   );
 
   /**
-   * Leftmost allowed mover centre: the span-aware FLUSH limit of the copper
-   * active area (kata 5c7r) — the array's left edge sits exactly on the
-   * copper bound. A mechanical limit, not a stable rest position.
+   * True while the active bounds are the placeholder rather than a plausible
+   * backend envelope — before the first envelope arrives, after a
+   * sanity-gate rejection, and whenever the browser-dev mock (which returns
+   * the shared placeholder constant) is the source.
    */
-  moverMinMm = $derived(
-    this.envelope ? this.envelope.min_position_m * 1000 : this.geometricMinMm,
+  usingPlaceholderEnvelope = $derived(
+    this.envelope === null || isPlaceholderEnvelope(this.envelope),
   );
+
   /**
-   * Rightmost allowed mover centre: the span-aware FLUSH limit of the copper
-   * active area (kata 5c7r) — the array's right edge sits exactly on the
-   * copper bound. A mechanical limit, not a stable rest position.
+   * The validation warning to surface (or null): raised exactly while the
+   * placeholder envelope drives the bounds, so placeholder numbers are
+   * never silently presented as real physics.
    */
-  moverMaxMm = $derived.by(() => {
-    if (!this.envelope) return this.geometricMaxMm;
-    return Math.max(this.moverMinMm, this.envelope.max_position_m * 1000);
-  });
+  envelopeWarning = $derived<Finding | null>(
+    this.usingPlaceholderEnvelope ? ENVELOPE_PLACEHOLDER_WARNING : null,
+  );
 
   /** Clamped mover centre; all consumers read this. */
   clampedPositionMm = $derived(
@@ -90,7 +122,7 @@ export class MotionStore {
       ? Math.max(this.moverMinMm, Math.min(this.moverMaxMm, this.positionMm))
       : this.moverMinMm,
   );
-  /** Strip shift from the leftmost flush limit (mm): 0 at moverMinMm. */
+  /** Strip shift from the leftmost limit (mm): 0 at moverMinMm. */
   offsetFromRestMm = $derived(this.clampedPositionMm - this.moverMinMm);
 
   /**
@@ -114,8 +146,10 @@ export class MotionStore {
    * (finite, ordered, non-negative, and no farther than the routing domain
    * plus 1% slack). A backend unit slip — e.g. millimetre geometry reported
    * as metres — would otherwise blow the slider up to ~200 000 mm and shrink
-   * the CoilPreview camera to a speck; rejecting keeps the geometric
-   * fallback range instead of trusting garbage.
+   * the CoilPreview camera to a speck. On rejection the envelope is NOT
+   * installed: the placeholder stays active and `envelopeWarning` remains
+   * raised, so the situation is disclosed instead of silently substituted
+   * (kata ab30 — there is no TS re-derivation to fall back to any more).
    */
   setEnvelope(dto: TravelEnvelopeDto): void {
     const minMm = dto.min_position_m * 1000;
@@ -130,17 +164,4 @@ export class MotionStore {
     if (!plausible) return;
     this.envelope = dto;
   }
-}
-
-/**
- * Client-side fallback of the backend rest-phase formula (mm):
- * φ = (P_e/12 + ((N−1)/2)·τ_p) mod P_e with τ_p = P_e/2.
- * Exported pure so the chart + tests share one implementation.
- */
-export function fallbackRestPhaseMm(magnetCount: number, electricalPeriodMm: number): number {
-  const pe = electricalPeriodMm;
-  if (!(pe > 0)) return 0;
-  const tau = pe / 2;
-  const xPeak = pe / 12;
-  return (((xPeak + ((magnetCount - 1) / 2) * tau) % pe) + pe) % pe;
 }

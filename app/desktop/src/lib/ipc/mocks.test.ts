@@ -18,6 +18,8 @@ import {
   mockBFieldGrid,
   mockTravelEnvelope,
   mockMagnetGrades,
+  PLACEHOLDER_TRAVEL_ENVELOPE,
+  isPlaceholderEnvelope,
 } from "./mocks";
 import type { LinearMotorConfig } from "../types";
 import { computePreviewGeometry, computeMagnets } from "../previewGeometry";
@@ -169,9 +171,11 @@ describe("mockCoils", () => {
     expect(restMax - restMin + travelM).toBeCloseTo(0.147);
     // The drawn (pattern-anchored) rest strip starts on the board.
     expect(restMin).toBeGreaterThanOrEqual(0);
-    // Sweeping the strip across the mock ENVELOPE (flush spec) keeps it
-    // exactly within the domain: leading edge on the copper start at min,
-    // trailing edge on the copper end at max (kata 5c7r).
+    // Sweeping the strip across the mock ENVELOPE (the fixed placeholder —
+    // kata ab30) keeps it exactly within the domain: leading edge on the
+    // copper start at min, trailing edge on the copper end at max (the
+    // placeholder pin equals the authority `travel_envelope_over_slots`
+    // output for this reference build).
     const env = mockTravelEnvelope(c);
     const spanM = restMax - restMin;
     const stripStartAtMin = env.min_position_m - spanM / 2;
@@ -306,56 +310,28 @@ describe("mockBFieldGrid", () => {
 });
 
 describe("mockTravelEnvelope", () => {
-  // PRODUCT REFERENCE PINS — if min or max move, these tests fail.
-  //
-  // Flush, span-aware convention (kata 5c7r, mirroring the Rust
-  // `travel_envelope_over_slots`): the endpoints are the TRAVEL LIMITS of
-  // the array centre — the flush clamp [span/2, active − span/2] with
-  // span = N·τ_p (the copper active area is the whole track [0, active]:
-  // no padding, kata hrd8). The array edges sit exactly on the copper
-  // bounds at the endpoints, so the sweep equals the configured travel
-  // EXACTLY. The endpoints are limits, NOT rest positions — rest_phase_m
-  // (φ mod P_e) still reports where the stable rests live. Endpoints
-  // DEPEND on N (they widen as N shrinks).
-  it("defaults (N=12, P_e=12 mm, copper [0,147]) flush limits 36 → 111 mm", () => {
-    const env = mockTravelEnvelope(
+  // PLACEHOLDER PINS (kata ab30) — the mock no longer re-derives the
+  // envelope. It returns the shared fixed literal
+  // (PLACEHOLDER_TRAVEL_ENVELOPE), whose numbers are the pinned output of
+  // the authority (`equilibrium::travel_envelope_over_slots`, kata 5c7r)
+  // for the reference build N=12, P_e=12 mm, copper [0, 147] mm.
+  it("returns the shared placeholder constant (identity, config-independent)", () => {
+    const a = mockTravelEnvelope(
       makeConfig({ magnet_count: 12, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
     );
+    const b = mockTravelEnvelope(
+      makeConfig({ magnet_count: 4, magnet_pitch_m: 0.024, active_area_length_m: 0.5 }),
+    );
+    expect(a).toBe(PLACEHOLDER_TRAVEL_ENVELOPE);
+    expect(b).toBe(a);
+    expect(isPlaceholderEnvelope(a)).toBe(true);
+  });
+
+  it("placeholder values stay the pinned reference: 36 → 111 mm, φ = 10 mm, P_e = 12 mm", () => {
+    const env = mockTravelEnvelope(makeConfig());
     expect(env.electrical_period_m).toBeCloseTo(0.012, 12);
-    // span = 72 mm → [36, 111] mm: strip 0–72 mm at min, 75–147 mm at
-    // max; sweep 75 mm = the configured travel exactly.
     expect(env.min_position_m).toBeCloseTo(0.036, 12);
     expect(env.max_position_m).toBeCloseTo(0.111, 12);
     expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
-  });
-
-  it("N=4 widens the flush limits to 12 → 135 mm", () => {
-    const env = mockTravelEnvelope(
-      makeConfig({ magnet_count: 4, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
-    );
-    // span = 24 mm → [12, 135] mm.
-    expect(env.min_position_m).toBeCloseTo(0.012, 12);
-    expect(env.max_position_m).toBeCloseTo(0.135, 12);
-    expect(env.rest_phase_m).toBeCloseTo(0.010, 12);
-  });
-
-  it("N=6 flush limits 18 → 129 mm; rest phase φ mod 12 = 4 mm", () => {
-    const env = mockTravelEnvelope(
-      makeConfig({ magnet_count: 6, magnet_pitch_m: 0.006, active_area_length_m: 0.147 }),
-    );
-    // span = 36 mm → [18, 129] mm.
-    expect(env.min_position_m).toBeCloseTo(0.018, 12);
-    expect(env.max_position_m).toBeCloseTo(0.129, 12);
-    expect(env.rest_phase_m).toBeCloseTo(0.004, 12);
-  });
-
-  it("clamps max to min when the copper region cannot host the envelope", () => {
-    // Copper [0, 10] mm is far shorter than the N=24 span (144 mm): the
-    // flush clamp [72, −34] mm inverts → max clamps to min (72 mm).
-    const env = mockTravelEnvelope(
-      makeConfig({ magnet_count: 24, magnet_pitch_m: 0.006, active_area_length_m: 0.01 }),
-    );
-    expect(env.min_position_m).toBeCloseTo(0.072, 12);
-    expect(env.max_position_m).toBeCloseTo(env.min_position_m, 12);
   });
 });
