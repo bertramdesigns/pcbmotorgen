@@ -20,3 +20,4 @@ __pycache__/
 *pcbBraid/
 .kata.local.toml
 _TODO.md
+.opencode.json
