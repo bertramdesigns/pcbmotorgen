@@ -5,6 +5,7 @@
     registerRoutingPlugin,
   } from "../../ipc";
   import { attachBackdropScrollGuard, lockPageScroll } from "../../utils/pageScrollLock";
+  import PluginAuthoringGuideModal from "./PluginAuthoringGuideModal.svelte";
 
   let {
     config,
@@ -20,6 +21,12 @@
   let message = $state("");
   let backdropRef: HTMLDivElement | undefined = $state();
   let dialogRef: HTMLDivElement | undefined = $state();
+
+  // The in-app plugin authoring guide (kata bprp), stacked ABOVE this
+  // dialog. While it is open, Escape must close only the guide — the guide
+  // also guards this itself (capture-phase listener), and the check below
+  // keeps the rule true even if this dialog's listener fires first.
+  let guideOpen = $state(false);
 
   const KIND_LABEL: Record<"native" | "python", string> = {
     native: "Native crate plugin (.dylib / .so / .dll)",
@@ -98,10 +105,10 @@
     }
   }
 
-  // Close on Escape.
+  // Close on Escape (but let the stacked guide modal consume it first).
   $effect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !guideOpen) onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -223,6 +230,15 @@
       <div class="flex items-center justify-end gap-2 pt-1">
         <button
           type="button"
+          onclick={() => (guideOpen = true)}
+          aria-haspopup="dialog"
+          title="Open the plugin authoring guide bundled from the routing crate docs"
+          class="mr-auto rounded-md px-2 py-2 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-slate-700 transition-colors"
+        >
+          How to write a plugin?
+        </button>
+        <button
+          type="button"
           onclick={onClose}
           disabled={status === "loading"}
           class="rounded-md px-3 py-2 text-sm font-semibold text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition-colors disabled:opacity-60"
@@ -241,3 +257,9 @@
     </div>
   </div>
 </div>
+
+<!-- Stacked plugin authoring guide (kata bprp). Sibling of the upload
+     overlay so it paints above it; the refcounted scroll lock composes. -->
+{#if guideOpen}
+  <PluginAuthoringGuideModal onClose={() => (guideOpen = false)} />
+{/if}
