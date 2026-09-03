@@ -21,10 +21,13 @@
   import { TABS, type TabId } from "./lib/ui";
   import { DrcController } from "./lib/stores/drc.svelte";
   import { MotionStore } from "./lib/stores/motion.svelte";
+  import { ProjectStore } from "./lib/stores/project.svelte";
   import { measureTrace } from "./lib/previewGeometry";
 
   import TabNav from "./lib/components/layout/TabNav.svelte";
   import StatusIndicator from "./lib/components/layout/StatusIndicator.svelte";
+  import ProjectControls from "./lib/components/layout/ProjectControls.svelte";
+  import StatusBanner from "./lib/components/ui/StatusBanner.svelte";
   import TravelDiagram from "./lib/components/design/TravelDiagram.svelte";
   import CoilPreview from "./lib/components/design/CoilPreview.svelte";
   import DesignDimensions from "./lib/components/design/DesignDimensions.svelte";
@@ -65,6 +68,11 @@
   // Shared mover position for the design reflection: the TravelDiagram slider
   // and the CoilPreview magnet strip both read from this store.
   const motion = new MotionStore(config);
+
+  // Project save/load (kata 0cgm): all persistence logic lives in the Rust
+  // backend behind save_project/load_project; this store is the interface
+  // half (DTO mapping + dirty tracking + dialog flows).
+  const projects = new ProjectStore(config, motion);
 
   // -----------------------------------------------------------------------
   // Design preview generation
@@ -341,6 +349,7 @@
         <p class="text-xs text-slate-400">PCB stator motor generator</p>
       </div>
       <div class="flex flex-wrap items-center gap-4">
+        <ProjectControls {projects} />
         <TabNav
           tabs={TABS}
           {activeTab}
@@ -351,6 +360,58 @@
       </div>
     </div>
   </header>
+
+  {#if projects.error || projects.notice}
+    <div class="px-4 pt-3">
+      {#if projects.error}
+        <StatusBanner level="error">
+          <div class="flex items-start justify-between gap-3">
+            <p>{projects.error}</p>
+            <button
+              type="button"
+              class="shrink-0 underline underline-offset-2 hover:brightness-125"
+              onclick={() => projects.clearMessages()}>Dismiss</button
+            >
+          </div>
+        </StatusBanner>
+      {:else if projects.notice}
+        <StatusBanner level="info">
+          <div class="flex items-start justify-between gap-3">
+            <p>{projects.notice}</p>
+            <button
+              type="button"
+              class="shrink-0 underline underline-offset-2 hover:brightness-125"
+              onclick={() => projects.clearMessages()}>Dismiss</button
+            >
+          </div>
+        </StatusBanner>
+      {/if}
+    </div>
+  {/if}
+
+  {#if projects.loadIssues}
+    <div class="px-4 pt-3">
+      <StatusBanner
+        level={projects.loadIssues.errors.length > 0 ? "error" : "warning"}
+      >
+        <div>
+          <p class="font-medium">
+            The restored design has
+            {projects.loadIssues.errors.length} error(s) and
+            {projects.loadIssues.warnings.length} warning(s):
+          </p>
+          <ul class="mt-1 list-disc pl-5">
+            {#each projects.loadIssues.errors as message (message)}
+              <li>{message}</li>
+            {/each}
+            {#each projects.loadIssues.warnings as message (message)}
+              <li>{message}</li>
+            {/each}
+          </ul>
+        </div>
+      </StatusBanner>
+    </div>
+  {/if}
 
   <!-- The reflection stays mounted beside every workflow panel. On desktop
        only the settings/content column scrolls; on small screens the columns
