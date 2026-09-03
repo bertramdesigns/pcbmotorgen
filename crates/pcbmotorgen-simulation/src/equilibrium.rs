@@ -78,9 +78,8 @@ pub fn rest_phase_m(electrical_period_m: f64, magnet_count: u32) -> f64 {
 /// Travel envelope of the mover array centre, anchored to the stator copper
 /// region.
 ///
-/// Glossary-normative spec (2026-09-02, kata 5c7r; supersedes the xb16
-/// rest-snapped revisions): the Travel Envelope is the SPAN-AWARE FLUSH
-/// CLAMP of the copper active area —
+/// Glossary-normative spec (2026-09-02, kata 5c7r): the Travel Envelope is
+/// the SPAN-AWARE FLUSH CLAMP of the copper active area —
 ///
 ///   `centre ∈ [copper_start + span/2, copper_end − span/2]`
 ///
@@ -91,17 +90,8 @@ pub fn rest_phase_m(electrical_period_m: f64, magnet_count: u32) -> f64 {
 /// swept range equals the configured free travel EXACTLY
 /// (`travel = copper_length − span`), and the mover may hold position
 /// between rests (a closed-loop drive compensates the non-zero
-/// fixed-excitation force there).
-///
-/// History: the endpoints were originally rest-snapped onto the stable-rest
-/// lattice (kata xb16, inward then nearest snap). Both variants fought the
-/// flush geometry — inward lost up to 2·P_e of travel (36% at the app
-/// defaults), nearest left the array overhanging the copper start at min
-/// and short of the copper end at max (field-observed as "a bit short on
-/// the max and a bit too far on the min"). Since kata hrd8 removed the
-/// padding offset, `active_area_length = span + travel` holds exactly and
-/// the flush clamp realizes the configured travel with zero overhang —
-/// verified visually with the screenshot tooling (kata 8tc4).
+/// fixed-excitation force there). Supersedes the earlier rest-snapped
+/// revisions (kata xb16), which lost travel or overhung the copper.
 ///
 /// Degenerate behavior (copper region shorter than the mover span): the
 /// clamped range inverts, so `max` is clamped to `min` — the envelope
@@ -178,16 +168,6 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // travel_envelope_over_slots — glossary travel envelope (kata xb16)
-    //
-    // These pins are the PRODUCT REFERENCE for the slider endpoints:
-    // lattice-snapped, span-aware first/last stable rest positions
-    // (glossary "Travel Envelope", decision 2026-09-02). Every value below
-    // was verified numerically against rest_phase_m before pinning. If min
-    // or max move, these tests fail — change them only alongside the spec.
-    // ------------------------------------------------------------------
-
-    // ------------------------------------------------------------------
     // travel_envelope_over_slots — glossary travel envelope (kata 5c7r)
     //
     // These pins are the PRODUCT REFERENCE for the slider endpoints:
@@ -219,9 +199,8 @@ mod tests {
     }
 
     /// Travel contract (kata 5c7r): the swept range equals the configured
-    /// free travel `copper_length − span` EXACTLY — the failed xb16
-    /// rest-snapped variants lost up to 2·P_e (inward) or left a
-    /// ±P_e/2 endpoint bias (nearest).
+    /// free travel `copper_length − span` EXACTLY — no lattice snapping,
+    /// no endpoint bias.
     #[test]
     fn sweep_equals_configured_travel_exactly() {
         for (n, p_e) in [(4_u32, 12.0), (6, 12.0), (12, 12.0), (12, 18.0), (10, 24.0)] {

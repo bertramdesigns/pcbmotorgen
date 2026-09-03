@@ -37,11 +37,10 @@ pub struct LinearMotorConfigIpc {
     pub active_area_length_m: f64,
     pub board_width_m: f64,
     pub pcb_thickness_m: f64,
-    /// Round 9: number of parallel serpentine paths per phase on the
-    /// same layer ("strands", stacked in y). Mirrors
-    /// `LinearMotorConfig::strands_per_phase`. Default 1 (the
-    /// historical single-strand behaviour).
-    #[serde(default = "default_strands_per_phase", alias = "windings_per_phase")]
+    /// Number of parallel serpentine paths per phase on the same layer
+    /// ("strands", stacked in y). Mirrors `LinearMotorConfig::strands_per_phase`.
+    /// Default 1 (the historical single-strand behaviour).
+    #[serde(default = "default_strands_per_phase")]
     pub strands_per_phase: u32,
 
     pub magnet_count: u32,

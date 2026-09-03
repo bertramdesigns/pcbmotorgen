@@ -70,7 +70,7 @@ on the concrete core `LinearMotorConfig` — this snapshot is the entire world.
 | `expects_continuous`   | `bool`              | Whether the validator enforces end→start continuity per (layer, net). |
 | `params`               | `{string → number}` | Pattern-specific user-editable parameters.           |
 | `magnet_pitch_mm`      | `f64?`              | Pole pitch, when the mover layout is known [mm].     |
-| `magnet_array_span_mm` | `f64?`              | Mover magnet-array span, when known [mm]. The legacy `coil_span_mm` key is still accepted as a serde alias. |
+| `magnet_array_span_mm` | `f64?`              | Mover magnet-array span, when known [mm].            |
 
 ## 4. Output contract: `RoutingResult`
 

@@ -11,6 +11,13 @@ use crate::model::{Point, RoutingResult, FORMAT_VERSION};
 /// The single validation gate.
 pub struct Validator;
 
+/// Routing-domain bounds shared by the geometric checks.
+struct Bounds {
+    x_max: f64,
+    board_width: f64,
+    eps: f64,
+}
+
 impl Validator {
     /// Validate `result` against `ctx`. Returns `Ok(())` or the first
     /// [`RoutingError`].
@@ -40,118 +47,132 @@ impl Validator {
         }
 
         // The routing domain EQUALS the active area — there is no end padding.
-        let x_max = ctx.active_area_length_mm;
-        let board_width = ctx.board_width_mm;
-        // A tiny epsilon so coordinates sitting exactly on the boundary pass.
-        let eps = 1e-6;
+        // The epsilon lets coordinates sitting exactly on the boundary pass.
+        let bounds = Bounds {
+            x_max: ctx.active_area_length_mm,
+            board_width: ctx.board_width_mm,
+            eps: 1e-6,
+        };
 
-        // ---- Segments ----
-        for (i, s) in result.segments.iter().enumerate() {
-            let idx = i + 1;
-            check_point(&s.start, ctx, x_max, board_width, eps, &format!("segments[{i}].start"), idx)?;
-            check_point(&s.end, ctx, x_max, board_width, eps, &format!("segments[{i}].end"), idx)?;
-            let len = length(s.start, s.end);
-            if !len.is_finite() || len <= eps {
-                return Err(RoutingError::new(
-                    idx,
-                    format!("segments[{i}]"),
-                    RoutingErrorKind::Degenerate,
-                    format!(
-                        "zero-length segment {} ↦ {} — a conductor cannot have zero length",
-                        fmt_pt(s.start), fmt_pt(s.end)
-                    ),
-                ));
-            }
-            check_layer(s.layer, ctx.num_layers, &format!("segments[{i}].layer"), idx)?;
-            check_net(&s.net, &format!("segments[{i}].net"), idx)?;
-        }
+        validate_segments(result, ctx, &bounds)?;
+        validate_curves(result, ctx, &bounds)?;
+        validate_vias(result, ctx, &bounds)?;
+        validate_pole_regions(result, &bounds)?;
 
-        // ---- Curves ----
-        for (i, c) in result.curves.iter().enumerate() {
-            let idx = i + 1;
-            check_point(&c.start, ctx, x_max, board_width, eps, &format!("curves[{i}].start"), idx)?;
-            check_point(&c.mid, ctx, x_max, board_width, eps, &format!("curves[{i}].mid"), idx)?;
-            check_point(&c.end, ctx, x_max, board_width, eps, &format!("curves[{i}].end"), idx)?;
-            // Degenerate arc: any two of start/mid/end coincide (radius ~ 0).
-            if length(c.start, c.mid) <= eps || length(c.mid, c.end) <= eps {
-                return Err(RoutingError::new(
-                    idx,
-                    format!("curves[{i}]"),
-                    RoutingErrorKind::Degenerate,
-                    "degenerate arc — start, mid, and end must not collapse to a point",
-                ));
-            }
-            check_layer(c.layer, ctx.num_layers, &format!("curves[{i}].layer"), idx)?;
-            check_net(&c.net, &format!("curves[{i}].net"), idx)?;
-        }
-
-        // ---- Vias ----
-        for (i, v) in result.vias.iter().enumerate() {
-            let idx = i + 1;
-            check_point(&v.position, ctx, x_max, board_width, eps, &format!("vias[{i}].position"), idx)?;
-            check_layer(v.from_layer, ctx.num_layers, &format!("vias[{i}].from_layer"), idx)?;
-            check_layer(v.to_layer, ctx.num_layers, &format!("vias[{i}].to_layer"), idx)?;
-            if v.from_layer == v.to_layer {
-                return Err(RoutingError::new(
-                    idx,
-                    format!("vias[{i}]"),
-                    RoutingErrorKind::Malformed,
-                    format!(
-                        "via routes layer {} to itself — from_layer must differ from to_layer",
-                        v.from_layer
-                    ),
-                ));
-            }
-            check_net(&v.net, &format!("vias[{i}].net"), idx)?;
-        }
-
-        // ---- Pattern-defined pole regions ----
-        for (i, region) in result.pole_regions.iter().enumerate() {
-            let idx = i + 1;
-            check_point(
-                &region.start,
-                ctx,
-                x_max,
-                board_width,
-                eps,
-                &format!("pole_regions[{i}].start"),
-                idx,
-            )?;
-            check_point(
-                &region.end,
-                ctx,
-                x_max,
-                board_width,
-                eps,
-                &format!("pole_regions[{i}].end"),
-                idx,
-            )?;
-            if length(region.start, region.end) <= eps {
-                return Err(RoutingError::new(
-                    idx,
-                    format!("pole_regions[{i}]"),
-                    RoutingErrorKind::Degenerate,
-                    "zero-length pole region — start and end must differ",
-                ));
-            }
-            check_net(&region.phase, &format!("pole_regions[{i}].phase"), idx)?;
-        }
-
-        // ---- Continuity (per layer+net chain) ----
+        // Continuity (per layer+net chain).
         if expect_continuous {
-            validate_continuity(result, ctx, eps)?;
+            validate_continuity(result, ctx, bounds.eps)?;
         }
 
         Ok(())
     }
 }
 
+fn validate_segments(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, s) in result.segments.iter().enumerate() {
+        let idx = i + 1;
+        check_point(&s.start, bounds, &format!("segments[{i}].start"), idx)?;
+        check_point(&s.end, bounds, &format!("segments[{i}].end"), idx)?;
+        let len = length(s.start, s.end);
+        if !len.is_finite() || len <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("segments[{i}]"),
+                RoutingErrorKind::Degenerate,
+                format!(
+                    "zero-length segment {} ↦ {} — a conductor cannot have zero length",
+                    fmt_pt(s.start),
+                    fmt_pt(s.end)
+                ),
+            ));
+        }
+        check_layer(s.layer, ctx.num_layers, &format!("segments[{i}].layer"), idx)?;
+        check_net(&s.net, &format!("segments[{i}].net"), idx)?;
+    }
+    Ok(())
+}
+
+fn validate_curves(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, c) in result.curves.iter().enumerate() {
+        let idx = i + 1;
+        check_point(&c.start, bounds, &format!("curves[{i}].start"), idx)?;
+        check_point(&c.mid, bounds, &format!("curves[{i}].mid"), idx)?;
+        check_point(&c.end, bounds, &format!("curves[{i}].end"), idx)?;
+        // Degenerate arc: any two of start/mid/end coincide (radius ~ 0).
+        if length(c.start, c.mid) <= bounds.eps || length(c.mid, c.end) <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("curves[{i}]"),
+                RoutingErrorKind::Degenerate,
+                "degenerate arc — start, mid, and end must not collapse to a point",
+            ));
+        }
+        check_layer(c.layer, ctx.num_layers, &format!("curves[{i}].layer"), idx)?;
+        check_net(&c.net, &format!("curves[{i}].net"), idx)?;
+    }
+    Ok(())
+}
+
+fn validate_vias(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    bounds: &Bounds,
+) -> Result<(), RoutingError> {
+    for (i, v) in result.vias.iter().enumerate() {
+        let idx = i + 1;
+        check_point(&v.position, bounds, &format!("vias[{i}].position"), idx)?;
+        check_layer(v.from_layer, ctx.num_layers, &format!("vias[{i}].from_layer"), idx)?;
+        check_layer(v.to_layer, ctx.num_layers, &format!("vias[{i}].to_layer"), idx)?;
+        if v.from_layer == v.to_layer {
+            return Err(RoutingError::new(
+                idx,
+                format!("vias[{i}]"),
+                RoutingErrorKind::Malformed,
+                format!(
+                    "via routes layer {} to itself — from_layer must differ from to_layer",
+                    v.from_layer
+                ),
+            ));
+        }
+        check_net(&v.net, &format!("vias[{i}].net"), idx)?;
+    }
+    Ok(())
+}
+
+fn validate_pole_regions(result: &RoutingResult, bounds: &Bounds) -> Result<(), RoutingError> {
+    for (i, region) in result.pole_regions.iter().enumerate() {
+        let idx = i + 1;
+        check_point(
+            &region.start,
+            bounds,
+            &format!("pole_regions[{i}].start"),
+            idx,
+        )?;
+        check_point(&region.end, bounds, &format!("pole_regions[{i}].end"), idx)?;
+        if length(region.start, region.end) <= bounds.eps {
+            return Err(RoutingError::new(
+                idx,
+                format!("pole_regions[{i}]"),
+                RoutingErrorKind::Degenerate,
+                "zero-length pole region — start and end must differ",
+            ));
+        }
+        check_net(&region.phase, &format!("pole_regions[{i}].phase"), idx)?;
+    }
+    Ok(())
+}
+
 fn check_point(
     p: &Point,
-    _ctx: &RoutingContext,
-    x_max: f64,
-    board_width: f64,
-    eps: f64,
+    bounds: &Bounds,
     field: &str,
     index: usize,
 ) -> Result<(), RoutingError> {
@@ -163,7 +184,7 @@ fn check_point(
             format!("non-finite coordinate {},{} — NaN/Inf is not a valid position", p.x, p.y),
         ));
     }
-    if p.x < -eps || p.x > x_max + eps {
+    if p.x < -bounds.eps || p.x > bounds.x_max + bounds.eps {
         return Err(RoutingError::new(
             index,
             field,
@@ -171,11 +192,11 @@ fn check_point(
             format!(
                 "x = {:.3} mm outside the routing area [0, {:.3} mm] — the routing domain equals the active area; fix the pattern",
                 p.x,
-                x_max
+                bounds.x_max
             ),
         ));
     }
-    if p.y < -eps || p.y > board_width + eps {
+    if p.y < -bounds.eps || p.y > bounds.board_width + bounds.eps {
         return Err(RoutingError::new(
             index,
             field,
@@ -183,7 +204,7 @@ fn check_point(
             format!(
                 "y = {:.3} mm outside the board width [0, {:.3} mm]",
                 p.y,
-                board_width
+                bounds.board_width
             ),
         ));
     }

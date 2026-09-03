@@ -55,9 +55,7 @@ fn default_strands_per_phase() -> u32 {
 #[serde(rename_all = "snake_case")]
 pub enum BearingType {
     PlasticChannel,
-    /// PTFE (Teflon)-lined bearing surface. Legacy wire value `"pte_lined"`
-    /// (typo) is accepted as a serde alias.
-    #[serde(alias = "pte_lined")]
+    /// PTFE (Teflon)-lined bearing surface.
     PtfeLined,
     BallBearing,
 }
@@ -97,9 +95,8 @@ pub struct SimulationInput {
     pub air_gap_m: f64,
     /// Number of parallel strands (serpentine paths) per phase on the same
     /// layer. Distinct from a winding: a winding (coil) is one complete
-    /// conductive loop. Legacy key `windings_per_phase` is accepted as a
-    /// serde alias.
-    #[serde(default = "default_strands_per_phase", alias = "windings_per_phase")]
+    /// conductive loop.
+    #[serde(default = "default_strands_per_phase")]
     pub strands_per_phase: u32,
 
     // --- Coil ---
@@ -248,40 +245,5 @@ mod tests {
         let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
         assert_eq!(cfg.num_layers, 4, "num_layers must default to 4 when absent");
         assert!(cfg.strands_per_phase >= 1);
-    }
-
-    #[test]
-    fn test_serde_legacy_windings_per_phase_alias() {
-        // The legacy wire key `windings_per_phase` must still deserialize.
-        let json = r#"{
-            "active_area_length_m": 0.195,
-            "magnet_dims_m": [0.010, 0.010, 0.004],
-            "magnet_count": 10,
-            "magnet_pitch_m": 0.012,
-            "magnet_remanence_t": 1.35,
-            "board_width_m": 0.020,
-            "pcb_thickness_m": 0.0016,
-            "air_gap_m": 0.0005,
-            "windings_per_phase": 3,
-            "phases": 3,
-            "spacing_ratio": 1.0,
-            "max_current_a": 1.0,
-            "supply_voltage_v": 5.0,
-            "min_trace_m": 0.000127,
-            "min_space_m": 0.000127,
-            "min_via_drill_m": 0.0002,
-            "min_via_annular_ring_m": 0.0001,
-            "max_layers": 12,
-            "drive_frequency_hz": 500.0,
-            "max_temperature_rise_c": 20.0,
-            "target_force_n": 0.5,
-            "peak_force_n": 1.0,
-            "friction_n": 0.05,
-            "carriage_mass_kg": 0.015,
-            "max_accel_m_s2": 2.0,
-            "capacitor_bank_uf": 1000.0
-        }"#;
-        let cfg: SimulationInput = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(cfg.strands_per_phase, 3, "legacy alias must map to strands_per_phase");
     }
 }

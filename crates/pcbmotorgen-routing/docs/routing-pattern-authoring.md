@@ -180,8 +180,10 @@ For the bundled infinity braid, `period_pitch_mm` is exactly the context's
 `magnet_pitch_mm` whenever magnet data is supplied. Its phase/strand via grid
 uses `magnet_pitch_mm / (phases × strands)` for both the final within-phase
 step and the boundary from one phase to the next. A custom pattern can expose
-a `num_strands`, `trace_count`, `turns`, or `windings_per_phase` parameter so
+a `num_strands` or `trace_count` parameter so
 the generic report can use that value as `N`; otherwise it reports one trace.
+(Whole-coil winding counts such as `turns` are deliberately NOT consulted —
+they are not per-bundle strand counts.)
 
 ---
 

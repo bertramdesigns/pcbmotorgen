@@ -38,7 +38,6 @@ impl LinearMotorConfig {
             // pole pitch so the traces regenerate when the magnets change.
             magnet_pitch_mm: Some(self.magnet_pitch_m * 1e3),
             magnet_array_span_mm: Some(self.magnet_array_span_m() * 1e3),
-            coil_span_mm: Some(self.magnet_array_span_m() * 1e3),
             // No config field maps to an explicit inter-phase clearance yet;
             // `None` keeps the documented `min_space_mm` fallback (do not
             // invent UI config here).

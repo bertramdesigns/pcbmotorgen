@@ -69,7 +69,7 @@ pub struct PhaseBandWidth {
     #[serde(default)]
     pub slot_width_mm: Option<f64>,
     /// Maximum width allowed by the pole pitch and phase count [mm].
-    #[serde(default, alias = "max_slot_width_mm")]
+    #[serde(default)]
     pub max_band_width_mm: Option<f64>,
     /// `max_band_width_mm - band_width_mm`, when a pole pitch is known [mm].
     #[serde(default)]
@@ -130,7 +130,7 @@ pub struct RoutingDimensions {
     /// fallback (docs/API.md §10.1).
     pub phase_clearance_mm: f64,
     /// Maximum phase-band width (pole_pitch / phases − g_phase) [mm].
-    #[serde(default, alias = "max_slot_width_mm")]
+    #[serde(default)]
     pub max_phase_band_width_mm: Option<f64>,
     /// Total number of active leg slots declared by the pattern's leg grid
     /// (`N_slots`), when the pattern declares one [mm-independent].
@@ -151,7 +151,7 @@ pub struct RoutingDimensions {
     #[serde(default)]
     pub interleave_step_mm: Option<f64>,
     /// One calculated band for each active `(layer, net)` group.
-    #[serde(default, alias = "slot_widths")]
+    #[serde(default)]
     pub phase_band_widths: Vec<PhaseBandWidth>,
     /// Pattern-defined pole regions copied from the canonical result.
     #[serde(default)]
@@ -187,8 +187,8 @@ impl RoutingDimensions {
     /// Generic patterns may expose a `num_strands` or `trace_count` parameter.
     /// The first present value is used as the trace count for the returned
     /// phase-band width records; otherwise one trace is reported.  (Whole-coil
-    /// counts such as `turns` / `windings_per_phase` are deliberately NOT
-    /// accepted: they are not per-bundle strand counts and feeding them into
+    /// winding counts such as `turns` are deliberately NOT accepted: they are
+    /// not per-bundle strand counts and feeding them into
     /// the width equation silently reported wrong bands.)  A pattern that has
     /// no pole pitch still gets the bottom-up phase-band width calculation,
     /// but no top-down maximum can be reported.  Slot metrics
@@ -253,20 +253,7 @@ impl RoutingDimensions {
         }
 
         let phases = ctx.phases.max(1);
-        let total_length = ctx.active_area_length_mm;
-        let pole_pitch_mm = match ctx.magnet_pitch_mm {
-            Some(pitch) => {
-                if !pitch.is_finite() || pitch <= 0.0 {
-                    return Err(dimension_error(
-                        "context.magnet_pitch_mm",
-                        "pole pitch must be finite and greater than zero",
-                    ));
-                }
-                Some(pitch)
-            }
-            None => None,
-        };
-
+        let pole_pitch_mm = resolved_pole_pitch_mm(ctx)?;
         let phase_band_pitch_mm = pole_pitch_mm.map(|pitch| pitch / phases as f64);
         // Explicit inter-phase clearance `g_phase`. When the context does not
         // set `phase_clearance_mm`, the trace-to-trace clearance is used as a
@@ -275,82 +262,21 @@ impl RoutingDimensions {
         let phase_clearance_mm = ctx.phase_clearance_mm.unwrap_or(ctx.min_space_mm);
         let max_phase_band_width_mm = phase_band_pitch_mm.map(|pitch| pitch - phase_clearance_mm);
 
-        // True per-slot metrics from the pattern-declared leg grid. Without a
-        // declaration these stay `None`; a malformed declaration (zero slot
-        // count / strand count) also degrades to `None` instead of failing
-        // generation, because the grid is optional metadata.
-        let leg_grid = result.leg_grid.as_ref();
-        let slot_count = leg_grid.map(|grid| grid.slot_count);
-        let slot_pitch_mm = slot_count
-            .and_then(|slots| slot_pitch_from_leg_grid_mm(ctx.active_area_length_mm, slots).ok());
-        let interleave_step_mm = leg_grid
-            .and_then(|grid| grid.strands_per_leg)
-            .filter(|strands| *strands >= 1)
-            .and_then(|strands| {
-                pole_pitch_mm.map(|pitch| pitch / (phases as f64 * strands as f64))
-            });
+        let (slot_count, slot_pitch_mm, interleave_step_mm) =
+            declared_slot_metrics(result, ctx, pole_pitch_mm, phases);
 
-        let mut groups: BTreeMap<(Layer, String), Vec<(Point, Point)>> = BTreeMap::new();
-        for segment in result.segments.iter().filter(|segment| segment.is_active) {
-            groups
-                .entry((segment.layer, segment.net.clone()))
-                .or_default()
-                .push((segment.start, segment.end));
-        }
-        for curve in result.curves.iter().filter(|curve| curve.is_active) {
-            groups
-                .entry((curve.layer, curve.net.clone()))
-                .or_default()
-                .push((curve.start, curve.end));
-        }
-
-        let mut phase_band_widths = Vec::with_capacity(groups.len());
-        for ((layer, net), paths) in groups {
-            let angle_rad = angle_override_rad
-                .or_else(|| paths.iter().find_map(|(start, end)| path_angle(*start, *end)))
-                .ok_or_else(|| {
-                    dimension_error(
-                        "dimensions.phase_band_widths.angle_rad",
-                        format!(
-                            "cannot calculate a trace angle for layer {} net {}: active geometry is parallel to the travel axis",
-                            layer, net
-                        ),
-                    )
-                })?;
-            let band_width_mm = phase_band_width_from_trace_geometry_mm(
-                trace_count,
-                ctx.min_trace_mm,
-                ctx.min_space_mm,
-                angle_rad,
-            )
-            .map_err(|message| dimension_error("dimensions.phase_band_widths.band_width_mm", message))?;
-            // Glossary-exact per-slot width: a slot houses ONE active leg. The
-            // record reports the single-trace leg width (`k = 1`); callers
-            // whose legs bundle `k` parallel strands use
-            // `slot_width_from_leg_geometry_mm(k, ...)` directly.
-            let slot_width_mm =
-                slot_width_from_leg_geometry_mm(1, ctx.min_trace_mm, ctx.min_space_mm, angle_rad)
-                    .map_err(|message| {
-                        dimension_error("dimensions.phase_band_widths.slot_width_mm", message)
-                    })?;
-            let margin_mm = max_phase_band_width_mm.map(|max| max - band_width_mm);
-            phase_band_widths.push(PhaseBandWidth {
-                layer,
-                net,
-                trace_count,
-                trace_width_mm: ctx.min_trace_mm,
-                trace_spacing_mm: ctx.min_space_mm,
-                angle_rad,
-                band_width_mm,
-                slot_width_mm: Some(slot_width_mm),
-                max_band_width_mm: max_phase_band_width_mm,
-                margin_mm,
-            });
-        }
+        let groups = collect_active_paths(result);
+        let phase_band_widths = phase_band_records(
+            groups,
+            ctx,
+            trace_count,
+            angle_override_rad,
+            max_phase_band_width_mm,
+        )?;
 
         Ok(Self {
             active_area_length_mm: ctx.active_area_length_mm,
-            total_routing_length_mm: total_length,
+            total_routing_length_mm: ctx.active_area_length_mm,
             board_width_mm: ctx.board_width_mm,
             magnet_array_span_mm: ctx.magnet_array_span(),
             phases,
@@ -367,6 +293,123 @@ impl RoutingDimensions {
             pole_regions: result.pole_regions.clone(),
         })
     }
+}
+
+/// Validated pole pitch from the context: `None` when the context carries no
+/// magnet layout, an error when the pitch is present but not finite/positive.
+fn resolved_pole_pitch_mm(ctx: &RoutingContext) -> Result<Option<f64>, RoutingError> {
+    match ctx.magnet_pitch_mm {
+        Some(pitch) if pitch.is_finite() && pitch > 0.0 => Ok(Some(pitch)),
+        Some(_) => Err(dimension_error(
+            "context.magnet_pitch_mm",
+            "pole pitch must be finite and greater than zero",
+        )),
+        None => Ok(None),
+    }
+}
+
+/// Slot metrics derived from the pattern-declared leg grid: `(slot_count,
+/// slot_pitch_mm, interleave_step_mm)`.
+///
+/// Without a declaration — or with a malformed one (zero slot count / strand
+/// count) — these degrade to `None` instead of failing generation, because
+/// the grid is optional metadata.
+fn declared_slot_metrics(
+    result: &RoutingResult,
+    ctx: &RoutingContext,
+    pole_pitch_mm: Option<f64>,
+    phases: u32,
+) -> (Option<u32>, Option<f64>, Option<f64>) {
+    let leg_grid = result.leg_grid.as_ref();
+    let slot_count = leg_grid.map(|grid| grid.slot_count);
+    let slot_pitch_mm = slot_count
+        .and_then(|slots| slot_pitch_from_leg_grid_mm(ctx.active_area_length_mm, slots).ok());
+    let interleave_step_mm = leg_grid
+        .and_then(|grid| grid.strands_per_leg)
+        .filter(|strands| *strands >= 1)
+        .and_then(|strands| {
+            pole_pitch_mm.map(|pitch| pitch / (phases as f64 * strands as f64))
+        });
+    (slot_count, slot_pitch_mm, interleave_step_mm)
+}
+
+/// Group active segments and curves by `(layer, net)`, preserving per-group
+/// emission order.
+fn collect_active_paths(
+    result: &RoutingResult,
+) -> BTreeMap<(Layer, String), Vec<(Point, Point)>> {
+    let mut groups: BTreeMap<(Layer, String), Vec<(Point, Point)>> = BTreeMap::new();
+    for segment in result.segments.iter().filter(|segment| segment.is_active) {
+        groups
+            .entry((segment.layer, segment.net.clone()))
+            .or_default()
+            .push((segment.start, segment.end));
+    }
+    for curve in result.curves.iter().filter(|curve| curve.is_active) {
+        groups
+            .entry((curve.layer, curve.net.clone()))
+            .or_default()
+            .push((curve.start, curve.end));
+    }
+    groups
+}
+
+/// One [`PhaseBandWidth`] per `(layer, net)` group.
+///
+/// The trace angle comes from the override or the first path that yields one;
+/// geometry parallel to the travel axis is an error because its projected
+/// band width is undefined (division by `sin(theta)`).
+fn phase_band_records(
+    groups: BTreeMap<(Layer, String), Vec<(Point, Point)>>,
+    ctx: &RoutingContext,
+    trace_count: u32,
+    angle_override_rad: Option<f64>,
+    max_phase_band_width_mm: Option<f64>,
+) -> Result<Vec<PhaseBandWidth>, RoutingError> {
+    let mut records = Vec::with_capacity(groups.len());
+    for ((layer, net), paths) in groups {
+        let angle_rad = angle_override_rad
+            .or_else(|| paths.iter().find_map(|(start, end)| path_angle(*start, *end)))
+            .ok_or_else(|| {
+                dimension_error(
+                    "dimensions.phase_band_widths.angle_rad",
+                    format!(
+                        "cannot calculate a trace angle for layer {} net {}: active geometry is parallel to the travel axis",
+                        layer, net
+                    ),
+                )
+            })?;
+        let band_width_mm = phase_band_width_from_trace_geometry_mm(
+            trace_count,
+            ctx.min_trace_mm,
+            ctx.min_space_mm,
+            angle_rad,
+        )
+        .map_err(|message| dimension_error("dimensions.phase_band_widths.band_width_mm", message))?;
+        // Glossary-exact per-slot width: a slot houses ONE active leg. The
+        // record reports the single-trace leg width (`k = 1`); callers
+        // whose legs bundle `k` parallel strands use
+        // `slot_width_from_leg_geometry_mm(k, ...)` directly.
+        let slot_width_mm =
+            slot_width_from_leg_geometry_mm(1, ctx.min_trace_mm, ctx.min_space_mm, angle_rad)
+                .map_err(|message| {
+                    dimension_error("dimensions.phase_band_widths.slot_width_mm", message)
+                })?;
+        let margin_mm = max_phase_band_width_mm.map(|max| max - band_width_mm);
+        records.push(PhaseBandWidth {
+            layer,
+            net,
+            trace_count,
+            trace_width_mm: ctx.min_trace_mm,
+            trace_spacing_mm: ctx.min_space_mm,
+            angle_rad,
+            band_width_mm,
+            slot_width_mm: Some(slot_width_mm),
+            max_band_width_mm: max_phase_band_width_mm,
+            margin_mm,
+        });
+    }
+    Ok(records)
 }
 
 /// Bottom-up phase-band width equation.
@@ -541,8 +584,8 @@ fn path_angle(start: Point, end: Point) -> Option<f64> {
 /// Per-bundle strand-count hint from the context parameters.
 ///
 /// Only per-bundle strand counts are accepted: `num_strands` wins over
-/// `trace_count` when both are present. Whole-coil counts (`turns`,
-/// `windings_per_phase`) are deliberately NOT consulted — they count coil
+/// `trace_count` when both are present. Whole-coil winding counts (`turns`)
+/// are deliberately NOT consulted — they count coil
 /// windings, not parallel strands in one bundle, and previously fed the width
 /// equation with silently wrong numbers.
 fn trace_count_hint(ctx: &RoutingContext) -> u32 {
@@ -770,23 +813,30 @@ mod tests {
     }
 
     #[test]
-    fn legacy_json_without_slot_fields_loads() {
-        // A payload authored before the per-slot metrics existed (no
-        // slot_count / slot_pitch_mm / interleave_step_mm, no per-record
-        // slot_width_mm) still deserializes; the new fields default to
-        // None.
-        let legacy = r#"{
+    fn band_record_requires_band_width_mm() {
+        // `band_width_mm` is required: silently mapping a payload that lacks
+        // it onto the per-record `slot_width_mm` field would misreport the
+        // band by a factor of `trace_count`.
+        let payload = r#"{
             "active_area_length_mm": 195.0,
             "total_routing_length_mm": 255.0,
             "board_width_mm": 20.0,
             "phases": 3,
-            "phase_clearance_mm": 0.15
+            "phase_clearance_mm": 0.127,
+            "phase_band_widths": [
+                {
+                    "layer": 0,
+                    "net": "A",
+                    "trace_count": 5,
+                    "trace_width_mm": 0.127,
+                    "trace_spacing_mm": 0.127,
+                    "angle_rad": 1.030377,
+                    "slot_width_mm": 1.333
+                }
+            ]
         }"#;
-        let dims: RoutingDimensions = serde_json::from_str(legacy).unwrap();
-        assert_eq!(dims.slot_count, None);
-        assert_eq!(dims.slot_pitch_mm, None);
-        assert_eq!(dims.interleave_step_mm, None);
-        assert!(dims.phase_band_widths.is_empty());
+        let result: Result<RoutingDimensions, _> = serde_json::from_str(payload);
+        assert!(result.is_err(), "missing band_width_mm must be rejected");
     }
 
     // -----------------------------------------------------------------------

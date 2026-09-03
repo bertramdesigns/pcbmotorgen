@@ -190,26 +190,6 @@ impl PhaseCoil {
             .sum()
     }
 
-    /// Midpoints of all end-turns at y = max_y (top edge).
-    pub fn end_turn_midpoints_top(&self) -> Vec<(f64, f64)> {
-        let (_, _min_y, _, max_y) = self.bounding_box();
-        self.end_turn_segments()
-            .iter()
-            .filter(|s| (s.start.1 - max_y).abs() < 1e-6)
-            .map(|s| s.midpoint())
-            .collect()
-    }
-
-    /// Midpoints of all end-turns at y = min_y (bottom edge).
-    pub fn end_turn_midpoints_bottom(&self) -> Vec<(f64, f64)> {
-        let (_, min_y, _, _) = self.bounding_box();
-        self.end_turn_segments()
-            .iter()
-            .filter(|s| (s.start.1 - min_y).abs() < 1e-6)
-            .map(|s| s.midpoint())
-            .collect()
-    }
-
     /// Return true if every segment starts where the previous ends.
     pub fn is_continuous(&self, tol: f64) -> bool {
         for i in 0..self.segments.len().saturating_sub(1) {

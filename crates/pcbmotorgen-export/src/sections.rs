@@ -51,7 +51,6 @@ pub(crate) fn write_tables(out: &mut Vec<String>, layer_names: &[String]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::routing_result_to_dxf;
     use pcbmotorgen_routing::{DesignRules, Point, RouteSegment, RoutingResult, Via};
 
