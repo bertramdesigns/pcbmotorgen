@@ -17,9 +17,9 @@
 //!   ([`get_board_diagnostics`], [`validate_write_preconditions`],
 //!   [`preview_coils`]).
 //!
-//! Both exporters consume [`pcbmotorgen_routing`] types
-//! ([`PhaseCoil`], [`RoutingResult`], [`DesignRules`]) and use **millimetres**
-//! as the canonical unit.
+//! Both exporters consume [`pcbmotorgen_routing`] types ([`PhaseCoil`],
+//! [`RoutingResult`]) and the [`pcbmotorgen_dfm`] DFM sizing snapshot
+//! ([`DesignRules`]), and use **millimetres** as the canonical unit.
 //!
 //! ## Submodules
 //!
@@ -61,7 +61,7 @@
 //!
 //! ```rust,ignore
 //! use pcbmotorgen_export::routing_result_to_dxf;
-//! use pcbmotorgen_routing::DesignRules;
+//! use pcbmotorgen_dfm::DesignRules;
 //!
 //! let dxf_string = routing_result_to_dxf(
 //!     &routing_result,
@@ -117,7 +117,8 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/kiapi.rs"));
 }
 
-use pcbmotorgen_routing::{DesignRules, PhaseCoil, RoutingResult};
+use pcbmotorgen_dfm::DesignRules;
+use pcbmotorgen_routing::{PhaseCoil, RoutingResult};
 
 // ===========================================================================
 // DXF exporter
@@ -361,7 +362,7 @@ pub use writer::{coils_to_board_items, io_elements_to_board_items};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pcbmotorgen_routing::DesignRules;
+    use pcbmotorgen_dfm::DesignRules;
 
     fn sample_rules() -> DesignRules {
         DesignRules {

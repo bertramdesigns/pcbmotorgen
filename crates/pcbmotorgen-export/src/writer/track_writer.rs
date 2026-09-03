@@ -81,9 +81,8 @@ pub(crate) fn emit_tracks_and_arcs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pcbmotorgen_routing::{
-        generate_coils_from_context, DesignRules, PhaseCoil, RoutingContext,
-    };
+    use pcbmotorgen_dfm::DesignRules;
+    use pcbmotorgen_routing::{generate_coils_from_context, PhaseCoil, RoutingContext};
     use prost::Message;
     use std::collections::HashMap;
 

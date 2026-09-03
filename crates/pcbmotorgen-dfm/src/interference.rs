@@ -2,15 +2,15 @@
 //!
 //! The routing pattern emits only raw geometry (line endpoints + layer + net,
 //! via positions + from/to layers). Trace width and via pad size are owned by
-//! the routing crate via [`DesignRules`] (see the crate division). This module
-//! verifies copper-to-copper clearance and via-pad-to-trace clearance against
-//! those rules. These are *diagnostics* — they are reported, not used to
-//! silently alter geometry.
+//! the DFM crate via [`DesignRules`](crate::rules::DesignRules) (see the crate
+//! division, kata 0rgs). This module verifies copper-to-copper clearance and
+//! via-pad-to-trace clearance against those rules. These are *diagnostics* —
+//! they are reported, not used to silently alter geometry.
 
 use std::collections::BTreeMap;
 
-use crate::design::DesignRules;
-use crate::model::{Point, RouteSegment, RoutingResult};
+use crate::rules::DesignRules;
+use pcbmotorgen_routing::model::{Point, RouteSegment, RoutingResult};
 
 /// One DRC violation.
 #[derive(Debug, Clone)]
@@ -164,4 +164,163 @@ fn segments_intersect(a: &RouteSegment, b: &RouteSegment) -> bool {
     let d3 = ccw(ax1, ay1, ax2, ay2, bx1, by1);
     let d4 = ccw(ax1, ay1, ax2, ay2, bx2, by2);
     (d1 * d2) < 0.0 && (d3 * d4) < 0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pcbmotorgen_routing::model::Via;
+
+    fn rules() -> DesignRules {
+        DesignRules {
+            min_trace_mm: 0.1,
+            min_space_mm: 0.1,
+            min_via_drill_mm: 0.2,
+            min_via_annular_ring_mm: 0.1,
+        }
+    }
+
+    fn seg(x1: f64, y1: f64, x2: f64, y2: f64, layer: u32, net: &str) -> RouteSegment {
+        RouteSegment {
+            start: Point::new(x1, y1),
+            end: Point::new(x2, y2),
+            layer,
+            net: net.to_string(),
+            is_active: true,
+        }
+    }
+
+    fn result(segments: Vec<RouteSegment>, vias: Vec<Via>) -> RoutingResult {
+        RoutingResult {
+            format_version: pcbmotorgen_routing::model::FORMAT_VERSION,
+            segments,
+            curves: Vec::new(),
+            vias,
+            pole_regions: Vec::new(),
+            leg_grid: None,
+            phase_bands: Vec::new(),
+            io_pads: Vec::new(),
+            io_traces: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn clear_different_net_segments_pass() {
+        // 1 mm apart vertically; copper pitch = 0.2 mm → no violation.
+        let r = result(
+            vec![
+                seg(0.0, 0.0, 10.0, 0.0, 0, "A"),
+                seg(0.0, 1.0, 10.0, 1.0, 0, "B"),
+            ],
+            Vec::new(),
+        );
+        assert!(check_interference(&rules(), &r).is_empty());
+    }
+
+    #[test]
+    fn too_close_different_net_segments_violate() {
+        // 0.05 mm apart; below copper pitch (0.2) → clearance violation.
+        let r = result(
+            vec![
+                seg(0.0, 0.0, 10.0, 0.0, 0, "A"),
+                seg(0.0, 0.05, 10.0, 0.05, 0, "B"),
+            ],
+            Vec::new(),
+        );
+        let v = check_interference(&rules(), &r);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].kind, "clearance");
+        assert_eq!(v[0].net_a, "A");
+        assert_eq!(v[0].net_b, "B");
+        assert_eq!(v[0].layer, 0);
+    }
+
+    #[test]
+    fn same_net_segments_never_violate() {
+        let r = result(
+            vec![
+                seg(0.0, 0.0, 10.0, 0.0, 0, "A"),
+                seg(0.0, 0.05, 10.0, 0.05, 0, "A"),
+            ],
+            Vec::new(),
+        );
+        assert!(check_interference(&rules(), &r).is_empty());
+    }
+
+    #[test]
+    fn different_layers_are_independent() {
+        let r = result(
+            vec![
+                seg(0.0, 0.0, 10.0, 0.0, 0, "A"),
+                seg(0.0, 0.05, 10.0, 0.05, 1, "B"),
+            ],
+            Vec::new(),
+        );
+        assert!(check_interference(&rules(), &r).is_empty());
+    }
+
+    #[test]
+    fn crossing_segments_report_zero_gap() {
+        let r = result(
+            vec![
+                seg(0.0, 0.0, 10.0, 10.0, 0, "A"),
+                seg(0.0, 10.0, 10.0, 0.0, 0, "B"),
+            ],
+            Vec::new(),
+        );
+        let v = check_interference(&rules(), &r);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].kind, "clearance");
+        assert_eq!(v[0].gap_mm, 0.0);
+    }
+
+    #[test]
+    fn via_pad_near_different_net_trace_violates() {
+        // Via pad radius 0.2, trace half width 0.05, space 0.1 → required
+        // pad-to-trace-centre distance 0.35 mm. The via sits 0.1 mm from the
+        // B trace centre → violation.
+        let r = result(
+            vec![seg(0.0, 1.0, 10.0, 1.0, 0, "B")],
+            vec![Via {
+                position: Point::new(5.0, 0.9),
+                from_layer: 0,
+                to_layer: 1,
+                net: "A".to_string(),
+            }],
+        );
+        let v = check_interference(&rules(), &r);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].kind, "via_clearance");
+        assert_eq!(v[0].net_a, "A");
+        assert_eq!(v[0].net_b, "B");
+    }
+
+    #[test]
+    fn via_pad_on_same_net_never_violates() {
+        let r = result(
+            vec![seg(0.0, 1.0, 10.0, 1.0, 0, "A")],
+            vec![Via {
+                position: Point::new(5.0, 1.0),
+                from_layer: 0,
+                to_layer: 1,
+                net: "A".to_string(),
+            }],
+        );
+        assert!(check_interference(&rules(), &r).is_empty());
+    }
+
+    #[test]
+    fn via_checked_only_on_from_to_layers() {
+        // Segment on layer 2 only; via spans layers 0↔1 → not compared.
+        let r = result(
+            vec![seg(0.0, 1.0, 10.0, 1.0, 2, "B")],
+            vec![Via {
+                position: Point::new(5.0, 0.9),
+                from_layer: 0,
+                to_layer: 1,
+                net: "A".to_string(),
+            }],
+        );
+        assert!(check_interference(&rules(), &r).is_empty());
+    }
 }

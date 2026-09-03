@@ -6,7 +6,7 @@
 //! UI can show "your config is 4-layer but your board is 2-layer — reduce
 //! to 2" before any track is written.
 
-use pcbmotorgen_routing::DesignRules;
+use pcbmotorgen_dfm::DesignRules;
 
 use super::BoardDiagnostics;
 

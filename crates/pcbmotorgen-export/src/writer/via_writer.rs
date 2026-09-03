@@ -190,9 +190,8 @@ pub(crate) fn through_drill(drill_nm: i64) -> DrillProperties {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pcbmotorgen_routing::{
-        generate_coils_from_context, CoilSegment, DesignRules, RoutingContext,
-    };
+    use pcbmotorgen_dfm::DesignRules;
+    use pcbmotorgen_routing::{generate_coils_from_context, CoilSegment, RoutingContext};
     use prost::Message;
     use std::collections::HashMap;
 

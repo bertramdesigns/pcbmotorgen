@@ -1,13 +1,16 @@
-# pcbmotorgen workspace — routing/simulation/export sub-crates + Tauri app.
+# pcbmotorgen workspace — routing/simulation/dfm/export sub-crates + Tauri app.
 #
 # Crate division:
-#   - pcbmotorgen-routing   : traces & generation, pattern plugins, trace
-#                              width, via size, overlap detection (leaf).
+#   - pcbmotorgen-routing   : traces & generation, pattern plugins, strict wire
+#                              -contract validation (leaf).
 #   - pcbmotorgen-simulation: all physics simulations (depends on routing).
+#   - pcbmotorgen-dfm       : manufacturability downstream of routing —
+#                              DesignRules sizing authority + DRC interference
+#                              diagnostics (depends on routing).
 #   - pcbmotorgen-export    : exporters for routing's generic geometry —
 #                              KiCad 10 IPC adapter (board items, commits,
 #                              diagnostics, preview) + DXF R12 ASCII exporter
-#                              (LINE/ARC/CIRCLE). Depends on routing.
+#                              (LINE/ARC/CIRCLE). Depends on routing + dfm.
 #   - pcbmotorgen (app/src-tauri): parent orchestrator — config, UI, Tauri IPC,
 #                              consumes the sub-crates.
 [workspace]
@@ -15,6 +18,7 @@ resolver = "2"
 members = [
     "crates/pcbmotorgen-routing",
     "crates/pcbmotorgen-simulation",
+    "crates/pcbmotorgen-dfm",
     "crates/pcbmotorgen-export",
     "app/desktop/src-tauri",
 ]
@@ -29,6 +33,7 @@ rust-version = "1.80"
 # Internal
 pcbmotorgen-routing = { path = "crates/pcbmotorgen-routing" }
 pcbmotorgen-simulation = { path = "crates/pcbmotorgen-simulation" }
+pcbmotorgen-dfm = { path = "crates/pcbmotorgen-dfm" }
 pcbmotorgen-export = { path = "crates/pcbmotorgen-export" }
 # Physics / math
 magba = "=0.6.2"

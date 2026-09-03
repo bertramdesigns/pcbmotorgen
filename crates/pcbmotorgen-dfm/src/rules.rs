@@ -1,0 +1,123 @@
+//! Design rules (DFM) that govern trace width, clearance, and via sizing.
+//!
+//! The DFM crate owns trace width and via size. A [`DesignRules`] snapshot is
+//! applied when (a) checking interference on a
+//! [`RoutingResult`](pcbmotorgen_routing::model::RoutingResult) and (b)
+//! describing the geometry to downstream consumers (the KiCad writer), which
+//! converts these millimetre sizes into nanometres without re-deriving them.
+//!
+//! The [`RoutingContext`](pcbmotorgen_routing::context::RoutingContext) fields
+//! `min_trace_mm` / `min_space_mm` / `phase_clearance_mm` are part of the
+//! routing wire contract (patterns consume them for layout and phase-band
+//! math); they are not moved here. The application bridges the same config
+//! values into a `DesignRules` snapshot, and this crate reads the snapshot for
+//! sizing and DRC clearance decisions downstream.
+//!
+//! All values in millimetres.
+
+use serde::{Deserialize, Serialize};
+
+/// Minimum manufacturable trace width [mm].
+const DEFAULT_MIN_TRACE_MM: f64 = 0.127; // 5 mil
+/// Minimum trace-to-trace clearance [mm].
+const DEFAULT_MIN_SPACE_MM: f64 = 0.127; // 5 mil
+/// Minimum via drill diameter [mm].
+const DEFAULT_MIN_VIA_DRILL_MM: f64 = 0.2;
+/// Minimum via annular ring width [mm].
+const DEFAULT_MIN_VIA_ANNULAR_RING_MM: f64 = 0.1;
+
+/// A snapshot of the DFM rules applied to generated routing geometry.
+///
+/// Patterns receive the board + phase dimensions via
+/// [`RoutingContext`](pcbmotorgen_routing::context::RoutingContext); trace
+/// width, clearance, and via sizing live here so the DFM crate is the
+/// authority on those values (per the crate division, kata 0rgs). Downstream
+/// consumers (e.g. the KiCad writer) read the sizes from this spec — they
+/// never decide them.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DesignRules {
+    /// Minimum manufacturable trace width [mm].
+    pub min_trace_mm: f64,
+    /// Minimum trace-to-trace clearance [mm].
+    pub min_space_mm: f64,
+    /// Minimum via drill diameter [mm].
+    pub min_via_drill_mm: f64,
+    /// Minimum via annular ring width [mm].
+    pub min_via_annular_ring_mm: f64,
+}
+
+impl Default for DesignRules {
+    fn default() -> Self {
+        Self {
+            min_trace_mm: DEFAULT_MIN_TRACE_MM,
+            min_space_mm: DEFAULT_MIN_SPACE_MM,
+            min_via_drill_mm: DEFAULT_MIN_VIA_DRILL_MM,
+            min_via_annular_ring_mm: DEFAULT_MIN_VIA_ANNULAR_RING_MM,
+        }
+    }
+}
+
+impl DesignRules {
+    /// Minimum via pad diameter [mm] = drill + 2 × annular ring.
+    pub fn via_pad_diameter_mm(&self) -> f64 {
+        self.min_via_drill_mm + 2.0 * self.min_via_annular_ring_mm
+    }
+
+    /// Minimum via pad radius [mm].
+    pub fn via_pad_radius_mm(&self) -> f64 {
+        self.via_pad_diameter_mm() / 2.0
+    }
+
+    /// Default plated IO pad diameter [mm] — identical to the via pad
+    /// diameter (`drill + 2 × annular ring`).
+    ///
+    /// This is the sizing authority for THT
+    /// [`IoPad`](pcbmotorgen_routing::io::IoPad) stacks: patterns read the
+    /// diameter from here (or size pads explicitly) and the writers carry the
+    /// declared size through — nothing downstream decides pad dimensions.
+    pub fn io_tht_pad_diameter_mm(&self) -> f64 {
+        self.via_pad_diameter_mm()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_millimetres() {
+        let rules = DesignRules::default();
+        assert_eq!(rules.min_trace_mm, 0.127);
+        assert_eq!(rules.min_space_mm, 0.127);
+        assert_eq!(rules.min_via_drill_mm, 0.2);
+        assert_eq!(rules.min_via_annular_ring_mm, 0.1);
+        assert_eq!(rules.via_pad_diameter_mm(), 0.4);
+        assert_eq!(rules.io_tht_pad_diameter_mm(), 0.4);
+    }
+
+    #[test]
+    fn derived_pad_sizing_follows_drill_and_ring() {
+        let rules = DesignRules {
+            min_via_drill_mm: 0.3,
+            min_via_annular_ring_mm: 0.05,
+            ..DesignRules::default()
+        };
+        assert_eq!(rules.via_pad_diameter_mm(), 0.4);
+        assert_eq!(rules.via_pad_radius_mm(), 0.2);
+        assert_eq!(rules.io_tht_pad_diameter_mm(), rules.via_pad_diameter_mm());
+    }
+
+    #[test]
+    fn serde_shape_is_stable() {
+        // The struct moved crates (kata 0rgs) but its serde shape must stay
+        // byte-compatible for any serialized snapshots.
+        let rules = DesignRules::default();
+        let json = serde_json::to_string(&rules).unwrap();
+        assert_eq!(
+            json,
+            r#"{"min_trace_mm":0.127,"min_space_mm":0.127,"min_via_drill_mm":0.2,"min_via_annular_ring_mm":0.1}"#
+        );
+        let back: DesignRules = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, rules);
+    }
+}

@@ -27,9 +27,8 @@ pub(crate) fn pack_any<T: Message>(full_name: &str, msg: &T) -> Any {
 
 #[cfg(test)]
 mod tests {
-    use pcbmotorgen_routing::{
-        generate_coils_from_context, DesignRules, PhaseCoil, RoutingContext,
-    };
+    use pcbmotorgen_dfm::DesignRules;
+    use pcbmotorgen_routing::{generate_coils_from_context, PhaseCoil, RoutingContext};
     use std::collections::HashMap;
 
     use crate::writer::coils_to_board_items;

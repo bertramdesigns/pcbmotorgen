@@ -19,10 +19,10 @@
 //!   treat IO routing differently (it is never a force-producing conductor).
 //!
 //! Sizing authority: pad dimensions remain governed by the DFM rules
-//! ([`DesignRules`](crate::design::DesignRules)) — patterns read sizes from
-//! there (e.g. [`DesignRules::io_tht_pad_diameter_mm`]) or size explicitly;
-//! downstream writers only carry the declared sizes through and never decide
-//! them.
+//! (`DesignRules`, downstream in `pcbmotorgen-dfm` since kata 0rgs) —
+//! patterns read sizes from there (e.g. `DesignRules::io_tht_pad_diameter_mm`)
+//! or size explicitly; downstream writers only carry the declared sizes
+//! through and never decide them.
 //!
 //! Units are millimetres; x = travel axis, y = across board width (matching
 //! the rest of the crate).

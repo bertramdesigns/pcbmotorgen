@@ -10,8 +10,9 @@
 //! 0.1 mm annular ring; active area 48.0 mm; centring on.
 
 use pcbmotorgen_export::{coils_to_board_items, routing_result_to_dxf};
+use pcbmotorgen_dfm::DesignRules;
 use pcbmotorgen_routing::{
-    CoilSegment, DesignRules, PhaseCoil, Point, RouteCurve, RouteSegment, RoutingResult, Via,
+    CoilSegment, PhaseCoil, Point, RouteCurve, RouteSegment, RoutingResult, Via,
 };
 
 fn rules() -> DesignRules {

@@ -1,0 +1,14 @@
+[package]
+name = "pcbmotorgen-dfm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Design-for-manufacturing (DFM) rules and diagnostics downstream of routing: the DesignRules sizing authority (trace width, clearance, via/IO pad sizing) and DRC interference checks on validated routing geometry."
+
+[dependencies]
+pcbmotorgen-routing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

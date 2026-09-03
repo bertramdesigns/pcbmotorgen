@@ -1,26 +1,25 @@
 //! # pcbmotorgen-routing
 //!
-//! Routing-pattern plugin contract and DRC authority for PCB stator coil
-//! generation. This crate owns everything about trace generation: the pattern
-//! plugin interface, generator loading (Rust `cdylib` + Python runners),
-//! trace width / via sizing, and overlap (interference) detection.
+//! Routing-pattern plugin contract for PCB stator coil generation. This crate
+//! owns everything about trace generation: the pattern plugin interface,
+//! generator loading (Rust `cdylib` + Python runners), and the strict wire
+//! -contract validation. Manufacturability is deliberately NOT a routing
+//! concern (kata 0rgs): patterns may generate any geometry, and the DFM rules
+//! plus DRC interference diagnostics live downstream in
+//! `pcbmotorgen-dfm` (which depends on this crate).
 //!
 //! It is a leaf crate — it depends on nothing internal, so it can be developed
-//! and tested independently of the physics simulation, the KiCad adapter, and
-//! the parent `pcbmotorgen` app.
+//! and tested independently of the physics simulation, the KiCad adapter, the
+//! DFM checks, and the parent `pcbmotorgen` app.
 //!
 //! Per the crate division (see `PRODUCT_ARCHITECTURE.md`):
 //! - [`model`] — the canonical [`RoutingResult`] (segments, curves, vias),
 //!   each element carrying its own `layer` and `net`.
 //! - [`coil`] — the [`PhaseCoil`] presentation model (grouped by layer+net)
 //!   that the simulation crate and the KiCad writer consume.
-//! - [`design`] — [`DesignRules`]: DFM trace width / clearance / via sizing,
-//!   the authority downstream consumers read sizes from.
 //! - [`dimensions`] — pole pitch, phase-band budget, bottom-up phase-band
 //!   width calculations, and the resolved phase-band geometry (declared or
 //!   host-derived) returned in [`RoutingReport`].
-//! - [`interference`] — [`check_interference`]: DRC overlap / via-pad
-//!   clearance checks against the [`DesignRules`].
 //! - [`io`] — additive IO result elements (connector/IC pads + terminal
 //!   fanout traces), typed distinctly from active conductors.
 //! - [`generate`] — the app-facing facade: registry, plugin loading, and
@@ -39,11 +38,9 @@
 
 pub mod coil;
 pub mod context;
-pub mod design;
 pub mod dimensions;
 pub mod error;
 pub mod generate;
-pub mod interference;
 pub mod io;
 pub mod loaders;
 pub mod model;
@@ -55,7 +52,6 @@ pub mod validator;
 
 pub use coil::{CoilArc, CoilSegment, PhaseCoil, PHASE_NAMES};
 pub use context::RoutingContext;
-pub use design::DesignRules;
 pub use dimensions::{
     max_phase_band_width_from_pole_pitch_mm, phase_band_width_from_trace_geometry_mm,
     slot_pitch_from_leg_grid_mm, slot_width_from_leg_geometry_mm, PhaseBandWidth,
@@ -69,7 +65,6 @@ pub use generate::{
     register_runtime_pattern, routing_result_to_phase_coils, unregister_runtime_pattern,
     validate_routing_params,
 };
-pub use interference::{check_interference, InterferenceViolation};
 pub use io::{IoPad, IoPadKind, IoTrace, IoTraceRole, PadSize};
 pub use model::{
     Layer, LegGrid, Net, PhaseBand, PhaseBandShape, Point, PoleRegion, RouteCurve, RouteSegment,

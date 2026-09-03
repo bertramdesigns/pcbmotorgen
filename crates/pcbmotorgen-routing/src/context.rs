@@ -1,11 +1,18 @@
-//! Flat snapshot of board dimensions + DFM rules + phase count handed to every
-//! routing pattern.
+//! Flat snapshot of board dimensions + DFM trace/space limits + phase count
+//! handed to every routing pattern.
 //!
 //! Patterns must not depend on the concrete physics-core `LinearMotorConfig`,
 //! keeping this crate decoupled. Pattern-specific knobs ride in [`params`].
 //!
 //! Every length in this context is millimetres. The parent application converts
 //! its SI/metre config at the routing boundary.
+//!
+//! The `min_trace_mm` / `min_space_mm` / `phase_clearance_mm` fields are part
+//! of this wire contract — patterns consume them for layout and phase-band
+//! math. The DFM sizing/DRC authority itself lives downstream in the
+//! `pcbmotorgen-dfm` crate (`DesignRules` + `check_interference`, kata 0rgs);
+//! the application bridges the same config values into a `DesignRules`
+//! snapshot for it.
 
 use std::collections::HashMap;
 

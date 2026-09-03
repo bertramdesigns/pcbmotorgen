@@ -46,9 +46,10 @@ impl LinearMotorConfig {
     }
 
     /// Build a `DesignRules` DFM snapshot for the current config. DesignRules
-    /// are millimetres because they are owned by the routing crate.
-    pub fn design_rules(&self) -> pcbmotorgen_routing::DesignRules {
-        pcbmotorgen_routing::DesignRules {
+    /// are millimetres and owned by the DFM crate (pcbmotorgen-dfm, kata 0rgs);
+    /// this bridge mirrors the config's copper sizing into it.
+    pub fn design_rules(&self) -> pcbmotorgen_dfm::DesignRules {
+        pcbmotorgen_dfm::DesignRules {
             min_trace_mm: self.min_trace_m * 1e3,
             min_space_mm: self.min_space_m * 1e3,
             min_via_drill_mm: self.min_via_drill_m * 1e3,

@@ -19,7 +19,8 @@
 
 use prost_types::Any;
 
-use pcbmotorgen_routing::{DesignRules, IoPad, IoPadKind, IoTrace, RoutingResult};
+use pcbmotorgen_dfm::DesignRules;
+use pcbmotorgen_routing::{IoPad, IoPadKind, IoTrace, RoutingResult};
 
 use super::any_pack::pack_any;
 use super::via_writer::through_drill;

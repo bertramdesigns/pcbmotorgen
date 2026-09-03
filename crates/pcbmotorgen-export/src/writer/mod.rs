@@ -22,7 +22,8 @@
 
 use prost_types::Any;
 
-use pcbmotorgen_routing::{DesignRules, PhaseCoil, RoutingResult};
+use pcbmotorgen_dfm::DesignRules;
+use pcbmotorgen_routing::{PhaseCoil, RoutingResult};
 use crate::layer_map::{layer_idx_to_board_layer, mm_to_nm, via_pad_diameter_nm};
 use crate::Net;
 
