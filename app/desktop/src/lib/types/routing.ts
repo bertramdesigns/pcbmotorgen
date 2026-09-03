@@ -10,6 +10,15 @@ export interface RoutingPatternInfo {
   id: string;
   /** Human-friendly label shown in the UI, e.g. "Infinity Braid (pcbBraid)". */
   display_name: string;
+  /**
+   * Pattern-declared supported layer range (mirrored backend metadata;
+   * null/absent = unconstrained). The UI only CONSTRAINS ITS INPUTS with
+   * these — the routing crate re-validates authoritatively at generate time.
+   */
+  min_layers?: number | null;
+  max_layers?: number | null;
+  /** Layer count must be a multiple of this (e.g. 2 = even-only stacks). */
+  layers_multiple_of?: number | null;
 }
 
 /** Routing-pattern parameter value type (int = whole number, float = real). */
@@ -25,6 +34,13 @@ export interface RoutingParamDef {
   min?: number;
   max?: number;
   step?: number;
+  /**
+   * "Valid values are multiples of this" constraint declared by the pattern
+   * (null/absent = unconstrained). Mirrored onto the input's step + invalid
+   * state so an incorrect value cannot be submitted; the routing crate
+   * re-validates authoritatively at generate time.
+   */
+  multiple_of?: number | null;
 }
 
 /** One installed routing-pattern plugin (from the persistent store). */

@@ -13,14 +13,28 @@ use crate::ipc::*;
 pub struct RoutingPatternInfo {
     pub id: String,
     pub display_name: String,
+    /// Pattern-declared layer-range constraints (null = unconstrained).
+    /// Mirrored IPC metadata: the frontend only constrains its inputs with
+    /// these — the routing crate re-validates authoritatively at generate
+    /// time (`validate_layer_range`).
+    pub min_layers: Option<u32>,
+    pub max_layers: Option<u32>,
+    pub layers_multiple_of: Option<u32>,
 }
 
-/// List the loadable routing-pattern plugin ids for the frontend selector.
+/// List the loadable routing-pattern plugins for the frontend selector, with
+/// their declared layer-range metadata.
 #[tauri::command]
 pub async fn list_routing_patterns() -> Vec<RoutingPatternInfo> {
-    pcbmotorgen_routing::available_pattern_ids()
+    pcbmotorgen_routing::available_pattern_metadata()
         .into_iter()
-        .map(|(id, name)| RoutingPatternInfo { id, display_name: name })
+        .map(|m| RoutingPatternInfo {
+            id: m.id,
+            display_name: m.display_name,
+            min_layers: m.min_layers,
+            max_layers: m.max_layers,
+            layers_multiple_of: m.layers_multiple_of,
+        })
         .collect()
 }
 
@@ -168,6 +182,7 @@ pub async fn routing_pattern_parameters(
             min: p.min,
             max: p.max,
             step: p.step,
+            multiple_of: p.multiple_of,
         })
         .collect()
 }
@@ -183,6 +198,11 @@ pub struct ParamDefIpc {
     pub min: Option<f64>,
     pub max: Option<f64>,
     pub step: Option<f64>,
+    /// "Valid values are multiples of this" constraint declared by the
+    /// pattern (null = unconstrained). The frontend mirrors it onto the
+    /// input's step + invalid state; the routing crate remains the
+    /// validation authority at generate-time (`validate_routing_params`).
+    pub multiple_of: Option<f64>,
 }
 
 /// One DRC interference violation (wire form).
