@@ -434,28 +434,16 @@ fn linspace(lo: f64, hi: f64, n: usize) -> Vec<f64> {
 }
 
 // ===========================================================================
-// travel_envelope — REAL (core equilibrium module)
+// travel_envelope
 // ===========================================================================
 
 /// Stable-equilibrium travel envelope of the mover array centre under the
-/// baseline excitation (I_A = +I, I_B = 0, I_C = −I).
-///
-/// Glossary-normative spec (kata 5c7r, 2026-09-02; supersedes the xb16
-/// rest-snapped revisions): the endpoints are the SPAN-AWARE FLUSH LIMITS
-/// of the copper active area —
-/// `centre ∈ [copper_start + span/2, copper_end − span/2]`
-/// (glossary "Mover Span" span = N · τ_p, τ_p = P_e/2). At min the array's
-/// leading edge sits exactly on the copper start; at max the trailing edge
-/// sits exactly on the copper end, so the sweep equals the configured
-/// travel (`travel = copper_length − span`) EXACTLY. The endpoints are
-/// MECHANICAL LIMITS, not stable rest positions: `rest_phase_m` still
-/// reports the stable-rest lattice `x ≡ (copper_start + φ) mod P_e` (φ the
-/// baseline rest phase `(P_e/12 + ((N−1)/2)·τ_p) mod P_e`) for the
-/// holding-force chart zeros. Defaults
-/// (N = 12, P_e = 12 mm, copper region [0, 147] mm in track coords):
-/// **36 → 111 mm**; the endpoints DEPEND on N (N = 4 gives 12 → 135 mm).
-/// If the copper cannot host the span, max clamps to min (never
-/// inverted). The UI clamps its position slider to
+/// baseline excitation (I_A = +I, I_B = 0, I_C = −I), as computed by the
+/// simulation crate's equilibrium module (glossary "Travel Envelope",
+/// kata 5c7r): the span-aware flush clamp
+/// `centre ∈ [copper_start + span/2, copper_end − span/2]` over the whole
+/// active area, with `rest_phase_m` still reporting the stable-rest lattice
+/// for the holding-force chart zeros. The UI clamps its position slider to
 /// [min_position_m, max_position_m].
 #[tauri::command]
 pub async fn travel_envelope(config: LinearMotorConfigIpc) -> Result<TravelEnvelopeIpc, String> {

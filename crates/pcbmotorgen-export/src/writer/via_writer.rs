@@ -2,8 +2,8 @@
 //!
 //! Builds the [`Via`] proto for each `center_via_position`, including the
 //! [`PadStack`] layer set matching the real board's copper layers
-//! ([`via_board_layers`]) and the Bug-5-correct enum values documented on
-//! [`build_through_via`].
+//! ([`via_board_layers`]) and the enum values KiCad's IPC requires,
+//! documented on [`build_through_via`].
 
 use prost_types::Any;
 
@@ -74,88 +74,24 @@ pub(crate) fn emit_vias(
 /// drill and pad diameters (nanometres).
 ///
 /// `board_layers` is the list of copper layers the via passes through, in
-/// ascending order (B_Cu first, F_Cu last). It is used to populate
-/// `PadStack.layers` — KiCad's own `PCB_VIA::GetLayerSet()` returns
-/// `LSET::AllCuMask(copper_layer_count)` for a through via, so we mirror
-/// that here.
+/// ascending order (B_Cu first, F_Cu last). It populates `PadStack.layers` to
+/// mirror KiCad's own `PCB_VIA::GetLayerSet()`, which returns
+/// `LSET::AllCuMask(copper_layer_count)` for a through via.
 ///
-/// ## Bug 5 fix (round 1: `unconnected_layer_removal`)
+/// KiCad's `PCB_VIA` IPC unpacker is strict in three ways that shape this
+/// payload:
 ///
-/// Pre-fix, this function set `unconnected_layer_removal: 0`, which maps
-/// to the proto enum variant `UnconnectedLayerRemoval::UlrUnknown`
-/// (`ULR_UNKNOWN = 0` in `board_types.proto`). KiCad's IPC API treats
-/// `ULR_UNKNOWN` as an invalid value for the field (it is a sentinel
-/// "not set" marker, not a real configuration) and rejects the entire
-/// `Via` proto with `could not unpack PCB_VIA from request`.
-///
-/// The fix sets the field to a real, valid variant —
-/// `UlrKeep` (`ULR_KEEP = 1`, "Keep annular rings on all layers") — which
-/// is the correct behaviour for a basic through-hole via on a plain
-/// two-layer board. KiCad accepts this round-trip cleanly.
-///
-/// ## Bug 5 fix (round 2: `capped`, `filled`, `custom_anchor_shape`)
-///
-/// The round-1 fix was insufficient — the same `could not unpack PCB_VIA`
-/// error persisted. The root cause was that the `PadStack` carries several
-/// other singular proto3 enum fields whose `_UNKNOWN = 0` sentinel is also
-/// rejected by KiCad's `PCB_VIA` unpacker:
-///
-/// - `DrillProperties.capped` (`ViaDrillCappingMode`): the round-1 code
-///   passed the bare `i32` literal `0`, which is `VDCM_UNKNOWN` (the
-///   proto's "not set" sentinel). KiCad rejects UNKNOWN. The fix sets
-///   `VdcmUncapped` (2), the natural choice for an uncapped PTH via.
-/// - `DrillProperties.filled` (`ViaDrillFillingMode`): same issue, the
-///   round-1 code passed `0` = `VDFM_UNKNOWN`. The fix sets
-///   `VdfmUnfilled` (2), the natural choice for an unfilled PTH via.
-/// - `PadStackLayer.custom_anchor_shape` (`PadStackShape`): the field is
-///   only meaningful when `shape == PSS_CUSTOM`, so in principle
-///   `PssUnknown` should be a benign sentinel. However KiCad's strict
-///   unpacker rejects the UNKNOWN value, so we now set it to
-///   `PssCircle` (1) to match the per-layer `shape`.
-///
-/// ## Bug 5 fix (round 3: `PadStackLayer.layer` for `PadStackType::PstNormal`)
-///
-/// The previous "round 1" and "round 2" fixes still did not address the
-/// root cause of the `could not unpack PCB_VIA from request` error. The
-/// actual culprit is `PadStack.copper_layers[*].layer` for a
-/// `PadStackType::PstNormal` padstack.
-///
-/// In KiCad's C++ side (`pcbnew/padstack.h:177`):
-///
-/// ```cpp
-/// static constexpr PCB_LAYER_ID ALL_LAYERS = F_Cu;
-/// ```
-///
-/// And in `pcbnew/padstack.cpp:185-194`:
-/// ```cpp
-/// bool PADSTACK::unpackCopperLayer( const PadStackLayer& aProto )
-/// {
-///     PCB_LAYER_ID layer = FromProtoEnum<PCB_LAYER_ID, BoardLayer>( aProto.layer() );
-///
-///     if( m_mode == MODE::NORMAL && layer != ALL_LAYERS )
-///         return false;
-///
-///     if( m_mode == MODE::FRONT_INNER_BACK && layer != F_Cu && layer != INNER_LAYERS && layer != B_Cu )
-///         return false;
-///     ...
-/// }
-/// ```
-///
-/// The pre-fix code emitted TWO `PadStackLayer` entries (one for `F_Cu`
-/// and one for `B_Cu`). Since `ALL_LAYERS = F_Cu`, the C++ deserializer
-/// rejected the `B_Cu` entry and returned `false`. This propagated up
-/// through `PADSTACK::Deserialize` (which iterates over `copper_layers` and
-/// returns `false` if any entry fails) and `PCB_VIA::Deserialize` (which
-/// returns `false` on `m_padStack.Deserialize` failure), surfacing as the
-/// envelope-level `could not unpack PCB_VIA from request` error.
-///
-/// The fix emits a SINGLE `PadStackLayer` with `layer = BlFCu` (= C++
-/// `ALL_LAYERS`). For `PadStackType::PstNormal` (i.e. `PADSTACK::MODE::NORMAL`),
-/// a single padstack layer is the correct representation — KiCad's own
-/// `PADSTACK::ForEachUniqueLayer()` invokes the serializer callback exactly
-/// once with `ALL_LAYERS` for `MODE::NORMAL` (see
-/// `pcbnew/padstack.cpp:1241-1246`), so the round-trip representation is
-/// also a single entry with `layer = F_Cu`.
+/// - Every singular proto3 enum field must be a real variant: the
+///   `*_UNKNOWN = 0` "not set" sentinels are rejected, so all enums below
+///   are set explicitly (`UlrKeep`, `VdcmUncapped`, `VdfmUnfilled`,
+///   `PssCircle`).
+/// - For `PadStackType::PstNormal` (= C++ `PADSTACK::MODE::NORMAL`),
+///   `copper_layers` must be exactly ONE entry with `layer = BlFCu`
+///   (= C++ `ALL_LAYERS`, `pcbnew/padstack.h:177`). `PADSTACK::unpackCopperLayer`
+///   rejects any other value, failing the whole via decode.
+/// - `PadStack.layers` must be a subset of the live board's copper layers or
+///   `UnpackLayerSet` rejects the item (`ISC_INVALID_DATA`) — hence the
+///   caller passes the actual `num_layers`-sized set, never a DFM ceiling.
 fn build_through_via(
     pos: (f64, f64),
     drill_nm: i64,
@@ -163,72 +99,35 @@ fn build_through_via(
     net: Net,
     board_layers: &[i32],
 ) -> Via {
-    let pad_size = Vector2 {
-        x_nm: pad_diameter_nm,
-        y_nm: pad_diameter_nm,
-    };
-    let drill_diameter = Vector2 {
-        x_nm: drill_nm,
-        y_nm: drill_nm,
-    };
-
-    // For `PadStackType::PstNormal` (= C++ `PADSTACK::MODE::NORMAL`), a
-    // padstack has a SINGLE shape that is applied to all copper layers. The
-    // `PadStackLayer.layer` field therefore carries the C++ `ALL_LAYERS`
-    // sentinel, which is defined as `static constexpr PCB_LAYER_ID ALL_LAYERS = F_Cu`
-    // in `pcbnew/padstack.h:177`. Any value other than `F_Cu` is rejected by
-    // `PADSTACK::unpackCopperLayer` with `return false`, which causes
-    // `PCB_VIA::Deserialize` to fail with "could not unpack PCB_VIA from
-    // request" (see function-level doc for details).
-    let pad_layer = PadStackLayer {
-        layer: BoardLayer::BlFCu as i32,
-        shape: PadStackShape::PssCircle as i32,
-        size: Some(pad_size),
-        corner_rounding_ratio: 0.0,
-        chamfer_ratio: 0.0,
-        chamfered_corners: None,
-        custom_shapes: Vec::new(),
-        // custom_anchor_shape is set to PssCircle (1) to match `shape`;
-        // KiCad rejects the proto3 `PssUnknown` sentinel here just like it
-        // does for DrillProperties.capped/filled.
-        custom_anchor_shape: PadStackShape::PssCircle as i32,
-        zone_settings: None,
-        trapezoid_delta: None,
-        offset: None,
-    };
-
-    let pad_stack = PadStack {
-        r#type: PadStackType::PstNormal as i32,
-        // The `layers` field is the set of copper layers the via passes
-        // through. For a through via, this is every copper layer of the
-        // board — KiCad's own `PCB_VIA::GetLayerSet()` returns
-        // `LSET::AllCuMask(copper_layer_count)` for `VIATYPE::THROUGH`. The
-        // value is consumed by `PADSTACK::Deserialize::SetLayerSet` and
-        // then immediately reset by `PCB_VIA::Deserialize`, but having the
-        // full set is more faithful to KiCad's own output and ensures the
-        // padstack's layer set is correct if the via is later reused.
-        layers: board_layers.to_vec(),
-        drill: Some(DrillProperties {
-            start_layer: BoardLayer::BlFCu as i32,
-            end_layer: BoardLayer::BlBCu as i32,
-            diameter: Some(drill_diameter),
-            shape: DrillShape::DsCircle as i32,
-            // VdcmUncapped (2): a stock PTH via is not capped. The proto3
-            // default `0` = `VdcmUnknown` is the "not set" sentinel and
-            // KiCad's PCB_VIA unpacker rejects it.
-            capped: ViaDrillCappingMode::VdcmUncapped as i32,
-            // VdfmUnfilled (2): a stock PTH via is not filled. Same
-            // sentinel-rejection issue as `capped`.
-            filled: ViaDrillFillingMode::VdfmUnfilled as i32,
+    Via {
+        id: Some(Kiid { value: String::new() }),
+        position: Some(Vector2 {
+            x_nm: mm_to_nm(pos.0),
+            y_nm: mm_to_nm(pos.1),
         }),
-        // ULR_KEEP = 1 ("Keep annular rings on all layers"). Valid
-        // round-trip value; ULR_UNKNOWN (0) is the proto's "not set"
-        // sentinel and KiCad's IPC rejects it.
+        pad_stack: Some(through_pad_stack(drill_nm, pad_diameter_nm, board_layers)),
+        locked: LockedState::LsUnlocked as i32,
+        net: Some(net),
+        r#type: ViaType::VtThrough as i32,
+    }
+}
+
+/// Padstack for a basic through via: `PadStackType::PstNormal`
+/// (= C++ `PADSTACK::MODE::NORMAL`) — a single shape applied to all copper
+/// layers — carrying the full board copper layer set. The set is consumed by
+/// `PADSTACK::Deserialize::SetLayerSet` and immediately reset by
+/// `PCB_VIA::Deserialize`, but having it is faithful to KiCad's own output
+/// and keeps the padstack correct if the via is later reused.
+fn through_pad_stack(drill_nm: i64, pad_diameter_nm: i64, board_layers: &[i32]) -> PadStack {
+    PadStack {
+        r#type: PadStackType::PstNormal as i32,
+        layers: board_layers.to_vec(),
+        drill: Some(through_drill(drill_nm)),
+        // ULR_KEEP = 1 ("Keep annular rings on all layers"). ULR_UNKNOWN (0)
+        // is the proto's "not set" sentinel and KiCad's IPC rejects it.
         unconnected_layer_removal: UnconnectedLayerRemoval::UlrKeep as i32,
-        // Single entry for `MODE::NORMAL` — see the function-level doc and
-        // `PadStackLayer.layer` field comment above for why this must be
-        // exactly one entry with `layer = BlFCu`.
-        copper_layers: vec![pad_layer],
+        // Exactly one entry for `MODE::NORMAL` — see [`build_through_via`].
+        copper_layers: vec![normal_pad_layer(pad_diameter_nm)],
         angle: None,
         front_outer_layers: None,
         back_outer_layers: None,
@@ -237,18 +136,48 @@ fn build_through_via(
         tertiary_drill: None,
         front_post_machining: None,
         back_post_machining: None,
-    };
+    }
+}
 
-    Via {
-        id: Some(Kiid { value: String::new() }),
-        position: Some(Vector2 {
-            x_nm: mm_to_nm(pos.0),
-            y_nm: mm_to_nm(pos.1),
+/// The single `PadStackLayer` of a `PstNormal` padstack.
+///
+/// `layer` carries the C++ `ALL_LAYERS` sentinel (`BlFCu`): any other value
+/// is rejected by `PADSTACK::unpackCopperLayer` for `MODE::NORMAL`.
+/// `custom_anchor_shape` mirrors `shape` because KiCad rejects the
+/// `PssUnknown` sentinel here just like it does for the drill enum fields.
+fn normal_pad_layer(pad_diameter_nm: i64) -> PadStackLayer {
+    PadStackLayer {
+        layer: BoardLayer::BlFCu as i32,
+        shape: PadStackShape::PssCircle as i32,
+        size: Some(Vector2 {
+            x_nm: pad_diameter_nm,
+            y_nm: pad_diameter_nm,
         }),
-        pad_stack: Some(pad_stack),
-        locked: LockedState::LsUnlocked as i32,
-        net: Some(net),
-        r#type: ViaType::VtThrough as i32,
+        corner_rounding_ratio: 0.0,
+        chamfer_ratio: 0.0,
+        chamfered_corners: None,
+        custom_shapes: Vec::new(),
+        custom_anchor_shape: PadStackShape::PssCircle as i32,
+        zone_settings: None,
+        trapezoid_delta: None,
+        offset: None,
+    }
+}
+
+/// Drill properties for a stock PTH via: circular, uncapped, unfilled. The
+/// proto3 `*_UNKNOWN = 0` sentinels are rejected by KiCad's `PCB_VIA`
+/// unpacker, so the modes are set to real variants.
+fn through_drill(drill_nm: i64) -> DrillProperties {
+    DrillProperties {
+        start_layer: BoardLayer::BlFCu as i32,
+        end_layer: BoardLayer::BlBCu as i32,
+        diameter: Some(Vector2 {
+            x_nm: drill_nm,
+            y_nm: drill_nm,
+        }),
+        shape: DrillShape::DsCircle as i32,
+        capped: ViaDrillCappingMode::VdcmUncapped as i32,
+        filled: ViaDrillFillingMode::VdfmUnfilled as i32,
     }
 }
 
@@ -393,14 +322,13 @@ mod tests {
         assert_eq!(via.r#type, ViaType::VtThrough as i32);
         let ps = via.pad_stack.unwrap();
         assert_eq!(ps.r#type, PadStackType::PstNormal as i32);
-        // Round-3 fix: `PadStackType::PstNormal` (= C++ `PADSTACK::MODE::NORMAL`)
-        // requires exactly one `PadStackLayer` in `copper_layers`, with
-        // `layer = BlFCu` (= C++ `ALL_LAYERS`). The C++ deserializer rejects
+        // A `PstNormal` padstack must have exactly one `PadStackLayer`, with
+        // `layer = BlFCu` (= C++ `ALL_LAYERS`): the C++ deserializer rejects
         // any other layer for `MODE::NORMAL`.
         assert_eq!(
             ps.copper_layers.len(),
             1,
-            "PstNormal padstack must have exactly one PadStackLayer (round 3 fix); got {}",
+            "PstNormal padstack must have exactly one PadStackLayer; got {}",
             ps.copper_layers.len()
         );
         let pad = &ps.copper_layers[0];
@@ -428,14 +356,13 @@ mod tests {
         );
     }
 
-    // --- Bug 5 regression: Via proto round-trips cleanly ---
+    // --- Regression: Via proto round-trips cleanly ---
 
     /// `build_through_via` must produce a `Via` proto that encodes and
-    /// decodes without error and whose `unconnected_layer_removal` field
-    /// is a valid enum variant. Pre-fix, the field was set to `0`
-    /// (`UnconnectedLayerRemoval::UlrUnknown`), which KiCad's IPC
-    /// rejected with `could not unpack PCB_VIA from request` at
-    /// CreateItems time. The fix sets it to `UlrKeep` (= 1).
+    /// decodes without error and whose singular enum fields are valid
+    /// variants. A proto3 `*_UNKNOWN = 0` sentinel in any of them makes
+    /// KiCad's IPC reject the via with `could not unpack PCB_VIA from
+    /// request` at CreateItems time.
     #[test]
     fn test_via_proto_round_trips() {
         use crate::proto::board::types::{
@@ -446,9 +373,9 @@ mod tests {
             code: None,
             name: "/A".to_string(),
         };
-        // Round-3 fix: pass the copper layer set for a 4-layer board so the
-        // `PadStack.layers` field matches KiCad's own `PCB_VIA::GetLayerSet()`
-        // output for a through via.
+        // Pass the copper layer set for a 4-layer board so `PadStack.layers`
+        // matches KiCad's own `PCB_VIA::GetLayerSet()` output for a through
+        // via.
         let board_layers = vec![
             BoardLayer::BlBCu as i32,
             BoardLayer::BlIn1Cu as i32,
@@ -464,7 +391,6 @@ mod tests {
         let ps = via2.pad_stack.expect("pad_stack present");
         // The critical assertion: unconnected_layer_removal must NOT be
         // the proto's `UlrUnknown` sentinel (0), which KiCad rejects.
-        // The fix uses UlrKeep (1).
         assert_eq!(
             ps.unconnected_layer_removal,
             UnconnectedLayerRemoval::UlrKeep as i32,
@@ -476,9 +402,9 @@ mod tests {
             UnconnectedLayerRemoval::UlrUnknown as i32,
             "unconnected_layer_removal must NOT be UlrUnknown (0) — KiCad rejects it"
         );
-        // Bug 5 round 2: DrillProperties.capped and .filled must also be
-        // real, non-sentinel values — KiCad's PCB_VIA unpacker rejects
-        // VDCM_UNKNOWN / VDFM_UNKNOWN just like ULR_UNKNOWN.
+        // DrillProperties.capped and .filled must also be real, non-sentinel
+        // values — KiCad's PCB_VIA unpacker rejects VDCM_UNKNOWN / VDFM_UNKNOWN
+        // just like ULR_UNKNOWN.
         let drill = ps.drill.as_ref().expect("drill");
         assert_eq!(
             drill.capped,
@@ -502,8 +428,8 @@ mod tests {
             ViaDrillFillingMode::VdfmUnknown as i32,
             "drill.filled must NOT be VdfmUnknown (0)"
         );
-        // Bug 5 round 2: PadStackLayer.custom_anchor_shape must also be
-        // a real, non-sentinel value to match the per-layer `shape`.
+        // PadStackLayer.custom_anchor_shape must also be a real, non-sentinel
+        // value matching the per-layer `shape`.
         for (i, layer) in ps.copper_layers.iter().enumerate() {
             assert_eq!(
                 layer.custom_anchor_shape, PadStackShape::PssCircle as i32,
@@ -512,17 +438,14 @@ mod tests {
                 i, layer.custom_anchor_shape
             );
         }
-        // Bug 5 round 3: For `PadStackType::PstNormal` (= C++
-        // `PADSTACK::MODE::NORMAL`), `PadStackLayer.layer` must be
-        // `BlFCu` (= C++ `ALL_LAYERS`). The pre-fix code emitted two entries
-        // (one for F_Cu, one for B_Cu), and the B_Cu entry was rejected by
-        // `PADSTACK::unpackCopperLayer` with `return false`, which caused
-        // `PCB_VIA::Deserialize` to return false and surface as
+        // For `PadStackType::PstNormal` (= C++ `PADSTACK::MODE::NORMAL`),
+        // `PadStackLayer.layer` must be `BlFCu` (= C++ `ALL_LAYERS`): the C++
+        // unpacker rejects any other value for `MODE::NORMAL`, surfacing as
         // "could not unpack PCB_VIA from request".
         assert_eq!(
             ps.copper_layers.len(),
             1,
-            "PstNormal padstack must have exactly one PadStackLayer (round 3 fix); got {}",
+            "PstNormal padstack must have exactly one PadStackLayer; got {}",
             ps.copper_layers.len()
         );
         assert_eq!(
@@ -588,7 +511,7 @@ mod tests {
                 UnconnectedLayerRemoval::UlrKeep as i32,
                 "every via emitted by coils_to_board_items must use UlrKeep"
             );
-            // Round-2 fix: drill.capped / drill.filled must also be real values.
+            // drill.capped / drill.filled must also be real values.
             let drill = ps.drill.as_ref().expect("drill");
             assert_eq!(
                 drill.capped,
@@ -602,7 +525,7 @@ mod tests {
                 "every via's drill.filled must be VdfmUnfilled; got {}",
                 drill.filled
             );
-            // Round-2 fix: copper_layers[*].custom_anchor_shape must be PssCircle.
+            // copper_layers[*].custom_anchor_shape must be PssCircle.
             for layer in &ps.copper_layers {
                 assert_eq!(
                     layer.custom_anchor_shape,
@@ -615,11 +538,10 @@ mod tests {
         }
     }
 
-    /// Bug 5 round-2 regression: every singular proto3 enum field in the
+    /// Regression: every singular proto3 enum field in the
     /// `Via` payload must be a real, non-sentinel variant. KiCad's
-    /// `PCB_VIA` unpacker rejects any `*_UNKNOWN = 0` sentinel value
-    /// (the same class of error that caused the round-1 bug for
-    /// `unconnected_layer_removal`). This test walks every enum field in
+    /// `PCB_VIA` unpacker rejects any `*_UNKNOWN = 0` sentinel value.
+    /// This test walks every enum field in
     /// the encoded `Via` and asserts no field equals 0.
     #[test]
     fn test_via_proto_has_no_unknown_enum_sentinels() {
@@ -678,7 +600,7 @@ mod tests {
         }
     }
 
-    /// Bug 5 round-3 regression: for `PadStackType::PstNormal` (= C++
+    /// Regression: for `PadStackType::PstNormal` (= C++
     /// `PADSTACK::MODE::NORMAL`), the `PadStack.copper_layers` field must
     /// contain exactly ONE `PadStackLayer`, and its `layer` must be
     /// `BlFCu` (= C++ `ALL_LAYERS`, the only layer `PADSTACK::unpackCopperLayer`
@@ -745,16 +667,15 @@ mod tests {
         );
     }
 
-    /// Bug 5 round-3 end-to-end: every via emitted by `coils_to_board_items`
-    /// for a real coil set must satisfy the round-3 invariants
+    /// End-to-end: every via emitted by `coils_to_board_items`
+    /// for a real coil set must satisfy the PstNormal invariants
     /// (single `PadStackLayer` with `layer = BlFCu` and `PadStack.layers`
     /// equal to the full copper layer set).
     ///
-    /// **Round 4 (current):** the test uses a 4-layer board and asserts
-    /// `PadStack.layers` has exactly `num_layers` entries (4) — because
-    /// KiCad's `UnpackLayerSet` rejects any via whose layer set is not a
-    /// subset of the live board's actual layer set with `ISC_INVALID_DATA`
-    /// (code 7). This is the regression guard for the round-4 fix.
+    /// The test uses a 4-layer board and asserts `PadStack.layers` has
+    /// exactly `num_layers` entries — KiCad's `UnpackLayerSet` rejects any
+    /// via whose layer set is not a subset of the live board's actual layer
+    /// set with `ISC_INVALID_DATA` (code 7).
     #[test]
     fn test_coils_to_board_items_via_round_trip_pst_normal_invariants() {
         // 4-layer board — `num_layers` is the board's actual layer count.
@@ -797,7 +718,7 @@ mod tests {
             assert_eq!(
                 ps.copper_layers.len(),
                 1,
-                "every PstNormal via must have exactly one PadStackLayer (round 3 fix); got {}",
+                "every PstNormal via must have exactly one PadStackLayer; got {}",
                 ps.copper_layers.len()
             );
             assert_eq!(
@@ -895,7 +816,7 @@ mod tests {
                 num_layers, ps.layers
             );
 
-            // Round 3 invariants: single PadStackLayer + PstNormal + BlFCu.
+            // PstNormal invariants: single PadStackLayer + BlFCu.
             assert_eq!(ps.r#type, PadStackType::PstNormal as i32);
             assert_eq!(ps.copper_layers.len(), 1);
             assert_eq!(ps.copper_layers[0].layer, BoardLayer::BlFCu as i32);

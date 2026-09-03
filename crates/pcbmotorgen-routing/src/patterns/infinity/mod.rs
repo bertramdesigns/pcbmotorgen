@@ -99,149 +99,18 @@ impl RoutingPattern for InfinityBraidPattern {
     }
 
     fn generate(&self, ctx: &RoutingContext) -> Result<RoutingResult, RoutingError> {
-        if ctx.num_layers < 2 {
-            return Err(RoutingError::new(
-                0,
-                "num_layers",
-                RoutingErrorKind::BadLayer,
-                format!(
-                    "the infinity braid requires at least 2 copper layers, got {}",
-                    ctx.num_layers
-                ),
-            ));
-        }
-
+        let magnet_pitch = validated_braid_context(ctx)?;
         let phases = ctx.phases.max(1) as i64;
         let num_strands = (ctx.param("num_strands", 5.0) as i64).max(2);
         // Map the unrolled braid domain onto the routing area. The routing
         // domain EQUALS the active area — the braid's end turns are part of
         // the pattern, there is no end padding.
         let d_tot = ctx.active_area_length_mm;
-        if !d_tot.is_finite() || d_tot <= 0.0 {
-            return Err(RoutingError::new(
-                0,
-                "active_area_length_mm",
-                RoutingErrorKind::Generation,
-                "active area must be finite and greater than zero",
-            ));
-        }
-        if !ctx.board_width_mm.is_finite() || ctx.board_width_mm <= 0.0 {
-            return Err(RoutingError::new(
-                0,
-                "board_width_mm",
-                RoutingErrorKind::Generation,
-                "board width must be finite and greater than zero",
-            ));
-        }
-        let magnet_pitch = match ctx.magnet_pitch_mm {
-            Some(pitch) => {
-                if !pitch.is_finite() || pitch <= 0.0 {
-                    return Err(RoutingError::new(
-                        0,
-                        "magnet_pitch_mm",
-                        RoutingErrorKind::Generation,
-                        "pole pitch must be finite and greater than zero",
-                    ));
-                }
-                Some(pitch)
-            }
-            None => None,
-        };
-        // Period count: one complete diamond period per pole pitch when the
-        // magnet layout is known. The uniform phase/strand grid is reserved
-        // before selecting the count so no remainder becomes a wide via gap.
-        let (n_periods, d_phase, o) = match magnet_pitch {
-            Some(pitch) => {
-                // The final right-hand endpoint is one interleave step before
-                // the end of the next period. Reserve that step before
-                // selecting the number of complete periods; otherwise the
-                // leftover remainder creates a visibly wide via gap between
-                // the last strand of one period and the first strand of the
-                // next period.
-                let interleave_step = pitch / (num_strands * phases) as f64;
-                let n = ((d_tot + interleave_step) / pitch).floor() as i64 - 1;
-                if n < 1 {
-                    return Err(RoutingError::new(
-                        0,
-                        "active_area_length_mm",
-                        RoutingErrorKind::Generation,
-                        format!(
-                            "the routable length ({:.3} mm) cannot fit one complete pole-pitched braid period plus its phase/strand interleave ({:.3} mm required); increase the active area",
-                            d_tot,
-                            2.0 * pitch - interleave_step
-                        ),
-                    ));
-                }
-                let exact_period_span = n as f64 * pitch;
-                // One pole pitch contains every phase/strand position exactly
-                // once. This keeps the final point of one phase to the first
-                // point of the next phase equal to the preceding within-phase
-                // point spacing on both layer copies.
-                let o = -interleave_step;
-                (n, exact_period_span, o)
-            }
-            None => {
-                let n = (ctx.param("n_periods", 4.0) as i64).max(1);
-                let o = d_tot
-                    / ((n + 1) * num_strands * phases - 1) as f64
-                    * -1.0;
-                let d_phase = d_tot - ((o * num_strands as f64 * -1.0) * phases as f64) - o;
-                (n, d_phase, o)
-            }
-        };
+        let layout = resolve_braid_layout(ctx, d_tot, magnet_pitch, phases, num_strands)?;
         // Amplitude = half the board width, mapping diamond ±A onto [0, board_width].
-        let a = ctx.board_width_mm / 2.0;
+        let amplitude_mm = ctx.board_width_mm / 2.0;
 
-        let offset_step = o * num_strands as f64 * -1.0;
-
-        let mut segments: Vec<RouteSegment> = Vec::new();
-        let mut vias: Vec<Via> = Vec::new();
-        let mut pole_regions: Vec<PoleRegion> = Vec::new();
-
-        for i in 0..phases {
-            let phase_idx = i as usize;
-            let net = PHASE_NAMES[phase_idx % PHASE_NAMES.len()].to_string();
-            let start_offset = offset_step * i as f64;
-
-            let diamonds = compute_diamonds(start_offset, d_phase, n_periods, num_strands, o, a);
-            let (points_obj, flatlist) = compute_endpoints(&diamonds);
-            let region_xs = compute_pole_region_xs(&diamonds);
-            for (pole_index, (start_x, end_x)) in region_xs.into_iter().enumerate() {
-                pole_regions.push(PoleRegion {
-                    phase: net.clone(),
-                    pole_index: pole_index as u32,
-                    start: Point::new(start_x, a),
-                    end: Point::new(end_x, a),
-                });
-            }
-
-            for (s, e) in compute_top_layer_segments(&points_obj) {
-                segments.push(RouteSegment {
-                    start: s,
-                    end: e,
-                    layer: 0,
-                    net: net.clone(),
-                    is_active: true,
-                });
-            }
-            for (s, e) in compute_bottom_layer_segments(&points_obj) {
-                segments.push(RouteSegment {
-                    start: s,
-                    end: e,
-                    layer: 1,
-                    net: net.clone(),
-                    is_active: true,
-                });
-            }
-            for p in flatlist {
-                vias.push(Via {
-                    position: p,
-                    from_layer: 0,
-                    to_layer: 1,
-                    net: net.clone(),
-                });
-            }
-        }
+        let geometry = braid_geometry(layout, amplitude_mm, phases, num_strands);
 
         // Pattern-declared leg grid: the braid's active legs populate a
         // uniform interleave grid of one slot per phase/strand position per
@@ -251,19 +120,208 @@ impl RoutingPattern for InfinityBraidPattern {
         // equivalent leg-pitch model of the generated segments, and each
         // strand is its own single-trace leg.
         let leg_grid = Some(LegGrid {
-            slot_count: (n_periods * phases * num_strands) as u32,
+            slot_count: (layout.n_periods * phases * num_strands) as u32,
             strands_per_leg: Some(num_strands as u32),
         });
 
         Ok(RoutingResult {
-            segments,
+            segments: geometry.segments,
             curves: Vec::new(),
-            vias,
-            pole_regions,
+            vias: geometry.vias,
+            pole_regions: geometry.pole_regions,
             leg_grid,
             ..Default::default()
         })
     }
+}
+
+/// Validated context inputs for the braid. Returns the resolved pole pitch
+/// (`None` when the context carries no magnet layout).
+fn validated_braid_context(ctx: &RoutingContext) -> Result<Option<f64>, RoutingError> {
+    if ctx.num_layers < 2 {
+        return Err(RoutingError::new(
+            0,
+            "num_layers",
+            RoutingErrorKind::BadLayer,
+            format!(
+                "the infinity braid requires at least 2 copper layers, got {}",
+                ctx.num_layers
+            ),
+        ));
+    }
+    if !ctx.active_area_length_mm.is_finite() || ctx.active_area_length_mm <= 0.0 {
+        return Err(RoutingError::new(
+            0,
+            "active_area_length_mm",
+            RoutingErrorKind::Generation,
+            "active area must be finite and greater than zero",
+        ));
+    }
+    if !ctx.board_width_mm.is_finite() || ctx.board_width_mm <= 0.0 {
+        return Err(RoutingError::new(
+            0,
+            "board_width_mm",
+            RoutingErrorKind::Generation,
+            "board width must be finite and greater than zero",
+        ));
+    }
+    match ctx.magnet_pitch_mm {
+        Some(pitch) if pitch.is_finite() && pitch > 0.0 => Ok(Some(pitch)),
+        Some(_) => Err(RoutingError::new(
+            0,
+            "magnet_pitch_mm",
+            RoutingErrorKind::Generation,
+            "pole pitch must be finite and greater than zero",
+        )),
+        None => Ok(None),
+    }
+}
+
+/// How the unrolled diamond domain maps onto the routing area.
+#[derive(Clone, Copy)]
+struct BraidLayout {
+    n_periods: i64,
+    d_phase: f64,
+    o: f64,
+}
+
+/// Resolve the braid layout for the routing domain.
+///
+/// With a magnet layout the period count is one complete diamond period per
+/// pole pitch. The uniform phase/strand grid is reserved before selecting
+/// the count so no remainder becomes a wide via gap.
+fn resolve_braid_layout(
+    ctx: &RoutingContext,
+    d_tot: f64,
+    magnet_pitch: Option<f64>,
+    phases: i64,
+    num_strands: i64,
+) -> Result<BraidLayout, RoutingError> {
+    match magnet_pitch {
+        Some(pitch) => {
+            // The final right-hand endpoint is one interleave step before
+            // the end of the next period. Reserve that step before
+            // selecting the number of complete periods; otherwise the
+            // leftover remainder creates a visibly wide via gap between
+            // the last strand of one period and the first strand of the
+            // next period.
+            let interleave_step = pitch / (num_strands * phases) as f64;
+            let n_periods = ((d_tot + interleave_step) / pitch).floor() as i64 - 1;
+            if n_periods < 1 {
+                return Err(RoutingError::new(
+                    0,
+                    "active_area_length_mm",
+                    RoutingErrorKind::Generation,
+                    format!(
+                        "the routable length ({:.3} mm) cannot fit one complete pole-pitched braid period plus its phase/strand interleave ({:.3} mm required); increase the active area",
+                        d_tot,
+                        2.0 * pitch - interleave_step
+                    ),
+                ));
+            }
+            // One pole pitch contains every phase/strand position exactly
+            // once. This keeps the final point of one phase to the first
+            // point of the next phase equal to the preceding within-phase
+            // point spacing on both layer copies.
+            let o = -interleave_step;
+            Ok(BraidLayout {
+                n_periods,
+                d_phase: n_periods as f64 * pitch,
+                o,
+            })
+        }
+        None => {
+            // No magnet layout: fall back to the packaged `n_periods` default
+            // (kept for plugin probes and unit tests).
+            let n_periods = (ctx.param("n_periods", 4.0) as i64).max(1);
+            let o = d_tot / ((n_periods + 1) * num_strands * phases - 1) as f64 * -1.0;
+            let d_phase = d_tot - ((o * num_strands as f64 * -1.0) * phases as f64) - o;
+            Ok(BraidLayout {
+                n_periods,
+                d_phase,
+                o,
+            })
+        }
+    }
+}
+
+/// Generated braid geometry across all phases.
+struct BraidGeometry {
+    segments: Vec<RouteSegment>,
+    vias: Vec<Via>,
+    pole_regions: Vec<PoleRegion>,
+}
+
+/// Emit the per-phase diamond geometry: two segment layers (top / bottom),
+/// one via per peak/valley/edge endpoint, and the pole regions at
+/// board-centre height.
+fn braid_geometry(
+    layout: BraidLayout,
+    amplitude_mm: f64,
+    phases: i64,
+    num_strands: i64,
+) -> BraidGeometry {
+    let offset_step = layout.o * num_strands as f64 * -1.0;
+    let mut geometry = BraidGeometry {
+        segments: Vec::new(),
+        vias: Vec::new(),
+        pole_regions: Vec::new(),
+    };
+
+    for i in 0..phases {
+        let phase_idx = i as usize;
+        let net = PHASE_NAMES[phase_idx % PHASE_NAMES.len()].to_string();
+        let start_offset = offset_step * i as f64;
+
+        let diamonds = compute_diamonds(
+            start_offset,
+            layout.d_phase,
+            layout.n_periods,
+            num_strands,
+            layout.o,
+            amplitude_mm,
+        );
+        let (points_obj, flatlist) = compute_endpoints(&diamonds);
+        for (pole_index, (start_x, end_x)) in
+            compute_pole_region_xs(&diamonds).into_iter().enumerate()
+        {
+            geometry.pole_regions.push(PoleRegion {
+                phase: net.clone(),
+                pole_index: pole_index as u32,
+                start: Point::new(start_x, amplitude_mm),
+                end: Point::new(end_x, amplitude_mm),
+            });
+        }
+
+        for (s, e) in compute_top_layer_segments(&points_obj) {
+            geometry.segments.push(RouteSegment {
+                start: s,
+                end: e,
+                layer: 0,
+                net: net.clone(),
+                is_active: true,
+            });
+        }
+        for (s, e) in compute_bottom_layer_segments(&points_obj) {
+            geometry.segments.push(RouteSegment {
+                start: s,
+                end: e,
+                layer: 1,
+                net: net.clone(),
+                is_active: true,
+            });
+        }
+        for p in flatlist {
+            geometry.vias.push(Via {
+                position: p,
+                from_layer: 0,
+                to_layer: 1,
+                net: net.clone(),
+            });
+        }
+    }
+
+    geometry
 }
 
 #[cfg(test)]

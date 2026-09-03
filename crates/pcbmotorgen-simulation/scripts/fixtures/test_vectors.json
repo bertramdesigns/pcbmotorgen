@@ -12537,7 +12537,7 @@
     "active_area_length_mm": 195.0,
     "air_gap_mm": 0.5,
     "board_width_mm": 20.0,
-    "coil_span_mm": 120.0,
+    "magnet_array_span_mm": 120.0,
     "magnet_count": 10,
     "magnet_gap_mm": 2.0,
     "phases": 3,

@@ -51,10 +51,6 @@ pub struct RoutingContext {
     /// units cover the mover (e.g. braid periods over the magnet-array span).
     #[serde(default)]
     pub magnet_array_span_mm: Option<f64>,
-    /// Legacy alias for [`RoutingContext::magnet_array_span_mm`], retained for
-    /// plugin/runner JSON compatibility. Both are populated together.
-    #[serde(default)]
-    pub coil_span_mm: Option<f64>,
     /// Explicit inter-phase clearance `g_phase` [mm] used by the top-down
     /// phase-band equation (`max_phase_band_width = tau_p / phases - g_phase`)
     /// and reported as `RoutingDimensions.phase_clearance_mm`.
@@ -78,25 +74,9 @@ impl RoutingContext {
         self.magnet_pitch_mm.filter(|p| *p > 0.0)
     }
 
-    /// Alias for [`RoutingContext::magnet_pitch`] using the motor-design term
-    /// used by the handoff documentation.
-    pub fn pole_pitch(&self) -> Option<f64> {
-        self.magnet_pitch()
-    }
-
     /// Resolved mover magnet-array span [mm] when the magnet layout was
     /// provided.
     pub fn magnet_array_span(&self) -> Option<f64> {
-        self.magnet_array_span_mm.or(self.coil_span_mm)
-    }
-
-    /// Resolved mover magnet-array span [mm] when the magnet layout was
-    /// provided.
-    ///
-    /// Legacy alias for [`RoutingContext::magnet_array_span`], retained for
-    /// plugin/runner compatibility.
-    #[deprecated(since = "0.5.0", note = "use `magnet_array_span()` instead")]
-    pub fn coil_span(&self) -> Option<f64> {
-        self.magnet_array_span()
+        self.magnet_array_span_mm
     }
 }

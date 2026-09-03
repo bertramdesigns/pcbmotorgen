@@ -141,8 +141,7 @@ code path; the tests document this explicitly.
 
 - unit conversion and magnet-grade lookups;
 - `SimulationInput` validation cascade and serde defaults (`num_layers = 4`,
-  `strands_per_phase = 1` when absent; legacy key `windings_per_phase`
-  accepted as an alias);
+  `strands_per_phase = 1` when absent);
 - derived-geometry accessors (travel, phase-band pitch, rest offset, via pad, …);
 - the plain alternating magnet array (magnet counts, B-field polarity);
 - B-field 1D and 2D grid sampling (row-major `BFieldSample2D`);

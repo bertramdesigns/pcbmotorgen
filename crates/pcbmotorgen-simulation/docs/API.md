@@ -91,8 +91,7 @@ pub struct SimulationInput {
     pub pcb_thickness_m: f64,           // substrate thickness [m]
     pub air_gap_m: f64,                 // magnet face → copper clearance [m]
     pub strands_per_phase: u32,         // parallel strands (serpentine paths) per phase
-                                        // (default 1; legacy key `windings_per_phase`
-                                        // accepted as a serde alias)
+                                        // (default 1)
 
     // Coil
     pub phases: u32,
@@ -139,11 +138,10 @@ temperature / active-length / board-width bounds, `active_area_length ≤ the
 magnet array span` (zero travel), `strands_per_phase < 1` or
 footprint violation, and the force / mass / accel / capacitor targets.
 
-### 3.2 Serde defaults (backward compatibility)
+### 3.2 Serde defaults
 
-- `num_layers` defaults to **4** when absent (legacy JSON payloads).
-- `strands_per_phase` defaults to **1** when absent (historical single-strand);
-  the legacy key `windings_per_phase` is accepted as a serde alias.
+- `num_layers` defaults to **4** when absent.
+- `strands_per_phase` defaults to **1** when absent (historical single-strand).
 
 ### 3.3 Derived-geometry accessors
 
@@ -165,8 +163,7 @@ footprint violation, and the force / mass / accel / capacitor targets.
 ```rust
 #[serde(rename_all = "snake_case")]
 pub enum BearingType { PlasticChannel, PtfeLined, BallBearing }
-// PtfeLined (PTFE, Teflon-lined) — legacy wire value "pte_lined" (typo) is
-// accepted as a serde alias so old payloads still deserialize.
+// PtfeLined (PTFE, Teflon-lined) bearing surface.
 ```
 
 The magnet array is **always** the plain alternating arrangement (Halbach and

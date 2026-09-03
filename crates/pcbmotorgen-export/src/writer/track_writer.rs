@@ -18,7 +18,7 @@ use crate::{Arc, Distance, Kiid, LockedState, Net, Track, Vector2};
 /// `coil`, appending the packed `Any` items to `items`.
 ///
 /// `layer` is the KiCad [`BoardLayer`] the whole coil sits on (derived from
-/// `coil.layer_idx` and the *actual* board layer count — see the round-5 fix
+/// `coil.layer_idx` and the *actual* board layer count — see the layer
 /// comment in [`super::coils_to_board_items`]). `x_offset_nm` shifts every x
 /// coordinate so the coil set straddles x = 0.
 pub(crate) fn emit_tracks_and_arcs(
@@ -49,7 +49,7 @@ pub(crate) fn emit_tracks_and_arcs(
         items.push(pack_any("kiapi.board.types.Track", &track));
     }
 
-    // --- Arcs: one per CoilArc (Round 10 rounded corners) ---
+    // --- Arcs: one per CoilArc (rounded corners) ---
     for arc in &coil.corner_arcs {
         let ki_arc = Arc {
             id: Some(Kiid { value: String::new() }),

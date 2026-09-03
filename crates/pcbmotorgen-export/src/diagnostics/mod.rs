@@ -77,9 +77,8 @@ pub struct BoardDiagnostics {
     pub board_y_min_mm: f64,
     /// See [`board_x_min_mm`].
     pub board_y_max_mm: f64,
-    /// Net class names defined on the board. Empty if not queryable.
-    /// TODO: real query — current implementation returns an empty vector
-    /// because the KiCad IPC API does not yet expose a net-class query.
+    /// Net class names defined on the board. Empty until the KiCad IPC
+    /// exposes a net-class query (kata ze9f).
     pub available_net_classes: Vec<String>,
 }
 
@@ -106,8 +105,8 @@ impl BoardDiagnostics {
 /// is up; `board_name` comes from the document specifier. The edge-cut
 /// bounding box and net-class list are **not** currently queryable via the
 /// KiCad 10 IPC (no matching `.proto` command in `kiapi.board.commands`), so
-/// they default to `0.0` and an empty list respectively. A `// TODO` comment
-/// marks the spot for the real query when the IPC grows it.
+/// they default to `0.0` and an empty list respectively — tracked for the
+/// real queries in kata ze9f.
 ///
 /// Returns `Err` on connection failure or missing PCB document.
 pub fn get_board_diagnostics(
@@ -116,10 +115,9 @@ pub fn get_board_diagnostics(
     let board_name = board.name().unwrap_or_default();
     let copper_layer_count = board.get_copper_layer_count().unwrap_or(0);
 
-    // TODO: real query — when the KiCad IPC exposes a GetBoardBounds /
-    // GetNetClasses command, replace the placeholder zeros / empty list
-    // here. Until then, we return a snapshot with the populated fields
-    // (name, layer count) and a clear placeholder for the missing ones.
+    // Placeholder zeros / empty list until the KiCad IPC grows the
+    // GetBoardBounds / GetNetClasses commands (kata ze9f); the populated
+    // fields (name, layer count) are always real.
     Ok(BoardDiagnostics {
         board_name,
         copper_layer_count,

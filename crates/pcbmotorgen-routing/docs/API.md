@@ -137,12 +137,11 @@ boundary.
 | `expects_continuous` | `bool` | Whether the pattern declares end→start continuity per (layer, net), driving the validator continuity check. |
 | `params` | `{string → number}` | Pattern-specific user-editable parameters. |
 | `magnet_pitch_mm` | `f64?` | Pole pitch, centre-to-centre North/South distance (`tau_p`), when the mover layout is known [mm]. |
-| `magnet_array_span_mm` | `f64?` | Full mover magnet-array span, when known [mm]. The legacy `coil_span_mm` key is still accepted as a serde alias on deserialize. |
+| `magnet_array_span_mm` | `f64?` | Full mover magnet-array span, when known [mm]. |
 
 Convenience accessors on the Rust type: `ctx.param(key, default)` reads a
-parameter with a fallback; `ctx.magnet_pitch()` / `ctx.pole_pitch()` resolve the
-pole pitch (only when `> 0`); `ctx.magnet_array_span()` resolves the mover span
-(the deprecated `ctx.coil_span()` legacy alias returns the same value).
+parameter with a fallback; `ctx.magnet_pitch()` resolves the pole pitch (only
+when `> 0`); `ctx.magnet_array_span()` resolves the mover span.
 
 ## 5. Output contract: `RoutingResult`
 
@@ -610,7 +609,7 @@ elements by `(layer, net)` into `PhaseCoil` objects: `segments` +
 `PhaseCoil` carries `phase_idx`, `layer_idx`, `phase_name`, `pattern_id`, and an
 optional `layer_pair`. Convenience accessors include `polyline()`,
 `bounding_box()`, `is_continuous()`, `total_length_mm()`,
-`active_length_mm()`, `end_turn_midpoints_top()/bottom()`, and
+`active_length_mm()`, `end_turn_length_mm()`, and
 `active_conductor_x_positions()`.
 
 The frontend DTO (`CoilPathIpc`, mirrored by `app/desktop/src/lib/types/coils.ts`)
@@ -835,10 +834,9 @@ human-readable message; it is never repaired in place.
   version-1 metre payloads must not be mixed into version 2.
 - **v-next terminology alignment:** slot-width dimension fields were renamed to
   phase-band terminology (`band_width_mm`, `max_band_width_mm`,
-  `phase_band_pitch_mm`, `phase_band_widths`). Old names remain accepted as
-  serde aliases on deserialize (with the two exceptions retired by the
-  per-slot metrics change below); `RoutingContext` additionally carries the
-  legacy `coil_span_mm` field for plugin compatibility.
+  `phase_band_pitch_mm`, `phase_band_widths`). The old key names are no longer
+  accepted on deserialize (clean break, pre-1.0); `RoutingContext` carries
+  `magnet_array_span_mm` only.
 - **v-next true per-slot metrics (kata mqw4):** patterns may declare a leg
   grid on the result (`RoutingResult.leg_grid: Option<LegGrid>`, additive);
   `RoutingDimensions` gains `slot_count`, `slot_pitch_mm` (true

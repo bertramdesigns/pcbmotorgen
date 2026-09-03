@@ -71,7 +71,6 @@ pub(crate) fn write_circle(out: &mut Vec<String>, cx: f64, cy: f64, radius: f64)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::routing_result_to_dxf;
     use pcbmotorgen_routing::{DesignRules, Point, RouteCurve, RouteSegment, RoutingResult, Via};
 

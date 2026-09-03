@@ -71,35 +71,22 @@ pub fn coils_to_board_items(
     // For a through via, the `PadStack.layers` field is the set of copper
     // layers the via passes through. The set must match the layers the
     // *board actually has* (see `via_writer::via_board_layers` for the full
-    // rationale and the Bug-4 rejection it prevents).
+    // rationale and the KiCad rejection it prevents).
     let board_layers = via_writer::via_board_layers(num_layers);
 
     let mut items: Vec<Any> = Vec::new();
 
     for coil in coils {
-        // **Track layer assignment (round-5 fix):** the track's `layer`
-        // field MUST be derived from `config.num_layers` (the actual board
-        // the user is writing to), NOT `config.max_layers` (the DFM upper
-        // limit). The previous code used `config.max_layers` here, which
-        // caused a secondary form of the "no overlapping layers with the
-        // board" rejection that the round-4 fix only addressed for VIAS.
-        //
-        // Failure mode: a `coil.layer_idx = num_layers - 1` (the top
-        // layer) would be mapped to `In{num_layers-1}_Cu` (an inner
-        // layer of a `max_layers`-capable board) when `max_layers >
-        // num_layers`, instead of the correct `F_Cu` (= the top layer of
-        // the `num_layers`-layer board). For example, on a 4-layer board
-        // (`num_layers=4, max_layers=12`), a top-layer coil at
-        // `layer_idx=3` was being mapped to `In3_Cu`, which the live
-        // 4-layer board does not have. KiCad's `UnpackLayerSet` then
-        // rejected every top-layer track with `ISC_INVALID_DATA` (code 7)
-        // and "attempted to add item with no overlapping layers with the
-        // board".
-        //
-        // The fix mirrors the round-4 via-layer fix: use `num_layers` so
-        // `layer_idx == num_layers - 1` is correctly recognised as the
-        // top of the actual board and mapped to `F_Cu` via
-        // `layer_idx_to_board_layer`'s `idx == total_layers - 1` branch.
+        // The track's `layer` MUST be derived from `num_layers` (the actual
+        // board being written to), not `max_layers` (the DFM ceiling): on a
+        // 4-layer board with `max_layers = 12`, a top-layer coil
+        // (`layer_idx = 3`) would otherwise map to `In3_Cu` — a layer the
+        // live board does not have — and KiCad's `UnpackLayerSet` rejects
+        // every item whose layer set is not a subset of the board's actual
+        // layer set ("attempted to add item with no overlapping layers with
+        // the board", `ISC_INVALID_DATA`). Using `num_layers` maps
+        // `layer_idx == num_layers - 1` to the board's real top layer
+        // (`F_Cu`) via `layer_idx_to_board_layer`.
         let layer = layer_idx_to_board_layer(coil.layer_idx, num_layers);
         let net_name = format!("/{}", coil.phase_name);
         let net = Net {

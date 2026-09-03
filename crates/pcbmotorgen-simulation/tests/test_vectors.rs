@@ -26,10 +26,13 @@ struct TestVectors {
     force_sweep: ForceSweepVector,
 }
 
+/// Mirrors the full `config` object of the Python-oracle fixture, including
+/// fields no assertion consumes yet, so the schema stays documented.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ConfigVector {
     active_area_length_mm: f64,
-    coil_span_mm: f64,
+    magnet_array_span_mm: f64,
     travel_mm: f64,
     pole_pitch_mm: f64,
     slot_pitch_mm: f64,
@@ -69,6 +72,9 @@ struct BFieldVector {
     bz_t: Vec<f64>,
 }
 
+/// Mirrors the full `force_sweep` object of the Python-oracle fixture,
+/// including fields no assertion consumes yet, so the schema stays documented.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ForceSweepVector {
     positions_mm: Vec<f64>,
@@ -162,10 +168,10 @@ fn test_config_derived_values() {
 
     // Exact match for derived values
     assert!(
-        (cfg.magnet_array_span_m() * 1e3 - v.config.coil_span_mm).abs() < 1e-6,
-        "coil_span (fixture field) vs magnet_array_span: {} vs {}",
+        (cfg.magnet_array_span_m() * 1e3 - v.config.magnet_array_span_mm).abs() < 1e-6,
+        "magnet_array_span: {} vs {}",
         cfg.magnet_array_span_m() * 1e3,
-        v.config.coil_span_mm
+        v.config.magnet_array_span_mm
     );
     assert!(
         (cfg.travel_m() * 1e3 - v.config.travel_mm).abs() < 1e-6,
