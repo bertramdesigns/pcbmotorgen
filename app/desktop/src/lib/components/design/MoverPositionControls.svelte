@@ -3,12 +3,15 @@
    * MoverPositionControls.svelte — shared mover-position controls for the
    * MotionStore: position number field and the travel slider, plus the live
    * readout. Motion input is continuous — a coreless motor has no
-   * detent/cogging force. The slider endpoints are the span-aware FLUSH
-   * travel limits (kata 5c7r): the array edges sit exactly on the copper
-   * active-area bounds at min and max, and the sweep equals the configured
-   * travel exactly. The endpoints are limits, not stable rest positions —
+   * detent/cogging force. The slider endpoints come from the backend travel
+   * envelope (the simulation crate's `travel_envelope_over_slots`, kata
+   * 5c7r): the array edges sit exactly on the copper active-area bounds at
+   * min and max, and the endpoints are limits, not stable rest positions —
    * the rests (spaced one electrical period P_e) are marked by the
    * force-chart zeros below, and the mover may hold position between them.
+   * While only the placeholder envelope is active (backend unavailable /
+   * not yet fetched) the endpoints are a fixed reference pin and the
+   * store's `envelopeWarning` is rendered below — never silent (kata ab30).
    *
    * Used by the Design reflection (TravelDiagram) and the CoilPreview
    * lightbox so both screens expose identical position controls on the same
@@ -72,4 +75,12 @@
     <span class="text-slate-300">{bounds.startMm.toFixed(1)} - {bounds.endMm.toFixed(1)} mm</span>
     · Offset from rest: {motion.offsetFromRestMm.toFixed(1)} / {travelRangeMm.toFixed(1)} mm
   </div>
+
+  {#if motion.envelopeWarning}
+    <!-- Placeholder travel envelope in effect (kata ab30): the bounds are a
+         fixed reference pin, NOT backend physics — say so, loudly. -->
+    <p class="mt-1 text-[10px] text-amber-400" role="status">
+      {motion.envelopeWarning.message}
+    </p>
+  {/if}
 </div>

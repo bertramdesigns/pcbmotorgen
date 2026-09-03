@@ -96,7 +96,8 @@
     }
     // Equilibrium travel envelope (stable rest positions of the mover
     // centre). Fetched on the same debounced/generation-guarded stream; a
-    // failure keeps the previous envelope (or the geometric fallback).
+    // failure keeps the previous envelope (or the flagged placeholder —
+    // MotionStore raises "travel envelope unavailable", kata ab30).
     try {
       const env = await fetchTravelEnvelope(ipc);
       if (generation === previewGeneration) motion.setEnvelope(env);
