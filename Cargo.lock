@@ -2712,6 +2712,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 name = "pcbmotorgen"
 version = "0.5.0"
 dependencies = [
+ "pcbmotorgen-dfm",
  "pcbmotorgen-export",
  "pcbmotorgen-routing",
  "pcbmotorgen-simulation",
@@ -2724,10 +2725,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcbmotorgen-dfm"
+version = "0.5.0"
+dependencies = [
+ "pcbmotorgen-routing",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pcbmotorgen-export"
 version = "0.5.0"
 dependencies = [
  "nng",
+ "pcbmotorgen-dfm",
  "pcbmotorgen-routing",
  "prost",
  "prost-build",

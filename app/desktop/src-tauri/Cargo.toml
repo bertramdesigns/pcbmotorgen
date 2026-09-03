@@ -9,6 +9,7 @@ description = "Tauri desktop host + parent orchestrator for pcbmotorgen; consume
 [dependencies]
 pcbmotorgen-routing = { workspace = true }
 pcbmotorgen-simulation = { workspace = true }
+pcbmotorgen-dfm = { workspace = true }
 pcbmotorgen-export = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

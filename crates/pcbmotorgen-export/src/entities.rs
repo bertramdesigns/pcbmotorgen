@@ -102,7 +102,8 @@ pub(crate) fn write_pad(
 #[cfg(test)]
 mod tests {
     use crate::routing_result_to_dxf;
-    use pcbmotorgen_routing::{DesignRules, Point, RouteCurve, RouteSegment, RoutingResult, Via};
+    use pcbmotorgen_dfm::DesignRules;
+    use pcbmotorgen_routing::{Point, RouteCurve, RouteSegment, RoutingResult, Via};
 
     fn sample_rules() -> DesignRules {
         DesignRules {

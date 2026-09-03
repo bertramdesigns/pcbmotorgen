@@ -6,7 +6,8 @@
 //! outcomes via [`super::tally::tally_item_results`]. The dry-run variant
 //! skips all IPC traffic.
 
-use pcbmotorgen_routing::{DesignRules, PhaseCoil, RoutingResult};
+use pcbmotorgen_dfm::DesignRules;
+use pcbmotorgen_routing::{PhaseCoil, RoutingResult};
 
 use super::tally::tally_item_results;
 use super::{BoardHandle, WriteCoilsResult};

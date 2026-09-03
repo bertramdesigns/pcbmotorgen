@@ -7,9 +7,8 @@ use std::collections::HashMap;
 use prost::Message;
 use prost_types::Any;
 
-use pcbmotorgen_routing::{
-    generate_coils_from_context, CoilSegment, DesignRules, PhaseCoil, RoutingContext,
-};
+use pcbmotorgen_dfm::DesignRules;
+use pcbmotorgen_routing::{generate_coils_from_context, CoilSegment, PhaseCoil, RoutingContext};
 use pcbmotorgen_export::{
     ApiResponse, ApiResponseHeader, ApiResponseStatus, ApiStatusCode, BoardLayer, KiCadClient,
     KiCadError, KicadTransport, MockTransport, coils_to_board_items, layer_idx_to_board_layer,

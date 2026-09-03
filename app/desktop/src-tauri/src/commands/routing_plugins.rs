@@ -218,7 +218,8 @@ pub struct InterferenceViolationIpc {
 
 /// Run the core's design-rule (interference) checks on the coils the current
 /// pattern produces, using the configured trace width / via sizes. The routing
-/// plugin only supplies raw lines; all clearance checks happen here.
+/// plugin only supplies raw lines; all clearance checks happen downstream in
+/// the DFM crate (`pcbmotorgen-dfm`, kata 0rgs).
 #[tauri::command]
 pub async fn check_coil_interference(
     config: LinearMotorConfigIpc,
@@ -229,7 +230,7 @@ pub async fn check_coil_interference(
         let result =
             pcbmotorgen_routing::generate_routing_result(&ctx, &core.routing_pattern_id())
                 .map_err(|e| format!("routing pattern failed: {e}"))?;
-        let violations = pcbmotorgen_routing::check_interference(&core.design_rules(), &result);
+        let violations = pcbmotorgen_dfm::check_interference(&core.design_rules(), &result);
         Ok(violations
             .into_iter()
             .map(|v| InterferenceViolationIpc {

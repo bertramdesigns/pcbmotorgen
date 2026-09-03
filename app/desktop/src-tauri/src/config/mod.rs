@@ -5,8 +5,9 @@
 //! helpers. All physics and shared result types have moved into the leaf
 //! crates — [`SimulationInput`](pcbmotorgen_simulation::params::SimulationInput),
 //! `StackupResult`/`HeightStackResult`/`FrictionBudget`/`PowerBudget` live in
-//! `pcbmotorgen_simulation::params`; `RoutingContext`/`DesignRules` live in
-//! `pcbmotorgen_routing`. The parent delegates derived arithmetic to the
+//! `pcbmotorgen_simulation::params`; `RoutingContext` lives in
+//! `pcbmotorgen_routing` and `DesignRules` in `pcbmotorgen-dfm` (kata 0rgs).
+//! The parent delegates derived arithmetic to the
 //! simulation crate instead of duplicating it.
 //!
 //! All quantities in SI units: metres, Tesla, Amperes, Ohms, Watts.
