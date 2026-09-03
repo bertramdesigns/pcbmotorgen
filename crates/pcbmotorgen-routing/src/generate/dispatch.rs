@@ -40,11 +40,48 @@ pub fn generate_routing_result(ctx: &RoutingContext, id: &str) -> Result<Routing
     generate_routing_report(ctx, id).map(|report| report.result)
 }
 
+/// Reject contexts whose copper-layer count violates the pattern's declared
+/// layer-range metadata (`min_layers` / `max_layers` / `layers_multiple_of`,
+/// docs/API.md §6). Most patterns declare nothing (default `None`) and every
+/// context passes — this is the authoritative generate-time gate backing the
+/// app's pattern-constrained layer selector.
+fn validate_layer_range(
+    pattern: &dyn RoutingPattern,
+    ctx: &RoutingContext,
+    id: &str,
+) -> Result<(), String> {
+    let n = ctx.num_layers;
+    if let Some(min) = pattern.min_layers() {
+        if n < min {
+            return Err(format!(
+                "pattern \"{id}\" requires at least {min} copper layer(s), got {n}"
+            ));
+        }
+    }
+    if let Some(max) = pattern.max_layers() {
+        if n > max {
+            return Err(format!(
+                "pattern \"{id}\" supports at most {max} copper layer(s), got {n}"
+            ));
+        }
+    }
+    if let Some(mult) = pattern.layers_multiple_of() {
+        if mult > 0 && n % mult != 0 {
+            return Err(format!(
+                "pattern \"{id}\" requires the copper-layer count to be a multiple of {mult}, got {n}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn generate_with_report(
     pattern: &dyn RoutingPattern,
     ctx: &RoutingContext,
     id: &str,
 ) -> Result<RoutingReport, String> {
+    validate_layer_range(pattern, ctx, id)?;
+
     let result = pattern
         .generate(ctx)
         .map_err(|e| format!("pattern \"{id}\" failed: {e}"))?;
@@ -147,6 +184,9 @@ pub fn register_python_runner(
             author: meta.author,
             version: meta.version,
             description: meta.description,
+            min_layers: meta.min_layers,
+            max_layers: meta.max_layers,
+            layers_multiple_of: meta.layers_multiple_of,
         });
         pattern.set_parameters(meta.parameters);
     } else if let Some(id) = custom_id {
@@ -187,4 +227,136 @@ fn infinity_period(ctx: &RoutingContext) -> (Option<f64>, Option<u32>) {
     let offset = total / ((periods + 1) * strands * phases - 1) as f64 * -1.0;
     let phase_span = total - ((offset * strands as f64 * -1.0) * phases as f64) - offset;
     (Some(phase_span / periods as f64), Some(periods as u32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Point, RouteSegment};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Scratch pattern with configurable layer metadata, returning one valid
+    /// in-bounds segment. Unique registry ids keep the global runtime
+    /// registry race-free across parallel tests.
+    struct LayeredPattern {
+        id: String,
+        min_layers: Option<u32>,
+        max_layers: Option<u32>,
+        layers_multiple_of: Option<u32>,
+    }
+
+    static SCRATCH_SEQ: AtomicU32 = AtomicU32::new(0);
+
+    impl RoutingPattern for LayeredPattern {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn display_name(&self) -> &str {
+            "Layered Scratch"
+        }
+        fn min_layers(&self) -> Option<u32> {
+            self.min_layers
+        }
+        fn max_layers(&self) -> Option<u32> {
+            self.max_layers
+        }
+        fn layers_multiple_of(&self) -> Option<u32> {
+            self.layers_multiple_of
+        }
+        fn generate(
+            &self,
+            ctx: &RoutingContext,
+        ) -> Result<RoutingResult, crate::error::RoutingError> {
+            // One vertical active leg (90 deg to the travel axis) so the
+            // phase-band width math has a well-defined angle.
+            let x = ctx.active_area_length_mm / 2.0;
+            let w = ctx.board_width_mm;
+            Ok(RoutingResult {
+                segments: vec![RouteSegment {
+                    start: Point { x, y: 0.0 },
+                    end: Point { x, y: w },
+                    layer: 0,
+                    net: "A".to_string(),
+                    is_active: true,
+                }],
+                ..Default::default()
+            })
+        }
+    }
+
+    fn register_scratch(
+        min: Option<u32>,
+        max: Option<u32>,
+        mult: Option<u32>,
+    ) -> String {
+        let id = format!("layered-scratch-{}", SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed));
+        crate::register_runtime_pattern(Box::new(LayeredPattern {
+            id: id.clone(),
+            min_layers: min,
+            max_layers: max,
+            layers_multiple_of: mult,
+        }))
+        .expect("scratch registration succeeds");
+        id
+    }
+
+    fn ctx_for(num_layers: u32) -> RoutingContext {
+        RoutingContext {
+            active_area_length_mm: 40.0,
+            board_width_mm: 10.0,
+            num_layers,
+            phases: 3,
+            min_trace_mm: 0.127,
+            min_space_mm: 0.127,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn unconstrained_pattern_accepts_any_layer_count() {
+        let id = register_scratch(None, None, None);
+        for n in [1u32, 2, 3, 7, 32] {
+            assert!(
+                generate_routing_result(&ctx_for(n), &id).is_ok(),
+                "layer count {n} should pass an unconstrained pattern"
+            );
+        }
+        crate::unregister_runtime_pattern(&id);
+    }
+
+    #[test]
+    fn min_layers_is_enforced_at_generate_time() {
+        let id = register_scratch(Some(2), None, None);
+        let err = generate_routing_result(&ctx_for(1), &id).unwrap_err();
+        assert!(
+            err.contains("requires at least 2 copper layer"),
+            "unexpected: {err}"
+        );
+        assert!(generate_routing_result(&ctx_for(2), &id).is_ok());
+        crate::unregister_runtime_pattern(&id);
+    }
+
+    #[test]
+    fn max_layers_is_enforced_at_generate_time() {
+        let id = register_scratch(None, Some(4), None);
+        let err = generate_routing_result(&ctx_for(6), &id).unwrap_err();
+        assert!(
+            err.contains("supports at most 4 copper layer"),
+            "unexpected: {err}"
+        );
+        assert!(generate_routing_result(&ctx_for(4), &id).is_ok());
+        crate::unregister_runtime_pattern(&id);
+    }
+
+    #[test]
+    fn layers_multiple_of_is_enforced_at_generate_time() {
+        let id = register_scratch(None, None, Some(2));
+        let err = generate_routing_result(&ctx_for(3), &id).unwrap_err();
+        assert!(
+            err.contains("multiple of 2"),
+            "unexpected: {err}"
+        );
+        assert!(generate_routing_result(&ctx_for(4), &id).is_ok());
+        crate::unregister_runtime_pattern(&id);
+    }
 }

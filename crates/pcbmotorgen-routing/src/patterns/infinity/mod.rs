@@ -102,6 +102,13 @@ impl RoutingPattern for InfinityBraidPattern {
         ]
     }
 
+    fn min_layers(&self) -> Option<u32> {
+        // The braid weaves a top layer against a mirrored bottom layer with
+        // vias between them; `validated_braid_context` rejects < 2 layers,
+        // so declare it as metadata instead of a generate-time surprise.
+        Some(2)
+    }
+
     fn expects_continuous(&self) -> bool {
         // The braid is a deliberate weave of many interleaved strands; it is
         // not a single continuous per-(layer,net) path, so we do not enforce

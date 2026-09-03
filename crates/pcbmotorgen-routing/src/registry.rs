@@ -62,6 +62,12 @@ impl RoutingRegistry {
             .collect()
     }
 
+    /// Full metadata blocks for the UI catalog (includes the layer-range
+    /// constraints declared via the trait's default methods).
+    pub fn metadata_catalog(&self) -> Vec<crate::PluginMetadata> {
+        self.patterns.values().map(|p| p.metadata()).collect()
+    }
+
     /// Number of registered patterns.
     pub fn len(&self) -> usize {
         self.patterns.len()

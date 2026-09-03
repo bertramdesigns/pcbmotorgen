@@ -50,6 +50,9 @@ pub struct PythonRunnerPattern {
     version: String,
     description: String,
     parameters: Vec<PatternParameter>,
+    min_layers: Option<u32>,
+    max_layers: Option<u32>,
+    layers_multiple_of: Option<u32>,
 }
 
 impl PythonRunnerPattern {
@@ -66,6 +69,9 @@ impl PythonRunnerPattern {
             version: String::new(),
             description: String::new(),
             parameters: Vec::new(),
+            min_layers: None,
+            max_layers: None,
+            layers_multiple_of: None,
         }
     }
 
@@ -93,6 +99,9 @@ impl PythonRunnerPattern {
         if !m.description.is_empty() {
             self.description = m.description.clone();
         }
+        self.min_layers = m.min_layers;
+        self.max_layers = m.max_layers;
+        self.layers_multiple_of = m.layers_multiple_of;
     }
 
     /// Populate the declared parameter schema.
@@ -124,6 +133,18 @@ impl RoutingPattern for PythonRunnerPattern {
 
     fn parameters(&self) -> Vec<PatternParameter> {
         self.parameters.clone()
+    }
+
+    fn min_layers(&self) -> Option<u32> {
+        self.min_layers
+    }
+
+    fn max_layers(&self) -> Option<u32> {
+        self.max_layers
+    }
+
+    fn layers_multiple_of(&self) -> Option<u32> {
+        self.layers_multiple_of
     }
 
     fn generate(&self, ctx: &RoutingContext) -> Result<RoutingResult, RoutingError> {
