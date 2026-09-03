@@ -832,3 +832,225 @@ fn test_kicad_writer_via_nets_cover_all_phases() {
         ["/A".to_string(), "/B".to_string(), "/C".to_string()].into_iter().collect();
     assert_eq!(via_nets, expected, "via nets must be {{/A, /B, /C}}; got {via_nets:?}");
 }
+
+// ---------------------------------------------------------------------------
+// IO elements (kata htcq) — Footprint/Pad emission + IO fanout tracks
+// ---------------------------------------------------------------------------
+
+use pcbmotorgen_routing::{IoPad, IoPadKind, IoTrace, IoTraceRole, PadSize, Point, RoutingResult};
+
+use pcbmotorgen_export::proto::board::types::{FootprintInstance, Pad, PadType};
+use pcbmotorgen_export::io_elements_to_board_items;
+
+fn io_rules() -> DesignRules {
+    DesignRules {
+        min_trace_mm: mm(0.1),
+        min_space_mm: mm(0.1),
+        min_via_drill_mm: mm(0.2),
+        min_via_annular_ring_mm: mm(0.1),
+    }
+}
+
+fn io_result() -> RoutingResult {
+    RoutingResult {
+        io_pads: vec![
+            IoPad {
+                position: Point::new(48.0, 2.0),
+                size: PadSize { x: 0.6, y: 0.6 },
+                drill_mm: None,
+                layers: vec![1],
+                kind: IoPadKind::Smd,
+                net: "A".into(),
+                number: Some("1".into()),
+            },
+            IoPad {
+                position: Point::new(0.0, 18.0),
+                size: PadSize { x: 0.4, y: 0.4 },
+                drill_mm: Some(mm(0.2)),
+                layers: vec![],
+                kind: IoPadKind::Tht,
+                net: "B".into(),
+                number: None,
+            },
+        ],
+        io_traces: vec![IoTrace {
+            start: Point::new(0.0, 10.0),
+            end: Point::new(47.0, 2.0),
+            layer: 1,
+            net: "A".into(),
+            role: IoTraceRole::Fanout,
+        }],
+        ..RoutingResult::default()
+    }
+}
+
+#[test]
+fn test_io_elements_produce_footprint_and_track_items() {
+    let items = io_elements_to_board_items(&io_result(), 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    // 2 pads → 2 FootprintInstances; 1 trace → 1 Track.
+    assert_eq!(items.len(), 3);
+    let footprint_count = items
+        .iter()
+        .filter(|a| a.type_url.ends_with("kiapi.board.types.FootprintInstance"))
+        .count();
+    let track_count = items
+        .iter()
+        .filter(|a| a.type_url.ends_with("kiapi.board.types.Track"))
+        .count();
+    assert_eq!(footprint_count, 2);
+    assert_eq!(track_count, 1);
+
+    // The IO trace is a normal track on the mapped layer with the rule width.
+    let track_any = items
+        .iter()
+        .find(|a| a.type_url.ends_with("kiapi.board.types.Track"))
+        .expect("track item");
+    let track: Track = Track::decode(track_any.value.as_slice()).expect("decode Track");
+    assert_eq!(track.layer, BoardLayer::BlFCu as i32, "routing layer 1 = top of a 2-layer board");
+    assert_eq!(track.width.expect("width").value_nm, mm_to_nm(io_rules().min_trace_mm));
+    assert_eq!(track.net.expect("net").name, "/A");
+}
+
+#[test]
+fn test_io_pad_footprints_decode_with_correct_pads() {
+    let items = io_elements_to_board_items(&io_result(), 4, &io_rules(), TEST_ACTIVE_AREA_MM);
+    let footprints: Vec<FootprintInstance> = items
+        .iter()
+        .filter(|a| a.type_url.ends_with("kiapi.board.types.FootprintInstance"))
+        .map(|a| FootprintInstance::decode(a.value.as_slice()).expect("decode FootprintInstance"))
+        .collect();
+    assert_eq!(footprints.len(), 2);
+
+    // Decode each footprint's single Pad item.
+    let pads: Vec<Pad> = footprints
+        .iter()
+        .map(|fp| {
+            let definition = fp.definition.as_ref().expect("definition");
+            assert_eq!(definition.items.len(), 1, "one pad per footprint");
+            Pad::decode(definition.items[0].value.as_slice()).expect("decode Pad")
+        })
+        .collect();
+
+    assert_eq!(pads[0].r#type, PadType::PtSmd as i32);
+    assert_eq!(pads[0].net.as_ref().expect("net").name, "/A");
+    assert_eq!(pads[0].number, "1");
+    assert!(pads[0].pad_stack.as_ref().expect("pad stack").drill.is_none());
+
+    assert_eq!(pads[1].r#type, PadType::PtPth as i32);
+    assert_eq!(pads[1].net.as_ref().expect("net").name, "/B");
+    let ps1 = pads[1].pad_stack.as_ref().expect("pad stack");
+    assert_eq!(
+        ps1.layers.len(),
+        4,
+        "THT pad with no declared layers defaults to the full copper set"
+    );
+
+    // Footprint positions carry the centering shift (x − active/2) in nm.
+    let fp0_pos = footprints[0].position.as_ref().expect("position");
+    assert_eq!(
+        fp0_pos.x_nm,
+        mm_to_nm(48.0) - mm_to_nm(TEST_ACTIVE_AREA_MM / 2.0)
+    );
+    // The pad itself sits at the footprint origin.
+    assert_eq!(pads[0].position.as_ref().expect("pad position").x_nm, 0);
+}
+
+#[test]
+fn test_io_items_are_decodable_board_items() {
+    // Every emitted item must decode as the exact proto its type URL names —
+    // the same round-trip property the via tests assert for KiCad acceptance.
+    let items = io_elements_to_board_items(&io_result(), 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    for any in &items {
+        if any.type_url.ends_with("kiapi.board.types.Track") {
+            Track::decode(any.value.as_slice()).expect("Track decodes");
+        } else if any.type_url.ends_with("kiapi.board.types.FootprintInstance") {
+            let fp = FootprintInstance::decode(any.value.as_slice()).expect("FootprintInstance decodes");
+            assert!(fp.definition.is_some());
+        } else {
+            panic!("unexpected item type URL: {}", any.type_url);
+        }
+    }
+}
+
+#[test]
+fn test_io_emission_is_pure_and_deterministic() {
+    let a = io_elements_to_board_items(&io_result(), 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    let b = io_elements_to_board_items(&io_result(), 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    let hex = |items: &[Any]| -> Vec<String> {
+        items
+            .iter()
+            .map(|i| i.value.iter().map(|b| format!("{b:02x}")).collect())
+            .collect()
+    };
+    assert_eq!(hex(&a), hex(&b), "IO emission must be deterministic");
+}
+
+#[test]
+fn test_legacy_result_without_io_yields_no_io_items() {
+    let legacy = RoutingResult::default();
+    let items = io_elements_to_board_items(&legacy, 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    assert!(items.is_empty(), "no IO elements → no IO items");
+}
+
+#[test]
+fn test_board_handle_write_io_elements_end_to_end() {
+    let result = io_result();
+    let items = io_elements_to_board_items(&result, 2, &io_rules(), TEST_ACTIVE_AREA_MM);
+    let expected_items = items.len() as u32;
+    let created_items: Vec<_> = (0..expected_items)
+        .map(|_| pcbmotorgen_export::proto::common::commands::ItemCreationResult {
+            status: Some(pcbmotorgen_export::proto::common::commands::ItemStatus {
+                code: 1, // ISC_OK
+                error_message: String::new(),
+            }),
+            item: None,
+        })
+        .collect();
+    let create_resp = CreateItemsResponse {
+        header: None,
+        status: 1,
+        created_items,
+    };
+    let responses = vec![
+        build_ok_response(pack_any(
+            BEGIN_COMMIT_RESPONSE_URL,
+            &BeginCommitResponse { id: Some(Kiid { value: "io-c1".to_string() }) },
+        )),
+        build_ok_response(pack_any(CREATE_ITEMS_RESPONSE_URL, &create_resp)),
+        build_ok_response(pack_any(
+            END_COMMIT_RESPONSE_URL,
+            &empty_end_commit_response(),
+        )),
+    ];
+
+    let transport = SequencedMockTransport::new(responses);
+    let mut client = KiCadClient::with_transport(Box::new(transport), Some("test"), 2000);
+    let doc = pcb_document("io.kicad_pcb");
+    let mut board = pcbmotorgen_export::BoardHandle::new(&mut client, doc);
+    let out = board
+        .write_io_elements(&result, 2, &io_rules(), TEST_ACTIVE_AREA_MM)
+        .expect("write_io_elements");
+    assert_eq!(out.items_attempted, expected_items);
+    assert_eq!(out.items_created, expected_items);
+    assert!(out.failures.is_empty());
+}
+
+#[test]
+fn test_board_handle_write_io_elements_dry_run_and_empty() {
+    // Dry-run: no IPC traffic at all.
+    let transport = SequencedMockTransport::new(Vec::new());
+    let mut client = KiCadClient::with_transport(Box::new(transport), Some("test"), 2000);
+    let doc = pcb_document("io-dry.kicad_pcb");
+    let mut board = pcbmotorgen_export::BoardHandle::new(&mut client, doc);
+    let out = board
+        .write_io_elements_dry_run(&io_result(), 2, &io_rules(), TEST_ACTIVE_AREA_MM)
+        .expect("dry-run");
+    assert_eq!(out.items_attempted, 3);
+    assert_eq!(out.items_created, 0);
+
+    // A result with no IO elements attempts zero items and makes no IPC call.
+    let out_empty = board
+        .write_io_elements(&RoutingResult::default(), 2, &io_rules(), TEST_ACTIVE_AREA_MM)
+        .expect("empty IO write");
+    assert_eq!(out_empty.items_attempted, 0);
+}

@@ -6,13 +6,13 @@
 //! outcomes via [`super::tally::tally_item_results`]. The dry-run variant
 //! skips all IPC traffic.
 
-use pcbmotorgen_routing::{DesignRules, PhaseCoil};
+use pcbmotorgen_routing::{DesignRules, PhaseCoil, RoutingResult};
 
 use super::tally::tally_item_results;
 use super::{BoardHandle, WriteCoilsResult};
 use crate::commit::Commit;
 use crate::errors::KiCadError;
-use crate::writer::coils_to_board_items;
+use crate::writer::{coils_to_board_items, io_elements_to_board_items};
 
 impl<'a> BoardHandle<'a> {
     /// Write coils to the board atomically.
@@ -153,6 +153,98 @@ impl<'a> BoardHandle<'a> {
 
         eprintln!(
             "[pcbmotorgen::write_coils] done: items_attempted={} items_created={} \
+             failures={} failure_codes={:?}",
+            items_attempted,
+            items_created,
+            failures.len(),
+            failure_summary,
+        );
+
+        Ok(WriteCoilsResult {
+            items_attempted,
+            items_created,
+            failures,
+            failure_summary,
+        })
+    }
+
+    /// Write the IO elements of a [`RoutingResult`] (connector/IC pads +
+    /// terminal fanout traces) to the board atomically — the additive
+    /// counterpart of [`write_coils`](Self::write_coils).
+    ///
+    /// Items are produced by [`io_elements_to_board_items`]: one
+    /// `FootprintInstance` per IO pad and one `Track` per IO fanout trace,
+    /// all inside a single [`Commit`] (one Ctrl+Z undo step). A result
+    /// without IO elements attempts zero items and succeeds trivially.
+    pub fn write_io_elements(
+        &mut self,
+        result: &RoutingResult,
+        num_layers: u32,
+        rules: &DesignRules,
+        active_area_length_mm: f64,
+    ) -> Result<WriteCoilsResult, KiCadError> {
+        self.write_io_inner(result, num_layers, rules, active_area_length_mm, /* dry_run = */ false)
+    }
+
+    /// Dry-run path for [`write_io_elements`](Self::write_io_elements):
+    /// converts the IO elements to items and returns a synthetic
+    /// [`WriteCoilsResult`] with `items_created = 0`, without touching KiCad.
+    pub fn write_io_elements_dry_run(
+        &mut self,
+        result: &RoutingResult,
+        num_layers: u32,
+        rules: &DesignRules,
+        active_area_length_mm: f64,
+    ) -> Result<WriteCoilsResult, KiCadError> {
+        self.write_io_inner(result, num_layers, rules, active_area_length_mm, /* dry_run = */ true)
+    }
+
+    /// Shared body for [`write_io_elements`](Self::write_io_elements) and
+    /// [`write_io_elements_dry_run`](Self::write_io_elements_dry_run).
+    fn write_io_inner(
+        &mut self,
+        result: &RoutingResult,
+        num_layers: u32,
+        rules: &DesignRules,
+        active_area_length_mm: f64,
+        dry_run: bool,
+    ) -> Result<WriteCoilsResult, KiCadError> {
+        let items = io_elements_to_board_items(result, num_layers, rules, active_area_length_mm);
+        let items_attempted = items.len() as u32;
+
+        let board_name = self.name().unwrap_or_else(|_| "<unknown>".to_string());
+        eprintln!(
+            "[pcbmotorgen::write_io_elements] io_pads={} io_traces={} board={} \
+             num_layers={} items_attempted={} dry_run={}",
+            result.io_pads.len(),
+            result.io_traces.len(),
+            board_name,
+            num_layers,
+            items_attempted,
+            dry_run,
+        );
+
+        if dry_run || items.is_empty() {
+            // No commit, no socket round-trip. (An empty IO set also skips
+            // the IPC traffic — `Commit::begin` + `create_items(&[])` would
+            // be a no-op round trip at best.)
+            return Ok(WriteCoilsResult {
+                items_attempted,
+                items_created: 0,
+                failures: Vec::new(),
+                failure_summary: Vec::new(),
+            });
+        }
+
+        let mut commit = Commit::begin(self.client)?;
+        let create_resp = commit.create_items(&items, &self.document)?;
+        commit.end()?;
+
+        let (items_created, failures, failure_summary) =
+            tally_item_results(&create_resp.created_items);
+
+        eprintln!(
+            "[pcbmotorgen::write_io_elements] done: items_attempted={} items_created={} \
              failures={} failure_codes={:?}",
             items_attempted,
             items_created,

@@ -16,14 +16,18 @@
 //! - [`any_pack`] — `google.protobuf.Any` packing helper.
 //! - [`track_writer`] — track + corner-arc emission.
 //! - [`via_writer`] — through-via construction + via layer-set building.
+//! - [`pad_writer`] — IO pad (`FootprintInstance`/`Pad`) + IO fanout-track
+//!   emission from the additive [`RoutingResult`](pcbmotorgen_routing::RoutingResult)
+//!   IO elements.
 
 use prost_types::Any;
 
-use pcbmotorgen_routing::{DesignRules, PhaseCoil};
+use pcbmotorgen_routing::{DesignRules, PhaseCoil, RoutingResult};
 use crate::layer_map::{layer_idx_to_board_layer, mm_to_nm, via_pad_diameter_nm};
 use crate::Net;
 
 mod any_pack;
+mod pad_writer;
 mod track_writer;
 mod via_writer;
 
@@ -114,6 +118,28 @@ pub fn coils_to_board_items(
     }
 
     items
+}
+
+/// Convert the **IO elements** of a [`RoutingResult`](pcbmotorgen_routing::RoutingResult)
+/// (connector/IC pads and terminal fanout traces) into KiCad board items —
+/// the additive counterpart of [`coils_to_board_items`].
+///
+/// - One `FootprintInstance` per `io_pads[]` entry, each carrying a
+///   single-pad `Footprint` with a full `PadStack` (emitted by the
+///   `pad_writer` submodule).
+/// - One `Track` proto per `io_traces[]` entry — IO fanout traces are
+///   emitted as normal tracks sized from `rules.min_trace_mm` (the sizing
+///   authority; this writer reads sizes, never decides them).
+///
+/// The centering shift and layer mapping match [`coils_to_board_items`].
+/// This is a **pure function** — no socket I/O.
+pub fn io_elements_to_board_items(
+    result: &RoutingResult,
+    num_layers: u32,
+    rules: &DesignRules,
+    active_area_length_mm: f64,
+) -> Vec<Any> {
+    pad_writer::io_elements_to_board_items(result, num_layers, rules, active_area_length_mm)
 }
 
 // ---------------------------------------------------------------------------
