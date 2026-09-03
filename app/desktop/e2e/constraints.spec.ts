@@ -37,9 +37,17 @@ test.describe("Design constraints restructure", () => {
     expect(initialLength).not.toMatch(/172\.0/);
 
     // The PCB trace total (the traces' first-to-last X span, drawn by the
-    // coil preview AND the design reflection) follows: 172 + 2 × 30 padding.
+    // coil preview AND the design reflection) follows the travel edit. Since
+    // kata hrd8 the routing domain EQUALS the active area — the braid's end
+    // turns are part of the pattern and there is no 2 × 30 mm end padding
+    // (the old "172 + 2 × 30 = 232.0" total was a pre-hrd8 expectation this
+    // spec missed; padding is gone from the store, the IPC and the routing
+    // crate) — so the mock braid measures 172.0 mm here. The "meas." suffix
+    // pins the MEASURED payload, not the config fallback (which also reads
+    // 172.0 right after the edit): it appears only once the debounced
+    // generate → measure cycle lands a payload for the NEW travel.
     await eventually(async () => {
-      await expect(traceTotalReadout(page)).toHaveText(/232\.0/);
+      await expect(traceTotalReadout(page)).toHaveText(/172\.0 mm meas\./);
     });
   }, { tag: ["@constraints", "@desktop"] });
 
