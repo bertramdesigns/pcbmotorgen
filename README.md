@@ -11,9 +11,10 @@ DFM (design-rule) constraints, and writes the complete track/arc/via layout to
 an open KiCad 10 PCB file over the KiCad 10 IPC (protobuf over NNG) interface.
 
 The user interface is a **Tauri + Svelte desktop app** (`pcbmotorgen` parent
-crate) backed by three independently-buildable Rust sub-crates:
+crate) backed by four independently-buildable Rust sub-crates:
 `pcbmotorgen-routing` (traces & generation), `pcbmotorgen-simulation` (all
-physics), and `pcbmotorgen-export` (KiCad adapter + DXF exporter). There is no
+physics), `pcbmotorgen-dfm` (design rules + DRC diagnostics, downstream of
+routing), and `pcbmotorgen-export` (KiCad adapter + DXF exporter). There is no
 Python runtime dependency.
 
 ---
@@ -25,8 +26,10 @@ Given mechanical and electrical parameters the tool produces:
 - **Extensible coil geometry** — a selected _routing pattern_ (bundled
   `infinity-braid` by default, or a user-authored Rust `cdylib` / Python runner
   plugin) produces segments, arcs, and vias, each owning its `layer` and `net`.
-- **DFM-aware routing** — the routing crate applies trace width, via size, and
-  runs overlap / via-pad DRC (`check_interference`) on the generated geometry.
+- **DFM diagnostics downstream** — any routing is allowed in the generator;
+  the `pcbmotorgen-dfm` crate applies the `DesignRules` sizing authority and
+  runs overlap / via-pad DRC (`check_interference`) on the generated geometry
+  afterwards, reporting violations as diagnostics (never altering geometry).
 - **Multiphysics feedback** — magnetic B-field grid, Lorentz force sweep with
   ripple %, stackup, power budget, friction, and height stack, all computed in
   the simulation crate.

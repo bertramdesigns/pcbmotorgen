@@ -7,8 +7,9 @@ one crate.
 
 Everything below is a **public, stable API** intended for external consumers
 (such as the `pcbmotorgen` Tauri host). Both exporter families consume
-[`pcbmotorgen-routing`] types — [`PhaseCoil`], [`RoutingResult`],
-[`DesignRules`] — and use **millimetres** as the canonical unit.
+[`pcbmotorgen-routing`] types — [`PhaseCoil`], [`RoutingResult`] — plus the
+[`DesignRules`] sizing snapshot from [`pcbmotorgen-dfm`] (kata 0rgs), and use
+**millimetres** as the canonical unit.
 
 ---
 
@@ -17,8 +18,10 @@ Everything below is a **public, stable API** intended for external consumers
 ```toml
 [dependencies]
 pcbmotorgen-export = { path = "crates/pcbmotorgen-export" }
+pcbmotorgen-dfm    = { path = "crates/pcbmotorgen-dfm" }   # DesignRules
 # or, inside the workspace:
 pcbmotorgen-export = { workspace = true }
+pcbmotorgen-dfm    = { workspace = true }
 ```
 
 ```rust
@@ -77,7 +80,7 @@ delegates to `routing_result_to_dxf` with centring enabled.
 
 ```rust
 use pcbmotorgen_export::phase_coils_to_dxf;
-use pcbmotorgen_routing::DesignRules;
+use pcbmotorgen_dfm::DesignRules;
 
 let dxf = phase_coils_to_dxf(&coils, num_layers, &DesignRules::default(), 48.0);
 std::fs::write("coils.dxf", dxf)?;
@@ -395,3 +398,12 @@ let result = board.write_coils(&coils, num_layers, &rules, active_area_mm)?;
 | `diagnostics` | KiCad  | diagnostics, preconditions, preview         |
 
 ---
+
+[`pcbmotorgen-routing`]: ../pcbmotorgen-routing/
+[`pcbmotorgen-dfm`]: ../pcbmotorgen-dfm/
+[`PhaseCoil`]: ../pcbmotorgen-routing/src/coil.rs
+[`RoutingResult`]: ../pcbmotorgen-routing/src/coil.rs
+[`DesignRules`]: ../pcbmotorgen-dfm/src/rules.rs
+[`KicadTransport`]: ../pcbmotorgen-export/src/client/mod.rs
+[`MockTransport`]: ../pcbmotorgen-export/src/client/mock_transport.rs
+[`DocumentSpecifier`]: ../pcbmotorgen-export/src/proto/common.rs

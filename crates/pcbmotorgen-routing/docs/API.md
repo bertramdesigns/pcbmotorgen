@@ -1,8 +1,9 @@
 # pcbmotorgen-routing API
 
 **Status:** Active (wire contract `format_version = 2`)
-**Owner:** `crates/pcbmotorgen-routing` (model, validator, loaders, DesignRules,
-report — the full routing-pattern plugin contract)
+**Owner:** `crates/pcbmotorgen-routing` (model, validator, loaders, report —
+the full routing-pattern plugin contract; DFM lives downstream in
+`pcbmotorgen-dfm`)
 **Canonical reference:** this document consolidates the package README, the
 original routing-pattern specification (`SPEC.md`), the field-level handoff
 contract, and the authoring guide. Companion deep-dives remain at
@@ -25,9 +26,6 @@ The crate owns:
 - the canonical `RoutingResult` geometry model (`segments`, `curves`, `vias`,
   `pole_regions`);
 - the strict-shape `Validator` and structured field-level errors;
-- `DesignRules` — trace width / clearance / via sizing, the authority downstream
-  consumers read sizes from;
-- interference / DFM diagnostics (`check_interference`);
 - the registry and dynamic loaders (Rust `cdylib` plugins + Python runners);
 - the bundled two-layer `infinity-braid` reference pattern; and
 - the pole-pitch and active-conductor-band (`phase_band_widths`) calculations needed to
@@ -37,8 +35,15 @@ The crate does **not** own:
 
 - KiCad layer-name mapping (`layer_idx → B_Cu / In*_Cu / F_Cu`) — that stays in
   the KiCad writer (`pcbmotorgen-export`);
-- copper widths / via sizes supplied by the application core — those are owned by
-  this crate via `DesignRules` and merely consumed by the writer;
+- DFM (design-for-manufacturing): trace width / clearance / via sizing
+  (`DesignRules`) and DRC interference diagnostics (`check_interference`)
+  live downstream in `pcbmotorgen-dfm` (kata 0rgs). The context's
+  `min_trace_mm` / `min_space_mm` / `phase_clearance_mm` fields stay part of
+  this wire contract — patterns consume them for layout and phase-band math;
+  the DFM crate reads the mirrored `DesignRules` snapshot instead (§4, §7, §9);
+- copper widths / via sizes supplied by the application core — the app mirrors
+  them into `DesignRules` (`pcbmotorgen-dfm`) and the writer merely consumes
+  them;
 - the physics / force model (`pcbmotorgen-simulation`);
 - any external interchange format such as circuit-json, or PCB file formats
   (KiCad / DXF / Gerber).
@@ -51,9 +56,7 @@ The crate does **not** own:
 | `context` | Flat `RoutingContext` snapshot fed to every pattern. |
 | `pattern` | The `RoutingPattern` trait, `PatternParameter`, `PluginMetadata`. |
 | `validator` | The single strict-shape gate every result must pass. |
-| `design` | `DesignRules`: DFM trace width / clearance / via sizing. |
 | `dimensions` | Pole pitch, phase-band budget, and phase-band width calculations. |
-| `interference` | `check_interference`: DRC overlap / via-pad clearance checks. |
 | `report` | `RoutingReport` — validated geometry plus its dimension sidecar. |
 | `coil` | `PhaseCoil` presentation model (grouped by layer + net). |
 | `registry` | `RoutingRegistry` patterns register into. |
@@ -61,6 +64,11 @@ The crate does **not** own:
 | `patterns` | Bundled reference patterns (the `infinity` braid). |
 | `generate` | App-facing facade: registry, loading, and context → result/coils. |
 | `error` | `RoutingError` / `RoutingErrorKind` structured field-level errors. |
+
+> **DFM modules moved out (kata 0rgs):** the former `design` (`DesignRules`)
+> and `interference` (`check_interference`) modules now live in the
+> downstream `pcbmotorgen-dfm` crate (`crates/pcbmotorgen-dfm`), which depends
+> on this crate. See §7 and §9.
 
 ## 2. Units and coordinate conventions
 
@@ -142,6 +150,12 @@ boundary.
 Convenience accessors on the Rust type: `ctx.param(key, default)` reads a
 parameter with a fallback; `ctx.magnet_pitch()` resolves the pole pitch (only
 when `> 0`); `ctx.magnet_array_span()` resolves the mover span.
+
+`min_trace_mm` / `min_space_mm` / `phase_clearance_mm` are wire-contract
+fields consumed by patterns (layout + phase-band math, §10.1). They are not
+the DFM authority: sizing and DRC clearance decisions live downstream in
+`pcbmotorgen-dfm`, which reads the `DesignRules` snapshot the app bridges
+from the same config values (§7, §9).
 
 ## 5. Output contract: `RoutingResult`
 
@@ -318,10 +332,11 @@ board-edge pads sitting exactly on a boundary pass), positive finite pad
 sizes, `tht` pads require a positive `drill_mm` while `smd` / `board_edge`
 pads reject one, and layer/net rules.
 
-Sizing authority: pad dimensions remain governed by `DesignRules` — patterns
-read sizes from there (e.g. `DesignRules::io_tht_pad_diameter_mm()` for a
-THT pad stack) or size pads explicitly. The writers only carry the declared
-sizes through; they never decide dimensions.
+Sizing authority: pad dimensions remain governed by `DesignRules`
+(downstream in `pcbmotorgen-dfm`, kata 0rgs) — patterns read sizes from
+there (e.g. `DesignRules::io_tht_pad_diameter_mm()` for a THT pad stack) or
+size pads explicitly. The writers only carry the declared sizes through; they
+never decide dimensions.
 
 ## 6. The `RoutingPattern` trait
 
@@ -432,11 +447,12 @@ layer-range accessors and flow into `PluginMetadata`.
 
 ## 7. Design rules (DFM)
 
-`DesignRules` is the routing crate's authority on trace width, clearance, and
-via sizing. Patterns receive the board + phase dimensions via
-`RoutingContext`; these DFM sizes live here so the routing layer makes all
-width decisions. Downstream consumers (the KiCad writer) read sizes from this
-spec — they never decide them.
+**Moved downstream (kata 0rgs):** `DesignRules` — the trace width / clearance
+/ via sizing authority — now lives in the `pcbmotorgen-dfm` crate
+(`crates/pcbmotorgen-dfm`, module `rules`). Dependency direction:
+`pcbmotorgen-dfm → pcbmotorgen-routing`; the routing crate keeps **no** DFM
+types. The strict-shape validator (§8) is wire-contract validation and stays
+here.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -445,8 +461,22 @@ spec — they never decide them.
 | `min_via_drill_mm` | `0.2` | Minimum via drill diameter [mm]. |
 | `min_via_annular_ring_mm` | `0.1` | Minimum via annular ring width [mm]. |
 
-Derived helpers: `via_pad_diameter_mm() = min_via_drill_mm + 2 · min_via_annular_ring_mm`
-(default `0.4` mm), and `via_pad_radius_mm()`.
+Derived helpers on `DesignRules`: `via_pad_diameter_mm() =
+min_via_drill_mm + 2 · min_via_annular_ring_mm` (default `0.4` mm),
+`via_pad_radius_mm()`, and `io_tht_pad_diameter_mm()` (= the via pad
+diameter; the THT IO pad sizing authority, §5.3).
+
+Division of responsibilities after the split:
+
+- Patterns generate **any** geometry; the routing crate validates the wire
+  shape (§8) and never applies manufacturability rules.
+- The application bridges its config (`min_trace_m`, `min_space_m`,
+  `min_via_drill_m`, `min_via_annular_ring_m`) into a `DesignRules` snapshot
+  and mirrors the same values into the `RoutingContext` fields listed in §4 —
+  the context fields stay contract; `pcbmotorgen-dfm` reads the snapshot for
+  sizing and DRC decisions.
+- Downstream consumers (the KiCad writer, the DXF exporter) read sizes from
+  `DesignRules` — they never decide them.
 
 ## 8. Strict-shape validation
 
@@ -499,8 +529,12 @@ error.
 
 ## 9. Interference / DRC diagnostics
 
-`check_interference(&DesignRules, &RoutingResult) -> Vec<InterferenceViolation>`
-reports design-rule violations against the configured widths:
+**Moved downstream (kata 0rgs):** `check_interference(&DesignRules,
+&RoutingResult) -> Vec<InterferenceViolation>` now lives in the
+`pcbmotorgen-dfm` crate (`crates/pcbmotorgen-dfm`, module `interference`).
+The signature is unchanged and the routing crate re-exports nothing.
+
+It reports design-rule violations against the configured widths:
 
 - **Segments** — same-layer, different-net traces closer than
   `min_trace_mm + min_space_mm` (edge-to-edge clearance).
@@ -511,7 +545,9 @@ reports design-rule violations against the configured widths:
 Violations are surfaced as `InterferenceViolation { layer, net_a, net_b, kind,
 gap_mm, message }` and are **diagnostics only** — they are reported, never used
 to silently alter geometry. The check is bounded (200k pair comparisons) to
-avoid runaway behavior on pathological inputs.
+avoid runaway behavior on pathological inputs. Callers run it downstream of
+generation (the app's `check_coil_interference` command), never inside the
+generator — any routing is allowed; DFM is reported later.
 
 ## 10. Enriched handoff: `RoutingReport` and `RoutingDimensions`
 
@@ -954,8 +990,7 @@ pub fn routing_result_to_phase_coils(result: &RoutingResult, pattern_id: &str) -
 pub fn phase_band_width_from_trace_geometry_mm(u32, f64, f64, f64) -> Result<f64, String>;
 pub fn max_phase_band_width_from_pole_pitch_mm(f64, u32, f64) -> Result<f64, String>;
 
-// DRC
-pub fn check_interference(rules: &DesignRules, result: &RoutingResult) -> Vec<InterferenceViolation>;
+// DRC — moved downstream to pcbmotorgen-dfm (§9): check_interference
 ```
 
 Generation flow: `generate_routing_report` validates user parameters against the
@@ -1073,6 +1108,14 @@ human-readable message; it is never repaired in place.
   the inter-phase clearance `g_phase` an explicit input; when `None` it falls
   back to `min_space_mm` by documented contract. The `trace_count` hint no
   longer accepts whole-coil counts (`turns`, `windings_per_phase`).
+- **v-next DFM crate extraction (kata 0rgs):** `DesignRules` and
+  `check_interference` moved out of this crate into the new downstream
+  `pcbmotorgen-dfm` crate (`pcbmotorgen-dfm → pcbmotorgen-routing`). No
+  wire-format change: `RoutingResult` / `RoutingContext` shapes are
+  unchanged and `DesignRules`' serde shape is byte-compatible. The context's
+  `min_trace_mm` / `min_space_mm` / `phase_clearance_mm` fields stay part of
+  this contract (§4) — they are pattern inputs, not DFM; the DFM crate reads
+  the mirrored `DesignRules` snapshot downstream (§7, §9).
 - **v-next pattern layer-range + param multiple-of metadata (kata we8r):**
   additive-only, no API-version bump. The `RoutingPattern` trait gains three
   defaulted methods (`min_layers`, `max_layers`, `layers_multiple_of` — all
@@ -1205,9 +1248,9 @@ metadata calculated after validation.
 - Pattern trait / parameters / metadata: `crates/pcbmotorgen-routing/src/pattern.rs`
 - Validator: `crates/pcbmotorgen-routing/src/validator.rs`
 - Errors: `crates/pcbmotorgen-routing/src/error.rs`
-- Design rules: `crates/pcbmotorgen-routing/src/design.rs`
+- Design rules: `crates/pcbmotorgen-dfm/src/rules.rs` (moved from this crate, kata 0rgs)
 - Dimensions: `crates/pcbmotorgen-routing/src/dimensions.rs`
-- Interference: `crates/pcbmotorgen-routing/src/interference.rs`
+- Interference: `crates/pcbmotorgen-dfm/src/interference.rs` (moved from this crate, kata 0rgs)
 - Report: `crates/pcbmotorgen-routing/src/report.rs`
 - Coil presentation: `crates/pcbmotorgen-routing/src/coil.rs`
 - Registry: `crates/pcbmotorgen-routing/src/registry.rs`
