@@ -157,7 +157,12 @@ Pure converter, no socket I/O:
 - units converted mm → nm (`mm_to_nm`).
 
 The additive counterpart for the routing result's IO elements (kata htcq —
-connector/IC pads + terminal fanout traces; see the routing API §5.3):
+connector/IC pads + terminal fanout traces; see the routing API §5.3).
+Since kata xa0f these elements are typically **generated host-side** by the
+routing crate's opt-in `generate_routing_*_with_io` entry points — the
+writers consume them unchanged, so generated fanouts round-trip through this
+crate's KiCad and DXF paths exactly like pattern-declared ones (see
+`tests/io_export_roundtrip.rs`):
 
 ```rust
 pub fn io_elements_to_board_items(
