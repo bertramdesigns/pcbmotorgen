@@ -36,9 +36,15 @@
       <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">
           <span class="min-w-0 truncate text-xs text-slate-300"
-            >X Length (mm)<HelpTag
-              tip="Along-travel length. Sets the pole fill factor k = W_m/τ_p (0.75 is the default optimum); the inter-magnet gap follows as τ_p − W_m, zero at k = 1.00."
-            /></span
+            >X Length (mm)<HelpTag label="About X Length">
+              Along-travel length. Sets the pole fill factor
+              <span class="italic">k</span> =
+              <span class="italic">W<sub>m</sub></span>/<span class="italic">τ<sub>p</sub></span>
+              (0.75 is the default optimum); the inter-magnet gap follows as
+              <span class="italic">τ<sub>p</sub></span> −
+              <span class="italic">W<sub>m</sub></span>, zero at
+              <span class="italic">k</span> = 1.00.
+            </HelpTag></span
           >
           <NumberField
             id="magnet-width"
