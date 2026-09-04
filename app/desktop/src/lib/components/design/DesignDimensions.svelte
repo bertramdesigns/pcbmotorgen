@@ -150,7 +150,11 @@
     <div class="min-w-0">
       <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
         <span class="truncate">Phase-band pitch (Vernier)</span>
-        <HelpTag tip="Pole pitch / phases × spacing ratio. Coincides with slot pitch τs only for uniform 1-slot-per-pole-per-phase windings." />
+        <HelpTag label="About phase-band pitch">
+          Pole pitch / phases × spacing ratio. Coincides with slot pitch
+          <span class="italic">τ<sub>s</sub></span> only for uniform
+          1-slot-per-pole-per-phase windings.
+        </HelpTag>
       </dt>
       <dd class="font-mono text-xs text-sky-200">{phaseBandPitchMm.toFixed(2)} mm</dd>
     </div>
@@ -207,8 +211,11 @@
         </div>
         <div class="min-w-0">
           <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
-            <span class="truncate">Slot pitch τs</span>
-            <HelpTag tip="L_stator / N_slots along the stator track. Not the Vernier phase-band pitch above." />
+            <span class="truncate">Slot pitch <span class="italic">τ<sub>s</sub></span></span>
+            <HelpTag label="About slot pitch">
+              <span class="italic">L<sub>stator</sub></span>/<span class="italic">N<sub>slots</sub></span>
+              along the stator track. Not the Vernier phase-band pitch above.
+            </HelpTag>
           </dt>
           <dd class="font-mono text-xs text-emerald-300">{slotPitchM === null ? "—" : formatMetresMm(slotPitchM)}</dd>
         </div>
