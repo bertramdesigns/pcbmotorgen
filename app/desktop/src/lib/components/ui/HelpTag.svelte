@@ -1,18 +1,23 @@
 <script lang="ts">
   import { Tooltip } from "bits-ui";
+  import type { Snippet } from "svelte";
 
   /**
    * Hoverable/focusable info superscript tag built on Bits UI's accessible
    * Tooltip primitive (floating-UI positioning with collision handling, so
    * overflow-hidden panel containers can never clip it). Shows `tip` text
-   * and an optional `image` (imported asset URL, e.g. an inline SVG
-   * illustration).
+   * — or a rich `children` snippet (e.g. mathematical symbols with
+   * sub/superscripts) — plus an optional `image` (imported asset URL,
+   * e.g. an inline SVG illustration).
    */
   interface HelpTagProps {
-    tip: string;
+    /** Plain-text tooltip body; ignored when a `children` snippet is passed. */
+    tip?: string;
     image?: string;
     imageAlt?: string;
     label?: string;
+    /** Rich tooltip body, e.g. symbols like τ<sub>p</sub>. */
+    children?: Snippet;
   }
 
   let {
@@ -20,6 +25,7 @@
     image,
     imageAlt = "",
     label = "More information",
+    children,
   }: HelpTagProps = $props();
 </script>
 
@@ -49,7 +55,11 @@
         collisionPadding={8}
         class="z-50 w-56 rounded-md border border-slate-600 bg-slate-900 px-2.5 py-2 text-left text-[10px] font-normal leading-relaxed text-slate-200 shadow-lg shadow-black/40"
       >
-        {tip}
+        {#if children}
+          {@render children()}
+        {:else if tip}
+          {tip}
+        {/if}
         {#if image}
           <img
             src={image}
