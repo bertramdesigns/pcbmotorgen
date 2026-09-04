@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Dialog } from "bits-ui";
   import { GUIDE_TABS } from "../../guide/docs";
   import {
     attachBackdropScrollGuard,
@@ -7,9 +8,12 @@
 
   let { onClose }: { onClose: () => void } = $props();
 
+  let open = $state(true);
   let activeTabId = $state(GUIDE_TABS[0]?.id ?? "authoring");
-  let backdropRef: HTMLDivElement | undefined = $state();
-  let panelRef: HTMLDivElement | undefined = $state();
+  // Bits parts bind `ref` with a `null` fallback — the binding variables
+  // must not be `undefined` or Svelte rejects it (props_invalid_value).
+  let backdropRef: HTMLDivElement | null = $state(null);
+  let panelRef: HTMLDivElement | null = $state(null);
 
   const activeTab = $derived(
     GUIDE_TABS.find((tab) => tab.id === activeTabId) ?? GUIDE_TABS[0],
@@ -19,27 +23,16 @@
     activeTabId = id;
   }
 
-  // Close on Escape — CAPTURE phase + stopPropagation so a modal stacked
-  // UNDER this one (the generator upload panel, whose own window-level
-  // Escape listener runs in bubble phase) does not also close.
-  $effect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  });
-
   // Scroll lock (Kata xy31 precedent, same helpers as the upload modal):
   // refcounted overflow lock on <html>/<body> plus a non-passive backdrop
   // guard. Unlike the upload dialog, the guide panel DOES scroll — it is
   // passed as the guard's `scrollable` element, so wheel/touchmove inside
   // the panel scrolls the guide while everything on the dimmed backdrop is
   // blocked. Stacking over the upload modal composes: the page stays locked
-  // until BOTH modals have closed.
+  // until BOTH modals have closed. The Bits overlay and panel are the
+  // backdrop/panel now (bound via bind:ref); Bits' own scroll lock is
+  // disabled (preventScroll={false}) so this refcounted helper stays the
+  // single source of truth the e2e suite asserts on.
   $effect(() => {
     const backdrop = backdropRef;
     if (!backdrop) return;
@@ -52,84 +45,77 @@
   });
 </script>
 
-<!-- Guide overlay — stacked above the upload panel (z-60 > z-50) -->
-<div
-  bind:this={backdropRef}
-  class="fixed inset-0 z-[60] flex items-center justify-center p-4"
->
-  <button
-    type="button"
-    aria-label="Close plugin guide"
-    onclick={onClose}
-    class="absolute inset-0 h-full w-full cursor-default bg-black/70"
-  ></button>
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-label="How to write a routing plugin"
-    bind:this={panelRef}
-    class="relative z-10 flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-800 shadow-xl"
-  >
-    <!-- Header -->
-    <div class="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-      <h2 class="text-sm font-semibold text-slate-100">
-        How to write a routing plugin
-      </h2>
-      <button
-        type="button"
-        onclick={onClose}
-        aria-label="Close"
-        class="rounded-md px-2 py-1 text-sm text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-100"
-      >
-        &times;
-      </button>
-    </div>
-
-    <!-- Tabs -->
-    <div
-      role="tablist"
-      aria-label="Guide sections"
-      class="flex gap-1 overflow-x-auto border-b border-slate-700 px-3 pt-2"
+<!-- Guide dialog — stacked above the upload panel (z-[60] > z-50).
+     Escape closes only this topmost dialog: Bits UI tracks dialog layers
+     globally, so the upload panel underneath stays open. -->
+<Dialog.Root bind:open onOpenChange={(o) => { if (!o) onClose(); }}>
+  <Dialog.Portal>
+    <Dialog.Overlay bind:ref={backdropRef} class="fixed inset-0 z-[60] bg-black/70" />
+    <Dialog.Content
+      bind:ref={panelRef}
+      preventScroll={false}
+      aria-label="How to write a routing plugin"
+      class="fixed left-1/2 top-1/2 z-[60] flex max-h-[85vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-800 shadow-xl"
     >
-      {#each GUIDE_TABS as tab (tab.id)}
-        <button
-          type="button"
-          role="tab"
-          id="guide-tab-{tab.id}"
-          aria-selected={tab.id === activeTabId}
-          aria-controls="guide-panel"
-          onclick={() => selectTab(tab.id)}
-          class="whitespace-nowrap rounded-t-md border-b-2 px-3 py-2 text-xs font-semibold transition-colors
-            {tab.id === activeTabId
-            ? 'border-emerald-500 text-emerald-300'
-            : 'border-transparent text-slate-400 hover:text-slate-100'}"
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+        <Dialog.Title class="text-sm font-semibold text-slate-100">
+          How to write a routing plugin
+        </Dialog.Title>
+        <Dialog.Close
+          aria-label="Close"
+          class="rounded-md px-2 py-1 text-sm text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-100"
         >
-          {tab.label}
-        </button>
-      {/each}
-    </div>
+          &times;
+        </Dialog.Close>
+      </div>
 
-    <!-- Scrollable guide body -->
-    <div
-      id="guide-panel"
-      role="tabpanel"
-      aria-labelledby="guide-tab-{activeTab?.id ?? 'authoring'}"
-      class="guide-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4"
-    >
-      {@html activeTab?.html ?? ""}
-    </div>
+      <!-- Tabs -->
+      <div
+        role="tablist"
+        aria-label="Guide sections"
+        class="flex gap-1 overflow-x-auto border-b border-slate-700 px-3 pt-2"
+      >
+        {#each GUIDE_TABS as tab (tab.id)}
+          <button
+            type="button"
+            role="tab"
+            id="guide-tab-{tab.id}"
+            aria-selected={tab.id === activeTabId}
+            aria-controls="guide-panel"
+            onclick={() => selectTab(tab.id)}
+            class="whitespace-nowrap rounded-t-md border-b-2 px-3 py-2 text-xs font-semibold transition-colors
+              {tab.id === activeTabId
+              ? 'border-emerald-500 text-emerald-300'
+              : 'border-transparent text-slate-400 hover:text-slate-100'}"
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
 
-    <!-- Footer note -->
-    <div
-      class="border-t border-slate-700 px-4 py-2 text-[10px] text-slate-500"
-      role="note"
-    >
-      Bundled at build time from
-      <code class="text-slate-400">crates/pcbmotorgen-routing/docs</code>
-      — the same documents that define the plugin contract.
-    </div>
-  </div>
-</div>
+      <!-- Scrollable guide body -->
+      <div
+        id="guide-panel"
+        role="tabpanel"
+        aria-labelledby="guide-tab-{activeTab?.id ?? 'authoring'}"
+        class="guide-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4"
+      >
+        {@html activeTab?.html ?? ""}
+      </div>
+
+      <!-- Footer note -->
+      <div
+        class="border-t border-slate-700 px-4 py-2 text-[10px] text-slate-500"
+        role="note"
+      >
+        Bundled at build time from
+        <code class="text-slate-400">crates/pcbmotorgen-routing/docs</code>
+        — the same documents that define the plugin contract.
+      </div>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
 
 <style>
   /*

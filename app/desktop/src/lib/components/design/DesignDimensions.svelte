@@ -178,8 +178,11 @@
       <dd class="font-mono text-xs text-sky-200">{config.magnet_gap_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500">Routing</dt>
-      <dd class="truncate font-mono text-xs text-sky-200" title={config.routing_pattern}>{config.routing_pattern}</dd>
+      <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+        <span class="truncate">Routing</span>
+        <HelpTag tip="Active routing pattern id. Switch or add generators in the Design tab's routing-pattern selector." />
+      </dt>
+      <dd class="truncate font-mono text-xs text-sky-200">{config.routing_pattern}</dd>
     </div>
     <div class="min-w-0">
       <dt class="truncate text-[10px] text-slate-500">Layers</dt>
