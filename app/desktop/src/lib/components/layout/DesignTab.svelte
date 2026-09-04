@@ -87,11 +87,15 @@
         <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300"
-              >Electrical pitch P_e (mm)<HelpTag
-                tip="Length of one full electrical cycle: two alternating poles. Pole pitch τp = P_e ÷ 2."
+              >Electrical pitch <span class="italic">P<sub>e</sub></span> (mm)<HelpTag
+                label="About electrical pitch"
                 image={electricalPitchSvg}
-                imageAlt="Diagram: one electrical cycle P_e spans two alternating poles N and S; the pole pitch τp is half of it."
-              /></span
+                imageAlt="Diagram: one electrical cycle spans two alternating poles N and S; the pole pitch is half of it."
+              >
+                Length of one full electrical cycle: two alternating poles. Pole
+                pitch <span class="italic">τ<sub>p</sub></span> =
+                <span class="italic">P<sub>e</sub></span> ÷ 2.
+              </HelpTag></span
             >
             <NumberField
               id="electrical-pitch"
