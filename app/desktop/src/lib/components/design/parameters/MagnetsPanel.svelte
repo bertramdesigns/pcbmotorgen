@@ -2,6 +2,7 @@
   import type { ConfigStore } from "../../../stores/config.svelte";
   import MagnetGradeHelper from "../MagnetGradeHelper.svelte";
   import NumberField from "../../ui/NumberField.svelte";
+  import HelpTag from "../../ui/HelpTag.svelte";
 
   let { config }: { config: ConfigStore } = $props();
 </script>
@@ -15,7 +16,7 @@
 
   <div class="border-t border-slate-700 px-3 pb-3 pt-2.5">
     <div class="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
-      <label class="min-w-0" title="Even number of magnets in the mover array.">
+      <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">
           <span class="min-w-0 truncate text-xs text-slate-300">Magnet count</span>
           <NumberField
@@ -32,9 +33,13 @@
         </span>
       </label>
 
-      <label class="min-w-0" title="X Length of one magnet along the travel axis (W_m). The pole fill factor k = W_m / τ_p is derived from it; 0.75 (135° electrical) is the default optimum and 1.00 gives end-to-end magnets with no inter-pole gap.">
+      <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">X Length (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300"
+            >X Length (mm)<HelpTag
+              tip="Along-travel length. Sets the pole fill factor k = W_m/τ_p (0.75 is the default optimum); the inter-magnet gap follows as τ_p − W_m, zero at k = 1.00."
+            /></span
+          >
           <NumberField
             id="magnet-width"
             value={config.magnet_width_mm}
@@ -45,10 +50,6 @@
             class="w-24 shrink-0 px-2 py-1 text-xs font-mono text-emerald-200"
             onCommit={(value) => (config.magnet_width_mm = value)}
           />
-        </span>
-        <span class="mt-1 block text-[10px] text-slate-500">
-          k = W_m/τ_p = {(config.magnet_width_mm / config.pole_pitch_mm).toFixed(2)} ·
-          width is the input, k is derived · k = 1.00 → magnets end-to-end.
         </span>
         {#if config.magnet_width_mm / config.pole_pitch_mm > 0.85}
           <span
@@ -61,9 +62,11 @@
         {/if}
       </label>
 
-      <label class="min-w-0" title="Y Width (mm): magnet width across the stator; defines active conductor length.">
+      <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Y Width (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300"
+            >Y Width (mm)<HelpTag tip="Across-stator width; defines the active conductor length." /></span
+          >
           <NumberField
             id="magnet-width"
             value={config.magnet_cross_width_mm}
@@ -77,9 +80,13 @@
         </span>
       </label>
 
-      <label class="min-w-0" title="Z Thickness (mm): magnetisation-axis thickness. Coreless motors have no iron core, so the recommended minimum is T_m = 0.5 × pole pitch (3.0 mm at the default pitch).">
+      <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">
-          <span class="min-w-0 truncate text-xs text-slate-300">Z Thickness (mm)</span>
+          <span class="min-w-0 truncate text-xs text-slate-300"
+            >Z Thickness (mm)<HelpTag
+              tip="Magnetisation-axis thickness. Coreless (no iron core): aim for at least {(config.pole_pitch_mm * 0.5).toFixed(1)} mm (0.5 × pole pitch)."
+            /></span
+          >
           <NumberField
             id="magnet-height"
             value={config.magnet_height_mm}
@@ -91,24 +98,7 @@
             onCommit={(value) => (config.magnet_height_mm = value)}
           />
         </span>
-        <span class="mt-1 block text-[10px] text-slate-500">
-          Recommended: {(config.pole_pitch_mm * 0.5).toFixed(1)} mm (0.5 × pole pitch).
-        </span>
       </label>
-
-      <div class="sm:col-span-2">
-        <div class="rounded-md border border-slate-700/80 bg-slate-900/40 px-2.5 py-2 text-[10px] leading-relaxed text-slate-400">
-          <span class="font-semibold text-slate-300">Auto geometry</span>
-          — pole pitch {config.pole_pitch_mm.toFixed(1)} mm (electrical pitch {config.electrical_pitch_mm.toFixed(
-            1,
-          )} mm) · X Length {config.magnet_width_mm.toFixed(1)} mm · gap {config.magnet_gap_mm.toFixed(
-            1,
-          )} mm · mover span {config.mover_span_mm.toFixed(1)} mm.
-          The X Length IS the input; the fill factor is derived from it
-          (k = W_m / τ_p), and the inter-magnet gap follows as
-          W_gap = τ_p − W_m (zero at k = 1.00).
-        </div>
-      </div>
 
       <div class="sm:col-span-2">
         <MagnetGradeHelper {config} />

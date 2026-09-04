@@ -5,6 +5,8 @@
   import MagnetsPanel from "../design/parameters/MagnetsPanel.svelte";
   import ValidationWarning from "../design/ValidationWarning.svelte";
   import NumberField from "../ui/NumberField.svelte";
+  import HelpTag from "../ui/HelpTag.svelte";
+  import electricalPitchSvg from "../../assets/electrical-pitch.svg";
 
   let { config }: { config: ConfigStore } = $props();
 </script>
@@ -31,11 +33,12 @@
       <div class="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
         <label
           class="min-w-0"
-          title="Center-to-center travel you want; active area length follows (mover span + travel)."
         >
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300"
-              >Desired travel (center-to-center)</span
+              >Desired travel (center-to-center)<HelpTag
+                tip="Center-to-center travel you want; active-area length follows (mover span + travel)."
+              /></span
             >
             <NumberField
               id="desired-travel"
@@ -48,14 +51,9 @@
               onCommit={(value) => (config.desired_travel_mm = value)}
             />
           </span>
-          <span class="mt-1 block text-[10px] text-slate-500">
-            PCB trace total length follows: mover span {config.mover_span_mm.toFixed(1)} mm + travel =
-            {config.trace_total_length_mm.toFixed(1)} mm (the routed traces' first-to-last X extent;
-            end turns are part of the braid pattern).
-          </span>
         </label>
 
-        <label class="min-w-0" title="Width of the copper active area across the stator.">
+        <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300">Active area width (mm)</span>
             <NumberField
@@ -71,7 +69,7 @@
           </span>
         </label>
 
-        <label class="min-w-0" title="PCB dielectric thickness.">
+        <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300">PCB thickness (mm)</span>
             <NumberField
@@ -86,9 +84,15 @@
           </span>
         </label>
 
-        <label class="min-w-0" title="Stator electrical pitch P_e: length of one full electrical cycle. One cycle contains two alternating poles, so pole pitch = P_e / 2.">
+        <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
-            <span class="min-w-0 truncate text-xs text-slate-300">Electrical pitch P_e (mm)</span>
+            <span class="min-w-0 truncate text-xs text-slate-300"
+              >Electrical pitch P_e (mm)<HelpTag
+                tip="Length of one full electrical cycle: two alternating poles. Pole pitch τp = P_e ÷ 2."
+                image={electricalPitchSvg}
+                imageAlt="Diagram: one electrical cycle P_e spans two alternating poles N and S; the pole pitch τp is half of it."
+              /></span
+            >
             <NumberField
               id="electrical-pitch"
               value={config.electrical_pitch_mm}
@@ -102,13 +106,9 @@
               }}
             />
           </span>
-          <span class="mt-1 block text-[10px] text-slate-500">
-            Pole pitch τp = P_e ÷ 2 = {config.pole_pitch_mm.toFixed(1)} mm. A slot houses one
-            active conductor leg — per-slot band widths are shown in the Coil Preview diagnostics.
-          </span>
         </label>
 
-        <label class="min-w-0" title="Clearance between the PCB and magnet face.">
+        <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300">Air gap (mm)</span>
             <NumberField

@@ -10,6 +10,7 @@
     formatMetresMm,
     isValidMetres,
   } from "../../previewGeometry";
+  import HelpTag from "../ui/HelpTag.svelte";
 
   let {
     config,
@@ -100,7 +101,7 @@
       ? "waiting for payload"
       : slotCount === null
         ? "no leg grid declared"
-        : "one active leg per slot",
+        : "",
   );
 </script>
 
@@ -112,12 +113,14 @@
     <h2 id="design-dimensions-heading" class="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
       Design dimensions
     </h2>
-    <span class="text-[10px] text-slate-500">live outputs</span>
   </div>
 
   <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Total X extent of the routed PCB traces (first to last segment point), measured from the returned payload. The braid floors whole periods, so this can sit up to one period below the active-area length (the routing domain equals the active area).">PCB trace total (X)</dt>
+      <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+        <span class="truncate">PCB trace total (X)</span>
+        <HelpTag tip="First-to-last X extent of the routed traces. Whole periods are floored, so it can sit up to one period below the active-area length." />
+      </dt>
       <dd class="font-mono text-xs text-emerald-300">
         {(measuredTraceLengthMm ?? config.trace_total_length_mm).toFixed(1)} mm
         {#if measuredTraceLengthMm !== null}
@@ -126,81 +129,101 @@
       </dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Copper active region (mover span + travel)">Active copper region</dt>
+      <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+        <span class="truncate">Active copper region</span>
+        <HelpTag tip="Mover span + travel." />
+      </dt>
       <dd class="font-mono text-xs text-sky-200">{config.active_area_length_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Active area width">Active area width</dt>
+      <dt class="truncate text-[10px] text-slate-500">Active area width</dt>
       <dd class="font-mono text-xs text-sky-200">{config.active_area_width_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Mover span (magnet array span)">Mover span</dt>
+      <dt class="truncate text-[10px] text-slate-500">Mover span</dt>
       <dd class="font-mono text-xs text-sky-200">{config.mover_span_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Pole pitch">Pole pitch</dt>
+      <dt class="truncate text-[10px] text-slate-500">Pole pitch</dt>
       <dd class="font-mono text-xs text-sky-200">{config.pole_pitch_mm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Vernier-adjusted phase-band pitch ((pole pitch / phases) × spacing ratio). Not the glossary slot pitch τs = L_stator/N_slots, which coincides only for uniform 1-slot-per-pole-per-phase windings — see the Slot (per-leg) group below.">Phase-band pitch (Vernier)</dt>
+      <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+        <span class="truncate">Phase-band pitch (Vernier)</span>
+        <HelpTag tip="Pole pitch / phases × spacing ratio. Coincides with slot pitch τs only for uniform 1-slot-per-pole-per-phase windings." />
+      </dt>
       <dd class="font-mono text-xs text-sky-200">{phaseBandPitchMm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Vernier rest offset">Rest offset</dt>
+      <dt class="truncate text-[10px] text-slate-500">Rest offset</dt>
       <dd class="font-mono text-xs text-sky-200">{restOffsetMm.toFixed(2)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Magnet count">Magnet count</dt>
+      <dt class="truncate text-[10px] text-slate-500">Magnet count</dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_count}</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="X Length × Y Width">Magnet size</dt>
+      <dt class="truncate text-[10px] text-slate-500">Magnet size</dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_width_mm.toFixed(1)} &times; {config.magnet_cross_width_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Automatic inter-magnet gap = pole pitch − magnet X Length">Magnet gap (auto)</dt>
+      <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+        <span class="truncate">Magnet gap (auto)</span>
+        <HelpTag tip="Derived: pole pitch − X Length." />
+      </dt>
       <dd class="font-mono text-xs text-sky-200">{config.magnet_gap_mm.toFixed(1)} mm</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Routing pattern">Routing</dt>
+      <dt class="truncate text-[10px] text-slate-500">Routing</dt>
       <dd class="truncate font-mono text-xs text-sky-200" title={config.routing_pattern}>{config.routing_pattern}</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Copper layers">Layers</dt>
+      <dt class="truncate text-[10px] text-slate-500">Layers</dt>
       <dd class="font-mono text-xs text-sky-200">{config.num_layers}</dd>
     </div>
     <div class="min-w-0">
-      <dt class="truncate text-[10px] text-slate-500" title="Phases">Phases</dt>
+      <dt class="truncate text-[10px] text-slate-500">Phases</dt>
       <dd class="font-mono text-xs text-sky-200">{config.phases}</dd>
     </div>
   </dl>
 
-  <!-- Routing-payload metrics. The glossary disambiguation matters here: a
-       SLOT houses ONE active leg; a PHASE BAND is the whole coil bundle, so
-       the two width columns must never be conflated. Payload-derived values
-       are shown like the measured trace (emerald); an em-dash means the
-       metric is unavailable. -->
+  <!-- Routing-payload metrics. Payload-derived values are shown like the
+       measured trace (emerald); an em-dash means the metric is unavailable. -->
   <div class="mt-2 space-y-2 border-t border-slate-700/60 pt-2">
     <div>
       <div class="mb-1 flex items-baseline justify-between gap-2">
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Slot (per-leg)</h3>
-        <span class="text-[9px] text-slate-500">{slotGroupCaption}</span>
+        {#if slotGroupCaption}
+          <span class="text-[9px] text-slate-500">{slotGroupCaption}</span>
+        {/if}
       </div>
       <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="Total active leg slots declared by the pattern's leg grid. Pattern-dependent: an em-dash means the pattern declares no leg grid.">Slot count</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Slot count</span>
+            <HelpTag tip="Active leg slots declared by the pattern's leg grid; an em-dash when none is declared." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{slotCount ?? "—"}</dd>
         </div>
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="True slot pitch τs = L_stator / N_slots along the stator track. Not the Vernier phase-band pitch above — the two coincide only for uniform 1-slot-per-pole-per-phase windings.">Slot pitch τs</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Slot pitch τs</span>
+            <HelpTag tip="L_stator / N_slots along the stator track. Not the Vernier phase-band pitch above." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{slotPitchM === null ? "—" : formatMetresMm(slotPitchM)}</dd>
         </div>
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="Effective leg pitch of braided/slotless patterns: pole pitch / (phases × strands). Braided patterns have no physical slots — this is the equivalent leg-pitch model of the interleaved trace layout.">Interleave step</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Interleave step</span>
+            <HelpTag tip="Leg pitch of braided/slotless patterns: pole pitch / (phases × strands). No physical slots." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{interleaveStepM === null ? "—" : formatMetresMm(interleaveStepM)}</dd>
         </div>
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="Glossary Slot Width: along-travel width of the track space housing ONE active leg, w_t / sin(theta). NOT the phase-band bundle width below. Summarised across all (layer, net) bands; a range means the bands differ.">Slot width (one leg)</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Slot width (one leg)</span>
+            <HelpTag tip="Along-travel width housing one active leg — not the phase-band bundle width below. A range means the bands differ." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{formatSpanMm(slotWidthM)}</dd>
         </div>
       </dl>
@@ -208,15 +231,20 @@
     <div>
       <div class="mb-1 flex items-baseline justify-between gap-2">
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Phase band (coil bundle)</h3>
-        <span class="text-[9px] text-slate-500">whole bundle, never one slot</span>
       </div>
       <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="Full conductor-bundle width along the travel axis (band_width_m), summarised across all (layer, net) bands. A phase band houses the whole coil bundle — a slot houses one active leg.">Band width (bundle)</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Band width (bundle)</span>
+            <HelpTag tip="Full conductor-bundle width along travel — a band houses the whole coil bundle, a slot one leg. A range means the bands differ." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{formatSpanMm(bandWidthM)}</dd>
         </div>
         <div class="min-w-0">
-          <dt class="truncate text-[10px] text-slate-500" title="max_band_width_m − band_width_m per band; negative means over budget. Null when the pole pitch is unknown.">Band margin</dt>
+          <dt class="flex min-w-0 items-center gap-0.5 text-[10px] text-slate-500">
+            <span class="truncate">Band margin</span>
+            <HelpTag tip="Width budget minus band width; negative means over budget." />
+          </dt>
           <dd class="font-mono text-xs text-emerald-300">{formatMarginSpanMm(bandMarginM)}</dd>
         </div>
       </dl>

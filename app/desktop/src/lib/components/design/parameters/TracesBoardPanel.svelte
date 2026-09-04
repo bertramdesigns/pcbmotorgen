@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ConfigStore } from "../../../stores/config.svelte";
   import NumberField from "../../ui/NumberField.svelte";
+  import HelpTag from "../../ui/HelpTag.svelte";
 
   let { config }: { config: ConfigStore } = $props();
 </script>
@@ -13,9 +14,13 @@
   </h4>
 
   <div class="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
-    <label class="min-w-0" title="Parallel strands per phase — number of parallel serpentine paths per phase, stacked across the board width.">
+    <label class="min-w-0">
       <span class="flex items-center justify-between gap-2">
-        <span class="min-w-0 truncate text-xs text-slate-300">Strands per phase</span>
+        <span class="min-w-0 truncate text-xs text-slate-300"
+          >Strands per phase<HelpTag
+            tip="Parallel serpentine paths per phase, stacked across the board width."
+          /></span
+        >
         <NumberField
           id="strands-per-phase"
           value={config.strands_per_phase}
