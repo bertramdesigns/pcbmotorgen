@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
+  import { Select } from "bits-ui";
   import { formatLayerRange } from "../../layerConstraints";
   import RoutingParamsPanel from "./RoutingParamsPanel.svelte";
   import GeneratorUploadPanel from "../plugins/GeneratorUploadPanel.svelte";
@@ -8,8 +9,6 @@
 
   /** Sentinel value for the "load a new generator" dropdown entry. */
   const LOAD_VALUE = "__load_generator__";
-  /** Sentinel value for the disabled divider row in the dropdown. */
-  const DIVIDER_VALUE = "__divider__";
 
   let modalOpen = $state(false);
 
@@ -25,21 +24,45 @@
     void config.loadRoutingParams(id);
   });
 
-  function onPatternChange(event: Event): void {
-    const element = event.currentTarget as HTMLSelectElement;
-    const value = element.value;
-    if (value === LOAD_VALUE) {
-      // Don't persist the sentinel — revert the visible selection to the
-      // current real pattern and open the modal to load a new generator.
-      element.value = config.routing_pattern;
+  // The Select's value is FUNCTION-BOUND to the store: the getter maps the
+  // loading state to "" (so the placeholder shows) and the setter rejects
+  // the load-generator sentinel — the sentinel is an ACTION, not a value,
+  // so the store is never written with it and the binding re-reads the
+  // getter, restoring the active pattern in the trigger.
+  function patternBindingGet(): string {
+    return config.routing_patterns.length === 0 ? "" : config.routing_pattern;
+  }
+
+  function patternBindingSet(v: string): void {
+    if (v === LOAD_VALUE) {
       modalOpen = true;
       return;
     }
-    config.routing_pattern = value;
+    config.routing_pattern = v;
   }
 
-  function onLayerChange(event: Event): void {
-    const value = Number((event.currentTarget as HTMLSelectElement).value);
+  // `items` powers label lookup in Select.Value while the portal content is
+  // unmounted (so the trigger shows display names, never raw ids) and
+  // native-style typeahead on the closed trigger.
+  const patternItems = $derived(
+    config.routing_patterns.length === 0
+      ? [{ value: LOAD_VALUE, label: "+ Load new generator…" }]
+      : [
+          ...config.routing_patterns.map((p) => ({
+            value: p.id,
+            label: p.display_name,
+          })),
+          { value: LOAD_VALUE, label: "+ Load new generator…" },
+        ],
+  );
+
+  const layerValue = $derived(String(config.num_layers));
+  const layerItems = $derived(
+    config.layerOptions.map((n) => ({ value: String(n), label: String(n) })),
+  );
+
+  function onLayerValueChange(v: string): void {
+    const value = Number(v);
     // The selector only offers valid counts (even, >= 2, within the board
     // stackup and the pattern's range); guard anyway so nothing but a whole
     // number reaches the store.
@@ -61,25 +84,59 @@
       Routing parameters
     </h3>
 
-    <select
-      id="routing-pattern"
-      value={config.routing_pattern}
-      onchange={onPatternChange}
+    <Select.Root
+      type="single"
+      bind:value={patternBindingGet, patternBindingSet}
       disabled={config.routing_patterns.length === 0}
-      aria-label="Routing pattern"
-      title="Routing pattern"
-      class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      items={patternItems}
     >
-      {#if config.routing_patterns.length === 0}
-        <option value="__loading__" disabled>Loading patterns…</option>
-      {:else}
-        {#each config.routing_patterns as pattern (pattern.id)}
-          <option value={pattern.id}>{pattern.display_name}</option>
-        {/each}
-      {/if}
-      <option value={DIVIDER_VALUE} disabled>&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</option>
-      <option value={LOAD_VALUE}>&#43; Load new generator&#8230;</option>
-    </select>
+      <Select.Trigger
+        id="routing-pattern"
+        aria-label="Routing pattern"
+        class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-between gap-1 text-left"
+      >
+        <Select.Value placeholder="Loading patterns…" />
+        <svg
+          viewBox="0 0 12 12"
+          class="h-3 w-3 shrink-0 text-slate-500"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="M2.5 4.5 6 8l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content
+          class="z-50 max-h-72 min-w-[var(--bits-select-anchor-width)] overflow-y-auto rounded-md border border-slate-700 bg-slate-800 py-1 shadow-lg shadow-black/40 focus:outline-none"
+        >
+          {#each config.routing_patterns as pattern (pattern.id)}
+            <Select.Item
+              value={pattern.id}
+              label={pattern.display_name}
+              class="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-slate-100 outline-none data-[selected]:bg-slate-700 data-[highlighted]:bg-slate-700/60 data-[highlighted]:text-emerald-200 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+            >
+              {pattern.display_name}
+            </Select.Item>
+          {/each}
+          {#if config.routing_patterns.length > 0}
+            <div
+              role="separator"
+              aria-hidden="true"
+              class="my-1 border-t border-slate-700"
+            ></div>
+          {/if}
+          <Select.Item
+            value={LOAD_VALUE}
+            label="+ Load new generator…"
+            class="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-emerald-300 outline-none data-[selected]:bg-slate-700 data-[highlighted]:bg-slate-700/60 data-[highlighted]:text-emerald-200 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+          >
+            + Load new generator…
+          </Select.Item>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
   </div>
 
   <!-- Copper-layer count: options are the even ladder (>= 2, <= max_layers)
@@ -94,19 +151,46 @@
     >
       Copper layers
     </label>
-    <select
-      id="num-layers"
-      value={config.num_layers}
-      onchange={onLayerChange}
+    <Select.Root
+      type="single"
+      value={layerValue}
+      onValueChange={onLayerValueChange}
       disabled={config.layerOptions.length <= 1}
-      aria-label="Copper layer count"
-      title="Copper layer count (even, ≥ 2, within the board stackup and the pattern's declared range)"
-      class="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      items={layerItems}
     >
-      {#each config.layerOptions as n (n)}
-        <option value={n}>{n}</option>
-      {/each}
-    </select>
+      <Select.Trigger
+        id="num-layers"
+        aria-label="Copper layer count"
+        class="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 flex items-center gap-1 text-left"
+      >
+        <Select.Value />
+        <svg
+          viewBox="0 0 12 12"
+          class="h-3 w-3 shrink-0 text-slate-500"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="M2.5 4.5 6 8l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content
+          class="z-50 max-h-72 min-w-[var(--bits-select-anchor-width)] overflow-y-auto rounded-md border border-slate-700 bg-slate-800 py-1 shadow-lg shadow-black/40 focus:outline-none"
+        >
+          {#each config.layerOptions as n (n)}
+            <Select.Item
+              value={String(n)}
+              label={String(n)}
+              class="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-slate-100 outline-none data-[selected]:bg-slate-700 data-[highlighted]:bg-slate-700/60 data-[highlighted]:text-emerald-200 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+            >
+              {n}
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
     <span class="min-w-0 flex-1 text-[10px] text-slate-500" role="note">
       {layerRangeLabel}
     </span>

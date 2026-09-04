@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfigStore } from "../../stores/config.svelte";
+  import { Select } from "bits-ui";
   import { CUSTOM_GRADE } from "../../types";
   import NumberField from "../ui/NumberField.svelte";
 
@@ -18,28 +19,67 @@
     gradeInfo ? Object.entries(gradeInfo.max_temp_c) : [],
   );
 
-  function onGradeChange(event: Event): void {
-    const target = event.currentTarget as HTMLSelectElement;
-    config.magnet_grade = target.value;
+  const gradeItems = $derived([
+    ...config.magnetGradeNames.map((name) => ({ value: name, label: name })),
+    { value: CUSTOM_GRADE, label: CUSTOM_GRADE },
+  ]);
+
+  function onGradeValueChange(v: string): void {
+    config.magnet_grade = v;
     config.syncGrade();
   }
 </script>
 
 <div class="space-y-1.5">
-  <label class="flex items-center justify-between gap-2" for="magnet-grade">
-    <span class="text-xs text-slate-300">Magnet grade</span>
-    <select
-      id="magnet-grade"
-      class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-      value={selected}
-      onchange={onGradeChange}
-    >
-      {#each config.magnetGradeNames as name (name)}
-        <option value={name}>{name}</option>
-      {/each}
-      <option value={CUSTOM_GRADE}>{CUSTOM_GRADE}</option>
-    </select>
-  </label>
+  <Select.Root
+    type="single"
+    value={selected}
+    onValueChange={onGradeValueChange}
+    items={gradeItems}
+  >
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-xs text-slate-300">Magnet grade</span>
+      <Select.Trigger
+        id="magnet-grade"
+        aria-label="Magnet grade"
+        class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none flex items-center justify-between gap-1 text-left"
+      >
+        <Select.Value />
+        <svg
+          viewBox="0 0 12 12"
+          class="h-3 w-3 shrink-0 text-slate-500"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="M2.5 4.5 6 8l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </Select.Trigger>
+    </div>
+    <Select.Portal>
+      <Select.Content
+        class="z-50 max-h-72 min-w-[var(--bits-select-anchor-width)] overflow-y-auto rounded-md border border-slate-700 bg-slate-800 py-1 shadow-lg shadow-black/40 focus:outline-none"
+      >
+        {#each config.magnetGradeNames as name (name)}
+          <Select.Item
+            value={name}
+            label={name}
+            class="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-slate-100 outline-none data-[selected]:bg-slate-700 data-[highlighted]:bg-slate-700/60 data-[highlighted]:text-emerald-200 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+          >
+            {name}
+          </Select.Item>
+        {/each}
+        <Select.Item
+          value={CUSTOM_GRADE}
+          label={CUSTOM_GRADE}
+          class="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-slate-100 outline-none data-[selected]:bg-slate-700 data-[highlighted]:bg-slate-700/60 data-[highlighted]:text-emerald-200 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+        >
+          {CUSTOM_GRADE}
+        </Select.Item>
+      </Select.Content>
+    </Select.Portal>
+  </Select.Root>
 
   {#if gradeInfo}
     <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
