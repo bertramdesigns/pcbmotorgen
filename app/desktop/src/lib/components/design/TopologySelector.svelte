@@ -113,10 +113,6 @@
   </div>
 
   <RoutingParamsPanel {config} />
-
-  <p class="text-[11px] text-slate-500" role="note">
-    Pattern parameters edit the trace layout; generator upload is available here.
-  </p>
 </div>
 
 {#if modalOpen}

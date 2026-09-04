@@ -9,7 +9,6 @@
   <summary class="cursor-pointer px-3 py-2 marker:text-slate-500 hover:text-emerald-300">
     <span class="flex items-center justify-between gap-2">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-200">Drive &amp; Force Targets</h3>
-      <span class="text-[10px] uppercase tracking-wider text-slate-500">always editable</span>
     </span>
   </summary>
 

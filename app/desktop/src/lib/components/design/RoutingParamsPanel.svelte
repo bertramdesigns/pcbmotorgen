@@ -2,6 +2,7 @@
   import type { ConfigStore } from "../../stores/config.svelte";
   import type { RoutingParamDef } from "../../types";
   import NumberField from "../ui/NumberField.svelte";
+  import HelpTag from "../ui/HelpTag.svelte";
 
   let { config }: { config: ConfigStore } = $props();
 
@@ -18,20 +19,19 @@
 </script>
 
 <div class="space-y-2">
-  <p class="text-[11px] text-slate-500" role="note">
-    Set the parameters exposed by this generator; amplitude and line length are derived.
-  </p>
-
   {#if config.routing_param_defs.length === 0}
     <p class="text-xs italic text-slate-500">No user-editable parameters for this pattern.</p>
   {:else}
     <div class="grid gap-x-3 gap-y-1.5 sm:grid-cols-2" role="list">
       {#each config.routing_param_defs as def (def.key)}
-        <label class="min-w-0" title={def.description || def.key}>
+        <label class="min-w-0">
           <span class="flex items-center justify-between gap-2">
             <span class="min-w-0 truncate text-xs text-slate-300">
               {def.label}
               <span class="font-mono text-[10px] text-slate-500">({def.key})</span>
+              {#if def.description}
+                <HelpTag tip={def.description} />
+              {/if}
             </span>
             <NumberField
               id={`routing-param-${def.key}`}
