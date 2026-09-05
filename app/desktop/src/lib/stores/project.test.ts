@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigStore } from "./config.svelte";
 import { MotionStore } from "./motion.svelte";
 import { ProjectStore } from "./project.svelte";
+import { RecentFilesStore } from "./recentFiles.svelte";
 import type { ProjectState } from "../types";
+import type { LoadProjectResult } from "../types";
+import { loadProject } from "../ipc";
+
+// Track load calls without losing the real module's other exports (the
+// config store uses them for its routing-pattern/magnet-grade catalog).
+vi.mock("../ipc", { spy: true });
 
 /**
  * Unit coverage of the frontend HALF of project persistence (kata 0cgm):
@@ -10,11 +17,29 @@ import type { ProjectState } from "../types";
  * artifact round-trip lives in `src-tauri/src/ipc/project.rs`.
  */
 
-function makeStores() {
+function makeStores(recents?: RecentFilesStore) {
   const config = new ConfigStore();
   const motion = new MotionStore(config);
-  const projects = new ProjectStore(config, motion);
+  const projects = new ProjectStore(config, motion, recents);
   return { config, motion, projects };
+}
+
+/** Recents store over a fake port (exposes saved/synced snapshots). */
+function makeRecents() {
+  const saved: string[][] = [];
+  const synced: string[][] = [];
+  const port = {
+    load: async () => null,
+    persist: async (paths: string[]) => {
+      saved.push([...paths]);
+    },
+    exists: async () => true,
+    syncMenu: async (paths: string[]) => {
+      synced.push([...paths]);
+    },
+  };
+  const recents = new RecentFilesStore(port as never);
+  return { recents, saved, synced };
 }
 
 /** Apply a realistic set of edits across all persisted groups. */
@@ -118,6 +143,71 @@ describe("ProjectStore dirty tracking", () => {
     projects.currentPath = "/home/user/designs/my-motor.pmproj";
     expect(projects.fileName).toBe("my-motor.pmproj");
     expect(projects.label).toBe("my-motor.pmproj");
+  });
+});
+
+describe("ProjectStore openPath (kata eap8)", () => {
+  beforeEach(() => {
+    vi.mocked(loadProject).mockReset();
+  });
+
+  it("opens a given path through the real flow and records the recents entry", async () => {
+    const { recents, saved, synced } = makeRecents();
+    const { config, motion, projects } = makeStores(recents);
+    const state: ProjectState = {
+      config: {
+        ...projects.snapshotIpc().config,
+        desired_travel_mm: 60,
+      },
+      mover_position_mm: 7,
+    };
+    const result: LoadProjectResult = {
+      project: state,
+      source_format_version: 1,
+      format_version: 1,
+      validation: { errors: [], warnings: [] },
+    };
+    vi.mocked(loadProject).mockResolvedValue(result);
+
+    projects.markClean(); // clean: no discard-confirm path
+    const ok = await projects.openPath("/home/user/motor-1.pmproj");
+    expect(ok).toBe(true);
+    expect(loadProject).toHaveBeenCalledWith("/home/user/motor-1.pmproj");
+    expect(projects.currentPath).toBe("/home/user/motor-1.pmproj");
+    expect(projects.error).toBeNull();
+    expect(motion.positionMm).toBe(7);
+    expect(config.desired_travel_mm).toBe(60);
+
+    // The recents record happens in the background — flush it.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(saved).toEqual([["/home/user/motor-1.pmproj"]]);
+    expect(synced).toEqual([["/home/user/motor-1.pmproj"]]);
+  });
+
+  it("on backend failure: error UX, no recents record, state untouched", async () => {
+    const { recents, saved } = makeRecents();
+    const { config, projects, motion } = makeStores(recents);
+    vi.mocked(loadProject).mockRejectedValue(
+      'could not open "/nope.pmproj": file not found',
+    );
+
+    // A real design was in progress when the open was attempted.
+    config.desired_travel_mm = 60;
+    motion.positionMm = 42.5;
+    projects.markClean();
+    const ok = await projects.openPath("/nope.pmproj");
+    expect(ok).toBe(false);
+    expect(projects.currentPath).toBeNull();
+    expect(projects.error).toBe(
+      'Open failed — could not open "/nope.pmproj": file not found',
+    );
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(saved).toEqual([]);
+
+    // The rejected open did not restore over the in-progress state.
+    expect(motion.positionMm).toBe(42.5);
+    expect(config.desired_travel_mm).toBe(60);
   });
 });
 

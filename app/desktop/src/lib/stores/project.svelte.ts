@@ -30,6 +30,7 @@ import {
 } from "../ipc";
 import type { ConfigStore } from "./config.svelte";
 import type { MotionStore } from "./motion.svelte";
+import type { RecentFilesStore } from "./recentFiles.svelte";
 
 /** Normalise any thrown value into a display string. */
 function errorMessage(e: unknown): string {
@@ -62,6 +63,12 @@ export class ProjectStore {
   constructor(
     private config: ConfigStore,
     private motion: MotionStore,
+    /**
+     * Open Recent tracker (kata eap8, optional for tests/minimal hosts).
+     * Successfully loaded artifacts are recorded here — recents failures
+     * must never affect the open flow.
+     */
+    private recents?: RecentFilesStore | null,
   ) {}
 
   // --- Derived state -----------------------------------------------------
@@ -80,7 +87,9 @@ export class ProjectStore {
   );
 
   /** Short file name for the header (null = untitled). */
-  fileName = $derived(this.currentPath === null ? null : baseName(this.currentPath));
+  fileName = $derived(
+    this.currentPath === null ? null : baseName(this.currentPath),
+  );
 
   /** Header label: file name, or the untitled placeholder. */
   label = $derived(this.fileName ?? "untitled design");
@@ -209,7 +218,9 @@ export class ProjectStore {
     let path = this.currentPath;
     if (saveAs || path === null) {
       try {
-        path = await pickProjectSavePath(this.fileName ?? DEFAULT_PROJECT_FILE_NAME);
+        path = await pickProjectSavePath(
+          this.fileName ?? DEFAULT_PROJECT_FILE_NAME,
+        );
       } catch (e) {
         this.error = errorMessage(e);
         return false;
@@ -235,10 +246,11 @@ export class ProjectStore {
   }
 
   /**
-   * Open a `.pmproj` artifact and restore the full working state. Asks
-   * before discarding unsaved changes. On any backend rejection the
-   * in-progress state is left untouched (restore happens only after the
-   * command returns successfully). Resolves `true` on success.
+   * Open a `.pmproj` artifact chosen via the native dialog and restore the
+   * full working state. Asks before discarding unsaved changes. On any
+   * backend rejection the in-progress state is left untouched (restore
+   * happens only after the command returns successfully). Resolves `true`
+   * on success.
    */
   async open(): Promise<boolean> {
     if (this.busy) return false;
@@ -259,6 +271,34 @@ export class ProjectStore {
     }
     if (path === null) return false;
 
+    return await this.loadFromPath(path);
+  }
+
+  /**
+   * Open a specific `.pmproj` path through the same flow as File > Open —
+   * the dispatch target of the native Open Recent menu entries (kata eap8).
+   * Identical guards to `open()` (busy serialization + unsaved-changes
+   * confirm); a vanished file is rejected by the backend and surfaces the
+   * same "Open failed — could not open …" error UX.
+   */
+  async openPath(path: string): Promise<boolean> {
+    if (this.busy) return false;
+    if (this.isDirty) {
+      const discard = await confirmDiscardChanges();
+      if (!discard) {
+        this.notice = "Open cancelled — unsaved changes kept.";
+        return false;
+      }
+    }
+    return await this.loadFromPath(path);
+  }
+
+  /**
+   * The shared load half of `open` / `openPath`: busy-guarded backend load,
+   * state restore, and (on success) the recents record (kata eap8).
+   * Recents failures are swallowed — they only degrade the menu.
+   */
+  private async loadFromPath(path: string): Promise<boolean> {
     this.busy = true;
     this.clearMessages();
     try {
@@ -267,7 +307,9 @@ export class ProjectStore {
       this.applyToState(result.project);
       // Refresh the pattern catalog metadata for the restored pattern and
       // reseed any routing-param defaults the artifact did not carry.
-      await this.config.loadRoutingParams(result.project.config.routing_pattern);
+      await this.config.loadRoutingParams(
+        result.project.config.routing_pattern,
+      );
       this.config.constrainLayersToPattern();
       this.currentPath = path;
       this.markClean();
@@ -279,6 +321,10 @@ export class ProjectStore {
         (issueCount > 0
           ? ` — ${issues.errors.length} error(s), ${issues.warnings.length} warning(s) in the restored design.`
           : ".");
+      // Record the recents entry in the background (kata eap8): the store's
+      // port never rejects by contract; the catch is belt-and-braces so a
+      // persistence hiccup cannot break an already-successful open.
+      this.recents?.record(path).catch(() => undefined);
       return true;
     } catch (e) {
       this.error = `Open failed — ${errorMessage(e)}`;

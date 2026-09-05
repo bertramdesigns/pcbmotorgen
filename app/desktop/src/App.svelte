@@ -24,6 +24,7 @@ import {
   import { DrcController } from "./lib/stores/drc.svelte";
   import { MotionStore } from "./lib/stores/motion.svelte";
   import { ProjectStore } from "./lib/stores/project.svelte";
+  import { recentFiles } from "./lib/stores/recentFiles.svelte";
   import { measureTrace } from "./lib/previewGeometry";
 
   import TabNav from "./lib/components/layout/TabNav.svelte";
@@ -74,16 +75,30 @@ import {
   // Project save/load (kata 0cgm): all persistence logic lives in the Rust
   // backend behind save_project/load_project; this store is the interface
   // half (DTO mapping + dirty tracking + dialog flows).
-  const projects = new ProjectStore(config, motion);
+  const projects = new ProjectStore(config, motion, recentFiles);
 
-  // Native File menu (Open / Save / Save As, kata 0cgm): menu clicks land
-  // here as Tauri events and dispatch into the same store flows. The
-  // store's busy guard serializes overlapping menu events.
+  // Open Recent (kata eap8): lazily load the persisted list and build the
+  // native submenu from disk truth (the load prunes vanished entries).
+  // Best effort — a recents hiccup must never block app init.
+  void recentFiles.load().catch(() => undefined);
+
+  // Native File menu (Open / Save / Save As, kata 0cgm; Open Recent +
+  // Clear Recent Files, kata eap8): menu clicks land here as Tauri events
+  // and dispatch into the same store flows. The store's busy guard
+  // serializes overlapping menu events.
   $effect(() => {
     const unbind = bindProjectMenuActions({
       open: () => void projects.open(),
       save: () => void projects.save(false),
       saveAs: () => void projects.save(true),
+      openRecent: (path) => {
+        // Open-recent access point: refresh menu truth (the entry is pruned
+        // when its file vanished) before dispatching into the shared open
+        // flow — a vanished file surfaces the existing "Open failed — …"
+        // error banner. Both calls fail-open; no catch needed.
+        void recentFiles.dropMissing(path).then(() => projects.openPath(path));
+      },
+      clearRecent: () => void recentFiles.clear(),
     });
     return () => {
       void unbind.then((done) => done());
