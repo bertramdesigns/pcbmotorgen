@@ -2,6 +2,7 @@
   import type { ConfigStore } from "../../stores/config.svelte";
   import { Select } from "bits-ui";
   import { formatLayerRange } from "../../layerConstraints";
+  import Separator from "../ui/Separator.svelte";
   import RoutingParamsPanel from "./RoutingParamsPanel.svelte";
   import GeneratorUploadPanel from "../plugins/GeneratorUploadPanel.svelte";
 
@@ -121,11 +122,10 @@
             </Select.Item>
           {/each}
           {#if config.routing_patterns.length > 0}
-            <div
-              role="separator"
-              aria-hidden="true"
-              class="my-1 border-t border-slate-700"
-            ></div>
+            <!-- Design-system divider (kata tn66): decorative, purely
+                 visual inside the listbox — neither focusable nor
+                 selectable. -->
+            <Separator class="my-1" />
           {/if}
           <Select.Item
             value={LOAD_VALUE}
