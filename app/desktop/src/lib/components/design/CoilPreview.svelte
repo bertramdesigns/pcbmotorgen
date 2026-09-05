@@ -68,13 +68,13 @@
     virtualToWorld,
     firstMagnetCenterX as magnetCenterX,
     formatMetresMm,
-    type Point2D,
     type PreviewConfigLike,
   } from "../../previewGeometry";
   import type { WorldTransform } from "../../chart";
   import { fitWorldToView, unionBounds } from "../../chart";
   import { Dialog } from "bits-ui";
   import { CoilPreviewGestures } from "../../utils/coilPreviewGestures.svelte";
+  import { CoilPreviewMeasure } from "../../utils/coilPreviewMeasure.svelte";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
   import MoverPositionControls from "./MoverPositionControls.svelte";
   import {
@@ -309,138 +309,77 @@
   // click. Taps are distinguished from pan-drags by a movement threshold,
   // so pan/pinch/zoom keep working while measuring. Lightbox only — the
   // overlay draws only while `expanded`.
+  //
+  // ALL measure state + tap bookkeeping (mode, points, live cursor,
+  // pointer/touch maps, tap threshold) lives in the utility class
+  // lib/utils/coilPreviewMeasure.svelte — extracted the same way as the
+  // gesture utility. This component only injects the client→world mapping
+  // through the CURRENT camera (pure previewGeometry math) and forwards the
+  // modal frame's pointer/touch events.
   // -------------------------------------------------------------------
-  const MEASURE_TAP_PX = 6;
-  let measureMode = $state(false);
-  let measureP1 = $state<Point2D | null>(null);
-  let measureP2 = $state<Point2D | null>(null);
-  let measureCursor = $state<Point2D | null>(null);
+  const measure = new CoilPreviewMeasure({
+    screenToWorld: (clientX, clientY) => {
+      const frame = modalFrameRef;
+      if (!frame) return null;
+      const rect = frame.getBoundingClientRect();
+      const v = clientToVirtual(clientX, clientY, rect, W, H);
+      return virtualToWorld(
+        v.x,
+        v.y,
+        worldTransform,
+        gestures.panX,
+        gestures.panY,
+      );
+    },
+  });
 
   /** Locked-dimension fit bounds (camera-fit input, lightbox only). */
   let lockedMeasureBounds = $derived(
-    expanded && measureMode && measureP1 && measureP2
-      ? computeMeasureRuler(measureP1, measureP2).bounds
+    expanded && measure.mode && measure.lockedBounds
+      ? measure.lockedBounds
       : null,
   );
 
-  /** Non-reactive tap bookkeeping: pointer/touch start positions. */
-  let measureDowns = new Map<number, { x: number; y: number }>();
-  let measureTouches = new Map<number, { x: number; y: number }>();
-
-  function measureTapAt(clientX: number, clientY: number): void {
-    const frame = modalFrameRef;
-    if (!measureMode || !frame) return;
-    const rect = frame.getBoundingClientRect();
-    const v = clientToVirtual(clientX, clientY, rect, W, H);
-    const w = virtualToWorld(
-      v.x,
-      v.y,
-      worldTransform,
-      gestures.panX,
-      gestures.panY,
-    );
-    if (!measureP1) {
-      measureP1 = w;
-      measureCursor = null;
-    } else if (!measureP2) {
-      measureP2 = w;
-      measureCursor = null;
-    } else {
-      // Third click clears the locked measurement.
-      measureP1 = null;
-      measureP2 = null;
-      measureCursor = null;
-    }
-  }
-
+  // Modal pointer/touch handlers compose the measure tool with the gesture
+  // utility (order preserved from the pre-extraction implementation: taps
+  // bookkeep before/after the gesture pass exactly as it did inline).
   function onModalPointerDown(e: PointerEvent) {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    // Touch-compat pointers are ignored on browsers with native touches (the
-    // touch route below handles taps there) — mirrors the gesture utility.
-    if (e.pointerType === "touch" && "ontouchstart" in window) {
-      gestures.handlePointerDown(e);
-      return;
-    }
-    measureDowns.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    measure.handlePointerDown(e);
     gestures.handlePointerDown(e);
   }
 
   function onModalPointerMove(e: PointerEvent) {
-    if (measureMode && measureP1 && !measureP2 && e.pointerType !== "touch") {
-      const frame = modalFrameRef;
-      if (frame) {
-        const rect = frame.getBoundingClientRect();
-        const v = clientToVirtual(e.clientX, e.clientY, rect, W, H);
-        measureCursor = virtualToWorld(
-          v.x,
-          v.y,
-          worldTransform,
-          gestures.panX,
-          gestures.panY,
-        );
-      }
-    }
+    measure.handlePointerMove(e);
     gestures.handlePointerMove(e);
   }
 
   function onModalPointerUp(e: PointerEvent) {
     gestures.handlePointerEnd(e);
-    if (e.pointerType === "touch" && "ontouchstart" in window) return;
-    const down = measureDowns.get(e.pointerId);
-    measureDowns.delete(e.pointerId);
-    if (!down) return;
-    if (measureDowns.size > 0) return; // a second pointer was part of a pinch
-    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) <= MEASURE_TAP_PX) {
-      measureTapAt(e.clientX, e.clientY);
-    }
+    measure.handlePointerUp(e);
   }
 
   function onModalPointerCancel(e: PointerEvent) {
-    measureDowns.delete(e.pointerId);
+    measure.handlePointerCancel(e);
     gestures.handlePointerEnd(e);
   }
 
   function onModalTouchStart(e: TouchEvent) {
-    for (const t of e.changedTouches) {
-      measureTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
-    }
+    measure.handleTouchStart(e);
     gestures.handleTouchStart(e);
   }
 
   function onModalTouchMove(e: TouchEvent) {
-    if (measureMode && measureP1 && !measureP2) {
-      const t = e.touches[0];
-      const frame = modalFrameRef;
-      if (t && frame) {
-        const rect = frame.getBoundingClientRect();
-        const v = clientToVirtual(t.clientX, t.clientY, rect, W, H);
-        measureCursor = virtualToWorld(
-          v.x,
-          v.y,
-          worldTransform,
-          gestures.panX,
-          gestures.panY,
-        );
-      }
-    }
+    measure.handleTouchMove(e);
     gestures.handleTouchMove(e);
   }
 
   function onModalTouchEnd(e: TouchEvent) {
     gestures.handleTouchEnd(e);
-    for (const t of e.changedTouches) {
-      const down = measureTouches.get(t.identifier);
-      measureTouches.delete(t.identifier);
-      if (!down) continue;
-      if (e.touches.length > 0) continue; // other fingers still down (pinch)
-      if (Math.hypot(t.clientX - down.x, t.clientY - down.y) <= MEASURE_TAP_PX) {
-        measureTapAt(t.clientX, t.clientY);
-      }
-    }
+    measure.handleTouchEnd(e);
   }
 
   function onModalTouchCancel(e: TouchEvent) {
-    for (const t of e.changedTouches) measureTouches.delete(t.identifier);
+    measure.handleTouchCancel(e);
     gestures.handleTouchEnd(e);
   }
 
@@ -565,8 +504,8 @@
       bandRows: visibleBandRows,
       poleRegions: showPoleRegions ? visiblePoleRegionZones : [],
       measure:
-        expanded && measureMode
-          ? { p1: measureP1, p2: measureP2, cursor: measureCursor }
+        expanded && measure.mode
+          ? { p1: measure.p1, p2: measure.p2, cursor: measure.cursor }
           : null,
     });
   });
@@ -919,41 +858,30 @@
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="px-2 py-0.5 text-xs rounded border transition-colors {measureMode
+                class="px-2 py-0.5 text-xs rounded border transition-colors {measure.mode
                   ? 'bg-pink-500/15 border-pink-500 text-pink-300'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-pink-300 hover:border-pink-600'}"
-                aria-pressed={measureMode}
+                aria-pressed={measure.mode}
                 aria-label="Toggle measure tool"
-                onclick={() => {
-                  measureMode = !measureMode;
-                  if (!measureMode) {
-                    measureP1 = null;
-                    measureP2 = null;
-                    measureCursor = null;
-                  }
-                }}
+                onclick={() => measure.toggleMode()}
               >Measure</button>
-              {#if measureMode}
+              {#if measure.mode}
                 <button
                   type="button"
                   class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-600 transition-colors"
                   aria-label="Clear measurement"
-                  onclick={() => {
-                    measureP1 = null;
-                    measureP2 = null;
-                    measureCursor = null;
-                  }}
+                  onclick={() => measure.clear()}
                 >Reset</button>
               {/if}
             </div>
-            {#if measureMode}
+            {#if measure.mode}
               <span class="text-xs text-slate-400" role="status" aria-live="polite">
-                {#if measureP1}
-                  {#if measureP2}
-                    {formatMetresMm(computeMeasureRuler(measureP1, measureP2).mm / 1000)} — click again to clear
+                {#if measure.p1}
+                  {#if measure.p2}
+                    {formatMetresMm(computeMeasureRuler(measure.p1, measure.p2).mm / 1000)} — click again to clear
                   {:else}
-                    {#if measureCursor}
-                      {formatMetresMm(computeMeasureRuler(measureP1, measureCursor).mm / 1000)} — click to lock
+                    {#if measure.cursor}
+                      {formatMetresMm(computeMeasureRuler(measure.p1, measure.cursor).mm / 1000)} — click to lock
                     {:else}
                       click to lock the dimension
                     {/if}
@@ -973,7 +901,7 @@
             bind:this={modalFrameRef}
             class="relative w-full touch-none select-none {gestures.isPanning
               ? 'cursor-grabbing'
-              : measureMode
+              : measure.mode
                 ? 'cursor-crosshair'
                 : 'cursor-grab'}"
             role="img"
