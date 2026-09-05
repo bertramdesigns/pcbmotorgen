@@ -6,7 +6,7 @@ permission:
     "*": "deny"
     "app/desktop/src-tauri/**/*": "allow"
     "app/desktop/src-tauri/**": "allow"
-    "app/desktop/src/lib/**/*": "allow"
+    "app/desktop/src/**": "allow"
     "Cargo.toml": "allow"
     "crates/**": "allow"
     "/tmp/**/*": "allow" # Temporary files for Svelte MCP server
