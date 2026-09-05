@@ -4,6 +4,7 @@ description: Frontend, Backend, and Tauri IPC orchestrator.
 permission:
   edit:
     "*": "deny"
+    ".worktrees/**/*": "allow"
     "app/desktop/**": "allow"
     "Cargo.toml": "allow"
     "crates/**": "allow"
