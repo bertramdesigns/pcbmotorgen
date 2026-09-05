@@ -39,14 +39,14 @@ export function leftColumnFirstCard(page: Page) {
 /** Active-area length readout in the Design-dimensions box. */
 export function activeLengthReadout(page: Page) {
   return page.locator(
-    `section[aria-labelledby="design-dimensions-heading"] dt:text-is("Active copper region") + dd`,
+    `section[aria-labelledby="design-dimensions-heading"] dt:has(> span:text-is("Active copper region")) + dd`,
   );
 }
 
 /** The "PCB trace total (X)" live output (traces' first-to-last X span). */
 export function traceTotalReadout(page: Page) {
   return page.locator(
-    `section[aria-labelledby="design-dimensions-heading"] dt:text-is("PCB trace total (X)") + dd`,
+    `section[aria-labelledby="design-dimensions-heading"] dt:has(> span:text-is("PCB trace total (X)")) + dd`,
   );
 }
 
