@@ -7,7 +7,7 @@
 //!
 //! Linear mode only (PRODUCT_GOALS.md §7.A). No radial commands are exposed.
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 mod commands;
 mod config;
@@ -20,15 +20,30 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // The Open Recent mirror state (kata eap8) must exist before the
+            // menu is installed / any command resolves it.
+            app.manage(menu::RecentFiles::default());
             menu::install(app.handle())?;
             Ok(())
         })
         .on_menu_event(|app, event| {
-            // File-menu project actions run in the webview flows
-            // (ProjectStore); forward the item ids as events — ids equal
-            // event names (see `menu.rs` / `bindProjectMenuActions`).
-            if matches!(event.id().as_ref(), menu::OPEN_ID | menu::SAVE_ID | menu::SAVE_AS_ID) {
-                let _ = app.emit(event.id().as_ref(), ());
+            let id = event.id().as_ref();
+            if matches!(
+                id,
+                menu::OPEN_ID | menu::SAVE_ID | menu::SAVE_AS_ID | menu::CLEAR_RECENT_ID
+            ) {
+                // File-menu project actions run in the webview flows
+                // (ProjectStore); forward the item ids as events — ids equal
+                // event names (see `menu.rs` / `bindProjectMenuActions`).
+                // The "Clear Recent Files" entry is handled by the frontend
+                // recents store, the single owner of the list.
+                let _ = app.emit(id, ());
+            } else if let Some(path) =
+                menu::recent_event_payload(&app.state::<menu::RecentFiles>(), id)
+            {
+                // An Open Recent entry was clicked — forward the path that
+                // was displayed when the submenu was last rebuilt.
+                let _ = app.emit(menu::OPEN_RECENT_EVENT, path);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -52,6 +67,8 @@ fn main() {
             commands::dxf::export_coils_dxf,
             commands::project::save_project,
             commands::project::load_project,
+            commands::project::set_recent_files,
+            commands::project::file_exists,
             commands::routing_plugins::list_routing_patterns,
             commands::routing_plugins::register_routing_plugin,
             commands::routing_plugins::routing_pattern_parameters,

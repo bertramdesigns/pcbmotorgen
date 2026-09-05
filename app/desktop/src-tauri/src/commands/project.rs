@@ -10,7 +10,10 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use tauri::{AppHandle, State};
+
 use crate::ipc::*;
+use crate::menu;
 
 // ===========================================================================
 // save_project — REAL (versioned envelope + atomic write)
@@ -78,4 +81,42 @@ pub async fn load_project(path: String) -> Result<LoadProjectResultIpc, String> 
     })
     .await
     .map_err(|e| format!("load_project worker failed: {e}"))?
+}
+
+// ===========================================================================
+// set_recent_files — REAL (native menu mirror, kata eap8)
+// ===========================================================================
+
+/// Replace the contents of the native "Open Recent" File-menu submenu with
+/// the webview-owned recents list (`paths`, most-recent-first, already
+/// capped/pruned by the frontend recents store).
+///
+/// Sync command (deliberate deviation from the all-async inventory above):
+/// muda/macOS requires menu mutations on the main thread, and the rebuild
+/// is sub-millisecond, so the main thread is never meaningfully blocked.
+/// The rebuild cannot fail for meaningful reasons; the string error keeps
+/// the command signature trivial on the frontend side.
+#[tauri::command]
+pub fn set_recent_files(
+    app: AppHandle,
+    recent: State<'_, menu::RecentFiles>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    menu::rebuild_recent_submenu(&app, &recent, &paths)
+        .map_err(|e| format!("set_recent_files failed: {e}"))
+}
+
+// ===========================================================================
+// file_exists — REAL (stat, kata eap8)
+// ===========================================================================
+
+/// Report whether `path` exists on disk. The frontend recents store uses
+/// this to prune entries whose file no longer exists — at menu-build and
+/// entry-open time (kata eap8), never as a background startup scan.
+///
+/// Sync command: a single stat is strictly cheaper than the async hop.
+/// Deliberate deviation from the all-async inventory above.
+#[tauri::command]
+pub fn file_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
 }
