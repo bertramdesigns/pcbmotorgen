@@ -6,14 +6,15 @@
   import ValidationWarning from "../design/ValidationWarning.svelte";
   import NumberField from "../ui/NumberField.svelte";
   import HelpTag from "../ui/HelpTag.svelte";
+  import ScrollArea from "../ui/ScrollArea.svelte";
   import electricalPitchSvg from "../../assets/electrical-pitch.svg";
 
   let { config }: { config: ConfigStore } = $props();
 </script>
 
-<div
+<ScrollArea
   id="design-settings-scroll"
-  class="h-full overflow-y-auto lg:pr-1"
+  class="h-full lg:pr-1"
   aria-label="Design settings"
 >
   <div class="space-y-3">
@@ -151,4 +152,4 @@
     <MagnetsPanel {config} />
     <ValidationWarning {config} />
   </div>
-</div>
+</ScrollArea>

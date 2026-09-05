@@ -11,6 +11,7 @@
     isValidMetres,
   } from "../../previewGeometry";
   import HelpTag from "../ui/HelpTag.svelte";
+  import Separator from "../ui/Separator.svelte";
 
   let {
     config,
@@ -196,7 +197,8 @@
 
   <!-- Routing-payload metrics. Payload-derived values are shown like the
        measured trace (emerald); an em-dash means the metric is unavailable. -->
-  <div class="mt-2 space-y-2 border-t border-slate-700/60 pt-2">
+  <div class="mt-2 space-y-2">
+    <Separator class="mb-2 bg-slate-700/60" />
     <div>
       <div class="mb-1 flex items-baseline justify-between gap-2">
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Slot (per-leg)</h3>

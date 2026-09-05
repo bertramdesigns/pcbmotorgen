@@ -23,8 +23,12 @@ import { ASIDE } from "./helpers";
 const EXPAND_BUTTON = "button[aria-label='Expand coil preview']";
 const LIGHTBOX = "[role='dialog'][aria-label='Coil Preview — expanded']";
 
-/** The modal's own scrollable panel (the dialog's single element child). */
-const LIGHTBOX_PANEL = `${LIGHTBOX} > div`;
+/**
+ * The modal's own scrollable panel. Since kata 2npg the lightbox is a Bits
+ * UI Dialog and the dialog CONTENT itself is the scrolling panel (Bits
+ * renders no intermediate panel wrapper anymore).
+ */
+const LIGHTBOX_PANEL = LIGHTBOX;
 
 /** Let one compositor frame pass so any (illegal) scroll becomes visible. */
 async function settleScroll(page: Page) {

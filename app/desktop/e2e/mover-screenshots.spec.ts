@@ -29,7 +29,9 @@ import { fileURLToPath } from "node:url";
 
 const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
 const MOVER_BLOCK = 'div[aria-label="Mover position"]';
-const SLIDER = `${MOVER_BLOCK} input[aria-label="Mover position slider (mm)"]`;
+// Bits UI slider thumb (kata 2npg): a span with role="slider" carrying the
+// accessible name — no native <input type="range"> anymore.
+const SLIDER = `${MOVER_BLOCK} [role="slider"][aria-label="Mover position slider (mm)"]`;
 const READOUT = `${MOVER_BLOCK} div[aria-live="polite"]`;
 
 test("capture the mover at the min and max travel endpoints", async ({
@@ -55,10 +57,9 @@ test("capture the mover at the min and max travel endpoints", async ({
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const setEndpoint = async (which: "min" | "max") => {
-    await slider.evaluate((el: HTMLInputElement, w) => {
-      el.value = w === "min" ? el.min : el.max;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    }, which);
+    // Bits slider thumbs jump to the exact endpoints on Home/End (keyboard
+    // a11y), so no value poking + synthetic input events are needed.
+    await slider.press(which === "min" ? "Home" : "End");
   };
 
   const shoot = async (label: "min" | "max", expectedExtent: string) => {

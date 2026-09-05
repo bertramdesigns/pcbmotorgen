@@ -23,6 +23,7 @@
   import type { MotionStore } from "../../stores/motion.svelte";
   import { stripBoundsDomainMm } from "../../previewGeometry";
   import NumberField from "../ui/NumberField.svelte";
+  import Slider from "../ui/Slider.svelte";
   import HoldingForceChart from "./HoldingForceChart.svelte";
 
   let { config, motion }: { config: ConfigStore; motion: MotionStore } =
@@ -56,16 +57,17 @@
     <span class="text-xs text-slate-400">mm</span>
   </div>
 
-  <input
-    type="range"
+  <!-- Bits UI slider (accessible role="slider" thumb): Arrow/Home/End keys
+       and pointer drag commit continuously into the MotionStore; the
+       endpoints are the backend travel envelope above. -->
+  <Slider
+    class="mt-2"
     min={motion.moverMinMm}
     max={motion.moverMaxMm}
-    step="any"
+    step={0.1}
     value={motion.clampedPositionMm}
-    aria-label="Mover position slider (mm)"
-    class="mt-2 w-full accent-emerald-500"
-    oninput={(e) =>
-      motion.commit(Number((e.currentTarget as HTMLInputElement).value))}
+    ariaLabel="Mover position slider (mm)"
+    onValueChange={(v) => motion.commit(v)}
   />
 
   <!-- Normalized per-phase holding force vs position (3 waves at 120° for

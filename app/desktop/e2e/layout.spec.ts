@@ -25,9 +25,13 @@ test.describe("Design tab layout geometry", () => {
     page,
   }) => {
     await page.goto("/");
+    // The ScrollArea ROOT carries the geometry (kata 2npg): it must extend
+    // to the window's right edge, while the actual scrolling element is its
+    // Bits viewport descendant.
     const scroll = page.locator(DESIGN_SCROLL);
     await expect(scroll).toBeVisible();
-    await expect(scroll).toHaveCSS("overflow-y", "auto");
+    const viewport = scroll.locator("[data-scroll-area-viewport]");
+    await expect(viewport).toHaveCSS("overflow-y", "scroll");
     const b = await box(page, scroll);
     expect(b).not.toBeNull();
     const innerWidth = await page.evaluate(() => window.innerWidth);
@@ -72,15 +76,23 @@ test.describe("Design tab layout geometry", () => {
 
   test("left and right columns scroll independently", async ({ page }) => {
     await page.goto("/");
+    // Both columns are Bits UI ScrollAreas at the lg layout (kata 2npg):
+    // the aside and the settings root are the positioned containers, the
+    // real scrollers are their viewport descendants.
     const aside = page.locator(ASIDE);
     const right = page.locator(DESIGN_SCROLL);
-    // Both columns are their own scroll containers at the lg layout.
-    await expect(aside).toHaveCSS("overflow-y", "auto");
-    await expect(right).toHaveCSS("overflow-y", "auto");
+    const leftViewport = aside.locator("[data-scroll-area-viewport]");
+    const rightViewport = right.locator("[data-scroll-area-viewport]");
+    await expect(leftViewport).toHaveCSS("overflow-y", "scroll");
+    await expect(rightViewport).toHaveCSS("overflow-y", "scroll");
 
     const overflow = await page.evaluate(() => {
-      const left = document.querySelector("aside[aria-label='Persistent design reflection']")!;
-      const settings = document.querySelector("#design-settings-scroll")!;
+      const left = document.querySelector(
+        "aside[aria-label='Persistent design reflection'] [data-scroll-area-viewport]",
+      )!;
+      const settings = document.querySelector(
+        "#design-settings-scroll [data-scroll-area-viewport]",
+      )!;
       return {
         left: left.scrollHeight > left.clientHeight,
         settings: settings.scrollHeight > settings.clientHeight,
@@ -95,13 +107,13 @@ test.describe("Design tab layout geometry", () => {
     );
 
     // Scrolling inside the left column must not move the right column.
-    await aside.evaluate((el) => {
+    await leftViewport.evaluate((el) => {
       el.scrollTop = 200;
     });
     await page.waitForTimeout(120);
     const afterLeft = await page.evaluate(() => ({
-      left: document.querySelector("aside[aria-label='Persistent design reflection']")!.scrollTop,
-      right: document.querySelector("#design-settings-scroll")!.scrollTop,
+      left: document.querySelector("aside[aria-label='Persistent design reflection'] [data-scroll-area-viewport]")!.scrollTop,
+      right: document.querySelector("#design-settings-scroll [data-scroll-area-viewport]")!.scrollTop,
       windowY: window.scrollY,
     }));
     expect(afterLeft.left).toBeGreaterThan(0);
@@ -109,13 +121,13 @@ test.describe("Design tab layout geometry", () => {
     expect(afterLeft.windowY).toBe(0);
 
     // And scrolling the right column must not move the left column.
-    await right.evaluate((el) => {
+    await rightViewport.evaluate((el) => {
       el.scrollTop = 200;
     });
     await page.waitForTimeout(120);
     const afterRight = await page.evaluate(() => ({
-      left: document.querySelector("aside[aria-label='Persistent design reflection']")!.scrollTop,
-      right: document.querySelector("#design-settings-scroll")!.scrollTop,
+      left: document.querySelector("aside[aria-label='Persistent design reflection'] [data-scroll-area-viewport]")!.scrollTop,
+      right: document.querySelector("#design-settings-scroll [data-scroll-area-viewport]")!.scrollTop,
     }));
     expect(afterRight.right).toBeGreaterThan(0);
     expect(afterRight.left).toBe(200);

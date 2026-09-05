@@ -5,6 +5,7 @@
     attachBackdropScrollGuard,
     lockPageScroll,
   } from "../../utils/pageScrollLock";
+  import Separator from "../ui/Separator.svelte";
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -105,8 +106,9 @@
       </div>
 
       <!-- Footer note -->
+      <Separator />
       <div
-        class="border-t border-slate-700 px-4 py-2 text-[10px] text-slate-500"
+        class="px-4 py-2 text-[10px] text-slate-500"
         role="note"
       >
         Bundled at build time from

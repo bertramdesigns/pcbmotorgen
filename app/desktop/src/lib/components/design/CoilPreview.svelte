@@ -17,11 +17,15 @@
   BELOW the canvas in both views. Both view instances (inline frame + canvas
   and modal frame + canvas) stay mounted while the component exists, but
   only ONE of them is drawn per render tick — the `expanded` rune picks the
-  active pair, so both canvases always show the same live schematic. Esc or
-  a backdrop click closes the modal. While expanded, the page behind the
-  lightbox is scroll-locked (document overflow lock + backdrop
-  wheel/touchmove guard), so hover/wheel over the dimmed background can
-  never scroll it.
+  active pair, so both canvases always show the same live schematic. The
+  lightbox is a Bits UI Dialog (Dialog.Root/Portal/Overlay/Content): a
+  backdrop click, Escape, and the × close button all dismiss it through
+  Bits' dismissible/escape layers — no custom keydown/pointerdown handlers
+  live here anymore. While expanded, the page behind the lightbox is
+  scroll-locked by the custom refcounted helper (document overflow lock +
+  backdrop wheel/touchmove guard), which stays the source of truth — Bits'
+  built-in scroll lock is therefore disabled (`preventScroll={false}`),
+  so the page scroll lock behaves exactly as the e2e suite asserts.
 
   Interaction: one pointer (mouse / pen / lone touch) drags to pan; a
   two-finger pinch or a ctrl+wheel trackpad pinch zooms CONTINUOUSLY
@@ -64,6 +68,7 @@
   } from "../../previewGeometry";
   import type { WorldTransform } from "../../chart";
   import { fitWorldToView, unionBounds } from "../../chart";
+  import { Dialog } from "bits-ui";
   import { CoilPreviewGestures } from "../../utils/coilPreviewGestures.svelte";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
   import MoverPositionControls from "./MoverPositionControls.svelte";
@@ -452,8 +457,8 @@
   let canvasRef: HTMLCanvasElement | undefined = $state();
   let modalFrameRef: HTMLDivElement | undefined = $state();
   let modalCanvasRef: HTMLCanvasElement | undefined = $state();
-  let backdropRef: HTMLDivElement | undefined = $state();
-  let modalPanelRef: HTMLDivElement | undefined = $state();
+  let backdropRef: HTMLDivElement | null = $state(null);
+  let modalPanelRef: HTMLDivElement | null = $state(null);
   let expanded = $state(false);
   let frameSize = $state(0); // frame CSS-pixel width, measured by the RO
 
@@ -957,16 +962,6 @@
     drawInto(frame, canvas);
   });
 
-  // Close the lightbox with Escape while it is open.
-  $effect(() => {
-    if (!expanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") expanded = false;
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
   // Scroll lock for the lightbox (Kata xy31): while the modal is open the
   // page behind it must never scroll. Two layers:
   //   1. refcounted overflow:hidden on <html>/<body> — kills document
@@ -1093,334 +1088,329 @@
   {/if}
 
   {#if expanded}
-    <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
-      role="dialog"
-      tabindex="-1"
-      bind:this={backdropRef}
-      aria-modal="true"
-      aria-label="Coil Preview — expanded"
-      onpointerdown={(event) => {
-        if (event.target === event.currentTarget) expanded = false;
-      }}
-    >
-      <div
-        role="group"
-        bind:this={modalPanelRef}
-        class="flex max-h-full w-full max-w-5xl flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl"
-        onpointerdown={(event) => event.stopPropagation()}
-      >
-        <!-- Header row -->
-        <div class="flex items-center justify-between flex-wrap gap-2">
-          <h3 class="text-sm font-semibold text-slate-200">
-            Coil Preview — expanded
-          </h3>
-          <div class="flex items-center gap-3 flex-wrap">
-            <span class="text-xs text-slate-400">
-              {coils
-                ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} coil group${coils.phases.length === 1 ? "" : "s"}`
-                : "no coils yet"}
-            </span>
-            <button
-              type="button"
-              class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
-              aria-label="Close coil preview"
-              onclick={() => (expanded = false)}>×</button
-            >
+    <Dialog.Root bind:open={expanded}>
+      <Dialog.Portal>
+        <Dialog.Overlay
+          bind:ref={backdropRef}
+          class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm"
+        />
+        <Dialog.Content
+          bind:ref={modalPanelRef}
+          preventScroll={false}
+          aria-label="Coil Preview — expanded"
+          class="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+        >
+          <!-- Header row -->
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <Dialog.Title level={3} class="text-sm font-semibold text-slate-200">
+              Coil Preview — expanded
+            </Dialog.Title>
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="text-xs text-slate-400">
+                {coils
+                  ? `${uniquePhases.length} phase${uniquePhases.length === 1 ? "" : "s"} · ${g.renderedLayerCount} layer${g.renderedLayerCount === 1 ? "" : "s"} · ${coils.phases.length} coil group${coils.phases.length === 1 ? "" : "s"}`
+                  : "no coils yet"}
+              </span>
+              <Dialog.Close
+                class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
+                aria-label="Close coil preview"
+                >×</Dialog.Close
+              >
+            </div>
           </div>
-        </div>
 
-        <!-- Visibility controls only — zoom/reset live below the canvas. -->
-        <div class="flex items-center gap-3 flex-wrap">
-          <!-- Phase visibility toggles (per phase). A coloured dot + label
-               for each phase, with a checkbox to show/hide that phase's
-               traces. The label and dot dim when the phase is hidden. -->
-          {#if coils && uniquePhases.length > 0}
-            <div
-              class="flex items-center gap-2 flex-wrap"
-              role="group"
-              aria-label="Phase visibility"
-            >
-              {#each uniquePhases as ph (ph.idx)}
-                <label
-                  class="flex items-center gap-1 text-xs select-none cursor-pointer"
-                  class:text-slate-500={!isPhaseVisible(ph.idx)}
-                  class:text-slate-300={isPhaseVisible(ph.idx)}
-                >
-                  <input
-                    type="checkbox"
-                    bind:checked={phaseVisibility[ph.idx]}
-                    class="accent-emerald-500"
-                    aria-label={"Show phase " + ph.name}
-                  />
-                  <span
-                    class="inline-block w-2.5 h-2.5 rounded-full"
-                    style="background-color: {PHASE_COLORS[
-                      ph.colorIdx % PHASE_COLORS.length
-                    ]}; opacity: {isPhaseVisible(ph.idx) ? 1 : 0.35}"
-                  ></span>
-                  <span>Phase {ph.name}</span>
-                </label>
-              {/each}
-            </div>
-          {/if}
-          <!-- Layer visibility toggles (per layer). A grey dot + label for
-               each copper layer, with a checkbox to show/hide that layer's
-               traces. Layers are overlaid at true coordinates, so toggling is
-               how you inspect a single layer in isolation. -->
-          {#if coils && uniqueLayers.length > 0}
-            <div
-              class="flex items-center gap-2 flex-wrap"
-              role="group"
-              aria-label="Layer visibility"
-            >
-              {#each uniqueLayers as l (l.idx)}
-                <label
-                  class="flex items-center gap-1 text-xs select-none cursor-pointer"
-                  class:text-slate-500={!isLayerVisible(l.idx)}
-                  class:text-slate-300={isLayerVisible(l.idx)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isLayerVisible(l.idx)}
-                    onchange={() => toggleLayer(l.idx)}
-                    class="accent-emerald-500"
-                    aria-label={"Show layer " + l.idx}
-                  />
-                  <span
-                    class="inline-block w-2.5 h-2.5 rounded-full"
-                    style="background-color: #94a3b8; opacity: {isLayerVisible(
-                      l.idx,
-                    )
-                      ? 1
-                      : 0.35}"
-                  ></span>
-                  <span>Layer {l.idx}</span>
-                </label>
-              {/each}
-            </div>
-          {/if}
-          <!-- Via visibility toggle -->
-          <label
-            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              bind:checked={showVias}
-              class="accent-emerald-500"
-              aria-label="Show vias"
-            />
-            <span
-              class="inline-block w-2.5 h-2.5 rounded-full"
-              style="background-color: #fbbf24; opacity: {showVias ? 1 : 0.35}"
-            ></span>
-            <span>Vias</span>
-          </label>
-          <!-- One-section toggle -->
-          <label
-            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              bind:checked={oneSection}
-              class="accent-emerald-500"
-              aria-label="Show only one repeating section of the pattern"
-            />
-            <span>one electrical period</span>
-          </label>
-          <!-- Pole-pitch ruler toggle (only when the sidecar ships a pitch). -->
-          {#if hasPolePitchData}
+          <!-- Visibility controls only — zoom/reset live below the canvas. -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <!-- Phase visibility toggles (per phase). A coloured dot + label
+                 for each phase, with a checkbox to show/hide that phase's
+                 traces. The label and dot dim when the phase is hidden. -->
+            {#if coils && uniquePhases.length > 0}
+              <div
+                class="flex items-center gap-2 flex-wrap"
+                role="group"
+                aria-label="Phase visibility"
+              >
+                {#each uniquePhases as ph (ph.idx)}
+                  <label
+                    class="flex items-center gap-1 text-xs select-none cursor-pointer"
+                    class:text-slate-500={!isPhaseVisible(ph.idx)}
+                    class:text-slate-300={isPhaseVisible(ph.idx)}
+                  >
+                    <input
+                      type="checkbox"
+                      bind:checked={phaseVisibility[ph.idx]}
+                      class="accent-emerald-500"
+                      aria-label={"Show phase " + ph.name}
+                    />
+                    <span
+                      class="inline-block w-2.5 h-2.5 rounded-full"
+                      style="background-color: {PHASE_COLORS[
+                        ph.colorIdx % PHASE_COLORS.length
+                      ]}; opacity: {isPhaseVisible(ph.idx) ? 1 : 0.35}"
+                    ></span>
+                    <span>Phase {ph.name}</span>
+                  </label>
+                {/each}
+              </div>
+            {/if}
+            <!-- Layer visibility toggles (per layer). A grey dot + label for
+                 each copper layer, with a checkbox to show/hide that layer's
+                 traces. Layers are overlaid at true coordinates, so toggling is
+                 how you inspect a single layer in isolation. -->
+            {#if coils && uniqueLayers.length > 0}
+              <div
+                class="flex items-center gap-2 flex-wrap"
+                role="group"
+                aria-label="Layer visibility"
+              >
+                {#each uniqueLayers as l (l.idx)}
+                  <label
+                    class="flex items-center gap-1 text-xs select-none cursor-pointer"
+                    class:text-slate-500={!isLayerVisible(l.idx)}
+                    class:text-slate-300={isLayerVisible(l.idx)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isLayerVisible(l.idx)}
+                      onchange={() => toggleLayer(l.idx)}
+                      class="accent-emerald-500"
+                      aria-label={"Show layer " + l.idx}
+                    />
+                    <span
+                      class="inline-block w-2.5 h-2.5 rounded-full"
+                      style="background-color: #94a3b8; opacity: {isLayerVisible(
+                        l.idx,
+                      )
+                        ? 1
+                        : 0.35}"
+                    ></span>
+                    <span>Layer {l.idx}</span>
+                  </label>
+                {/each}
+              </div>
+            {/if}
+            <!-- Via visibility toggle -->
             <label
               class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
             >
               <input
                 type="checkbox"
-                bind:checked={showPolePitch}
+                bind:checked={showVias}
                 class="accent-emerald-500"
-                aria-label="Show pole-pitch dimension ruler"
+                aria-label="Show vias"
               />
               <span
                 class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background-color: #a5b4fc; opacity: {showPolePitch
-                  ? 1
-                  : 0.35}"
+                style="background-color: #fbbf24; opacity: {showVias ? 1 : 0.35}"
               ></span>
-              <span>Pole pitch</span>
+              <span>Vias</span>
             </label>
-          {/if}
-          <!-- Band-width diagnostics toggle (only visible with matched rows). -->
-          {#if hasBandWidthData}
+            <!-- One-section toggle -->
             <label
               class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
             >
               <input
                 type="checkbox"
-                bind:checked={showBandWidths}
+                bind:checked={oneSection}
                 class="accent-emerald-500"
-                aria-label="Show band-width diagnostics"
+                aria-label="Show only one repeating section of the pattern"
               />
-              <span
-                class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background-color: #34d399; opacity: {showBandWidths
-                  ? 1
-                  : 0.35}"
-              ></span>
-              <span>Conductor band widths</span>
+              <span>one electrical period</span>
             </label>
-          {/if}
-          <!-- Pole-region zones toggle + phase picker (only when the routing
-               sidecar ships valid region data). The checkbox is independent
-               of per-phase trace visibility; the select picks which phase's
-               zones to draw. -->
-          {#if hasPoleRegionData}
-            <div
-              class="flex items-center gap-2"
-              role="group"
-              aria-label="Pole regions overlay"
-            >
+            <!-- Pole-pitch ruler toggle (only when the sidecar ships a pitch). -->
+            {#if hasPolePitchData}
               <label
                 class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
               >
                 <input
                   type="checkbox"
-                  bind:checked={showPoleRegions}
-                  class="accent-rose-500"
-                  aria-label="Show pole regions"
+                  bind:checked={showPolePitch}
+                  class="accent-emerald-500"
+                  aria-label="Show pole-pitch dimension ruler"
                 />
                 <span
                   class="inline-block w-2.5 h-2.5 rounded-full"
-                  style="background: linear-gradient(90deg, #f87171 50%, #60a5fa 50%); opacity: {showPoleRegions
+                  style="background-color: #a5b4fc; opacity: {showPolePitch
                     ? 1
                     : 0.35}"
                 ></span>
-                <span>Pole regions</span>
+                <span>Pole pitch</span>
               </label>
-              <select
-                aria-label="Pole regions phase"
-                class="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-emerald-600"
-                bind:value={poleRegionPhase}
-                disabled={!showPoleRegions}
+            {/if}
+            <!-- Band-width diagnostics toggle (only visible with matched rows). -->
+            {#if hasBandWidthData}
+              <label
+                class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
               >
-                <option value="">All phases</option>
-                {#each poleRegionPhases as phase (phase)}
-                  <option value={phase}>{phase}</option>
-                {/each}
-              </select>
-            </div>
-          {/if}
-        </div>
-
-        <!-- Measure ruler toolbar (lightbox only): mode toggle, reset (shown
-             only while measuring) and a live status prompt. -->
-        <div class="flex items-center gap-3 flex-wrap">
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="px-2 py-0.5 text-xs rounded border transition-colors {measureMode
-                ? 'bg-pink-500/15 border-pink-500 text-pink-300'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-pink-300 hover:border-pink-600'}"
-              aria-pressed={measureMode}
-              aria-label="Toggle measure tool"
-              onclick={() => {
-                measureMode = !measureMode;
-                if (!measureMode) {
-                  measureP1 = null;
-                  measureP2 = null;
-                  measureCursor = null;
-                }
-              }}
-            >Measure</button>
-            {#if measureMode}
-              <button
-                type="button"
-                class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-600 transition-colors"
-                aria-label="Clear measurement"
-                onclick={() => {
-                  measureP1 = null;
-                  measureP2 = null;
-                  measureCursor = null;
-                }}
-              >Reset</button>
+                <input
+                  type="checkbox"
+                  bind:checked={showBandWidths}
+                  class="accent-emerald-500"
+                  aria-label="Show band-width diagnostics"
+                />
+                <span
+                  class="inline-block w-2.5 h-2.5 rounded-full"
+                  style="background-color: #34d399; opacity: {showBandWidths
+                    ? 1
+                    : 0.35}"
+                ></span>
+                <span>Conductor band widths</span>
+              </label>
+            {/if}
+            <!-- Pole-region zones toggle + phase picker (only when the routing
+                 sidecar ships valid region data). The checkbox is independent
+                 of per-phase trace visibility; the select picks which phase's
+                 zones to draw. -->
+            {#if hasPoleRegionData}
+              <div
+                class="flex items-center gap-2"
+                role="group"
+                aria-label="Pole regions overlay"
+              >
+                <label
+                  class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    bind:checked={showPoleRegions}
+                    class="accent-rose-500"
+                    aria-label="Show pole regions"
+                  />
+                  <span
+                    class="inline-block w-2.5 h-2.5 rounded-full"
+                    style="background: linear-gradient(90deg, #f87171 50%, #60a5fa 50%); opacity: {showPoleRegions
+                      ? 1
+                      : 0.35}"
+                  ></span>
+                  <span>Pole regions</span>
+                </label>
+                <select
+                  aria-label="Pole regions phase"
+                  class="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-emerald-600"
+                  bind:value={poleRegionPhase}
+                  disabled={!showPoleRegions}
+                >
+                  <option value="">All phases</option>
+                  {#each poleRegionPhases as phase (phase)}
+                    <option value={phase}>{phase}</option>
+                  {/each}
+                </select>
+              </div>
             {/if}
           </div>
-          {#if measureMode}
-            <span class="text-xs text-slate-400" role="status" aria-live="polite">
-              {#if measureP1}
-                {#if measureP2}
-                  {formatMetresMm(computeMeasureRuler(measureP1, measureP2).mm / 1000)} — click again to clear
-                {:else}
-                  {#if measureCursor}
-                    {formatMetresMm(computeMeasureRuler(measureP1, measureCursor).mm / 1000)} — click to lock
-                  {:else}
-                    click to lock the dimension
-                  {/if}
-                {/if}
-              {:else}
-                click to set the start point
+
+          <!-- Measure ruler toolbar (lightbox only): mode toggle, reset (shown
+               only while measuring) and a live status prompt. -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="px-2 py-0.5 text-xs rounded border transition-colors {measureMode
+                  ? 'bg-pink-500/15 border-pink-500 text-pink-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-pink-300 hover:border-pink-600'}"
+                aria-pressed={measureMode}
+                aria-label="Toggle measure tool"
+                onclick={() => {
+                  measureMode = !measureMode;
+                  if (!measureMode) {
+                    measureP1 = null;
+                    measureP2 = null;
+                    measureCursor = null;
+                  }
+                }}
+              >Measure</button>
+              {#if measureMode}
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-600 transition-colors"
+                  aria-label="Clear measurement"
+                  onclick={() => {
+                    measureP1 = null;
+                    measureP2 = null;
+                    measureCursor = null;
+                  }}
+                >Reset</button>
               {/if}
-            </span>
-          {/if}
-        </div>
+            </div>
+            {#if measureMode}
+              <span class="text-xs text-slate-400" role="status" aria-live="polite">
+                {#if measureP1}
+                  {#if measureP2}
+                    {formatMetresMm(computeMeasureRuler(measureP1, measureP2).mm / 1000)} — click again to clear
+                  {:else}
+                    {#if measureCursor}
+                      {formatMetresMm(computeMeasureRuler(measureP1, measureCursor).mm / 1000)} — click to lock
+                    {:else}
+                      click to lock the dimension
+                    {/if}
+                  {/if}
+                {:else}
+                  click to set the start point
+                {/if}
+              </span>
+            {/if}
+          </div>
 
-        <!-- Modal frame div owns the ARIA label (the canvas is the paint
-             target; data-* attributes carry the introspection counters,
-             mirroring the inline pair). All gestures delegate to the same
-             utility instance. -->
-        <div
-          bind:this={modalFrameRef}
-          class="relative w-full touch-none select-none {gestures.isPanning
-            ? 'cursor-grabbing'
-            : measureMode
-              ? 'cursor-crosshair'
-              : 'cursor-grab'}"
-          role="img"
-          aria-label="Coil preview — expanded"
-          style="aspect-ratio: {W} / {H};"
-          onpointerdown={onModalPointerDown}
-          onpointermove={onModalPointerMove}
-          onpointerup={onModalPointerUp}
-          onpointercancel={onModalPointerCancel}
-          onlostpointercapture={gestures.handleLostPointerCapture}
-          ontouchstart={onModalTouchStart}
-          ontouchmove={onModalTouchMove}
-          ontouchend={onModalTouchEnd}
-          ontouchcancel={onModalTouchCancel}
-        >
-          <canvas bind:this={modalCanvasRef} class="block h-full w-full"
-          ></canvas>
-        </div>
+          <!-- Modal frame div owns the ARIA label (the canvas is the paint
+               target; data-* attributes carry the introspection counters,
+               mirroring the inline pair). All gestures delegate to the same
+               utility instance. -->
+          <div
+            bind:this={modalFrameRef}
+            class="relative w-full touch-none select-none {gestures.isPanning
+              ? 'cursor-grabbing'
+              : measureMode
+                ? 'cursor-crosshair'
+                : 'cursor-grab'}"
+            role="img"
+            aria-label="Coil preview — expanded"
+            style="aspect-ratio: {W} / {H};"
+            onpointerdown={onModalPointerDown}
+            onpointermove={onModalPointerMove}
+            onpointerup={onModalPointerUp}
+            onpointercancel={onModalPointerCancel}
+            onlostpointercapture={gestures.handleLostPointerCapture}
+            ontouchstart={onModalTouchStart}
+            ontouchmove={onModalTouchMove}
+            ontouchend={onModalTouchEnd}
+            ontouchcancel={onModalTouchCancel}
+          >
+            <canvas bind:this={modalCanvasRef} class="block h-full w-full"
+            ></canvas>
+          </div>
 
-        <!-- Zoom + reset view below the expanded canvas, same layout as the
-             inline preview. -->
-        <CoilPreviewControls
-          zoomLabel={gestures.zoomLabel}
-          canZoomIn={gestures.canZoomIn}
-          canZoomOut={gestures.canZoomOut}
-          onZoomIn={gestures.zoomIn}
-          onZoomOut={gestures.zoomOut}
-          onResetZoom={gestures.zoomReset}
-          onResetView={gestures.resetView}
-        />
+          <!-- Zoom + reset view below the expanded canvas, same layout as the
+               inline preview. -->
+          <CoilPreviewControls
+            zoomLabel={gestures.zoomLabel}
+            canZoomIn={gestures.canZoomIn}
+            canZoomOut={gestures.canZoomOut}
+            onZoomIn={gestures.zoomIn}
+            onZoomOut={gestures.zoomOut}
+            onResetZoom={gestures.zoomReset}
+            onResetView={gestures.resetView}
+          />
 
-        <!-- Mover position: same controls as the Design reflection on the
-             shared MotionStore, so the slider lives next to the strip it
-             moves inside the lightbox. -->
-        <MoverPositionControls {config} {motion} />
+          <!-- Mover position: same controls as the Design reflection on the
+               shared MotionStore, so the slider lives next to the strip it
+               moves inside the lightbox. -->
+          <MoverPositionControls {config} {motion} />
 
-        <!-- Modal note -->
-        <p class="text-xs text-slate-500">
-          Solid lines = active legs. Dashed = end-turns. Magnet poles
-          overlay along the top edge. Layers are overlaid at true coordinates;
-          use the layer toggles to inspect each copper layer. Pole-pitch,
-          band-width and pole-region annotations come from the
-          routing-dimensions sidecar (pole-region x boundaries are
-          pattern-owned).{#if oneSection}
-            <span class="text-amber-300"
-              >Showing only the first {oneSectionConductorCount} conductors (one
-              repeating section).</span
-            >{/if} Drag to pan; pinch or use the zoom controls below.
-        </p>
-      </div>
-    </div>
+          <!-- Modal note -->
+          <p class="text-xs text-slate-500">
+            Solid lines = active legs. Dashed = end-turns. Magnet poles
+            overlay along the top edge. Layers are overlaid at true coordinates;
+            use the layer toggles to inspect each copper layer. Pole-pitch,
+            band-width and pole-region annotations come from the
+            routing-dimensions sidecar (pole-region x boundaries are
+            pattern-owned).{#if oneSection}
+              <span class="text-amber-300"
+                >Showing only the first {oneSectionConductorCount} conductors (one
+                repeating section).</span
+              >{/if} Drag to pan; pinch or use the zoom controls below.
+          </p>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   {/if}
 </div>
