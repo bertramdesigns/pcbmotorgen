@@ -14,7 +14,11 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { confirm, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import {
+  confirm,
+  open as openDialog,
+  save as saveDialog,
+} from "@tauri-apps/plugin-dialog";
 import type {
   LoadProjectResult,
   ProjectState,
@@ -36,7 +40,9 @@ export const DEFAULT_PROJECT_FILE_NAME = "untitled.pmproj";
  */
 export async function pickProjectOpenPath(): Promise<string | null> {
   if (!isTauriAvailable()) {
-    throw new Error("Tauri backend unavailable — opening projects requires the desktop app");
+    throw new Error(
+      "Tauri backend unavailable — opening projects requires the desktop app",
+    );
   }
   return await openDialog({
     multiple: false,
@@ -53,7 +59,9 @@ export async function pickProjectSavePath(
   defaultName: string,
 ): Promise<string | null> {
   if (!isTauriAvailable()) {
-    throw new Error("Tauri backend unavailable — saving projects requires the desktop app");
+    throw new Error(
+      "Tauri backend unavailable — saving projects requires the desktop app",
+    );
   }
   return await saveDialog({
     defaultPath: defaultName,
@@ -92,7 +100,9 @@ export async function saveProject(
   project: ProjectState,
 ): Promise<SaveProjectResult> {
   if (!isTauriAvailable()) {
-    throw new Error("Tauri backend unavailable — saving projects requires the desktop app");
+    throw new Error(
+      "Tauri backend unavailable — saving projects requires the desktop app",
+    );
   }
   return await invoke<SaveProjectResult>("save_project", { path, project });
 }
@@ -105,9 +115,34 @@ export async function saveProject(
  */
 export async function loadProject(path: string): Promise<LoadProjectResult> {
   if (!isTauriAvailable()) {
-    throw new Error("Tauri backend unavailable — loading projects requires the desktop app");
+    throw new Error(
+      "Tauri backend unavailable — loading projects requires the desktop app",
+    );
   }
   return await invoke<LoadProjectResult>("load_project", { path });
+}
+
+/**
+ * Mirror the webview-owned recents list (most-recent-first) into the
+ * native "Open Recent" File-menu submenu. Outside the Tauri shell there
+ * is no native menu — a deliberate no-op (the recents persistence itself
+ * still works, see the recents store). Rejections are tolerated by the
+ * recents store's port (best-effort menu refresh).
+ */
+export async function setRecentFiles(paths: string[]): Promise<void> {
+  if (!isTauriAvailable()) return;
+  await invoke("set_recent_files", { paths });
+}
+
+/**
+ * Backend disk-existence check (a plain stat on the Rust side — the
+ * plugin-fs scope would reject arbitrary user-picked locations). Outside
+ * the Tauri shell the check cannot run: resolves `true` (fail-open) so
+ * the recents store never prunes on a missing backend.
+ */
+export async function fileExists(path: string): Promise<boolean> {
+  if (!isTauriAvailable()) return true;
+  return await invoke<boolean>("file_exists", { path });
 }
 
 /**
@@ -123,6 +158,13 @@ export async function bindProjectMenuActions(handlers: {
   open: () => void;
   save: () => void;
   saveAs: () => void;
+  /**
+   * An "Open Recent" entry was clicked (kata eap8). The payload is the
+   * absolute path exactly as it was displayed in the submenu.
+   */
+  openRecent?: (path: string) => void;
+  /** The "Clear Recent Files" entry was clicked (kata eap8). */
+  clearRecent?: () => void;
 }): Promise<() => void> {
   if (!isTauriAvailable()) {
     return () => {};
@@ -131,6 +173,14 @@ export async function bindProjectMenuActions(handlers: {
     listen("menu:open-project", handlers.open),
     listen("menu:save-project", handlers.save),
     listen("menu:save-project-as", handlers.saveAs),
+    // Open Recent (kata eap8): Rust resolves the entry id to the path that
+    // was displayed and forwards it as the event payload. Registered even
+    // when the handlers are absent — the recents wiring is optional and
+    // the menu emits these events only when its items are clicked.
+    listen<string>("menu:open-project-recent", (event) =>
+      handlers.openRecent?.(event.payload),
+    ),
+    listen("menu:clear-recent-files", () => handlers.clearRecent?.()),
   ]);
   return () => {
     for (const unlisten of unlisteners) unlisten();
