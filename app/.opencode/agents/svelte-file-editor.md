@@ -7,6 +7,8 @@ permission:
     "*": "deny"
     "app/desktop/src": "allow"
     "app/desktop/src/**": "allow" # Svelte frontend (incl. top-level files like App.svelte)
+    "app/desktop/e2e": "allow"
+    "app/desktop/e2e/**": "allow"
     "/tmp/**/*": "allow" # Temporary files for Svelte MCP server
 ---
 
