@@ -6,7 +6,9 @@
   expanded frame + canvas pair, ALL interactive presentation toggles —
   per-phase, per-layer, via, pole-pitch, band-width and pole-region
   visibility, the pole-region phase picker, and the one-section hint — and
-  the measure-ruler toolbar. Zoom/reset controls live BELOW the canvas
+  the measure-ruler toolbar (a component of its own, extracted in kata
+  426r — ./CoilPreviewMeasureToolbar.svelte, bound to the shared
+  CoilPreviewMeasure instance). Zoom/reset controls live BELOW the canvas
   (identical to the inline card), and the mover slider joins the strip it
   moves via the shared MotionStore.
 
@@ -41,10 +43,6 @@
   import type { ConfigStore } from "../../stores/config.svelte";
   import type { MotionStore } from "../../stores/motion.svelte";
   import { Dialog } from "bits-ui";
-  import {
-    computeMeasureRuler,
-    formatMetresMm,
-  } from "../../previewGeometry";
   import type { CoilPreviewGestures } from "../../utils/coilPreviewGestures.svelte";
   import type { CoilPreviewMeasure } from "../../utils/coilPreviewMeasure.svelte";
   import {
@@ -52,6 +50,7 @@
     lockPageScroll,
   } from "../../utils/pageScrollLock";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
+  import CoilPreviewMeasureToolbar from "./CoilPreviewMeasureToolbar.svelte";
   import MoverPositionControls from "./MoverPositionControls.svelte";
   import { PHASE_COLORS, PREVIEW_H, PREVIEW_W } from "./coilPreviewCanvas";
   import type { CoilPreviewViewState } from "./coilPreviewViewState.svelte";
@@ -383,46 +382,11 @@
         {/if}
       </div>
 
-      <!-- Measure ruler toolbar (lightbox only): mode toggle, reset (shown
-           only while measuring) and a live status prompt. -->
-      <div class="flex items-center gap-3 flex-wrap">
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="px-2 py-0.5 text-xs rounded border transition-colors {measure.mode
-              ? 'bg-pink-500/15 border-pink-500 text-pink-300'
-              : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-pink-300 hover:border-pink-600'}"
-            aria-pressed={measure.mode}
-            aria-label="Toggle measure tool"
-            onclick={() => measure.toggleMode()}
-          >Measure</button>
-          {#if measure.mode}
-            <button
-              type="button"
-              class="px-2 py-0.5 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-600 transition-colors"
-              aria-label="Clear measurement"
-              onclick={() => measure.clear()}
-            >Reset</button>
-          {/if}
-        </div>
-        {#if measure.mode}
-          <span class="text-xs text-slate-400" role="status" aria-live="polite">
-            {#if measure.p1}
-              {#if measure.p2}
-                {formatMetresMm(computeMeasureRuler(measure.p1, measure.p2).mm / 1000)} — click again to clear
-              {:else}
-                {#if measure.cursor}
-                  {formatMetresMm(computeMeasureRuler(measure.p1, measure.cursor).mm / 1000)} — click to lock
-                {:else}
-                  click to lock the dimension
-                {/if}
-              {/if}
-            {:else}
-              click to set the start point
-            {/if}
-          </span>
-        {/if}
-      </div>
+      <!-- Measure ruler toolbar: mode toggle, reset (shown only while
+           measuring) and a live status prompt — the extracted
+           CoilPreviewMeasureToolbar, bound to the shared
+           CoilPreviewMeasure instance. -->
+      <CoilPreviewMeasureToolbar {measure} />
 
       <!-- Modal frame div owns the ARIA label (the canvas is the paint
            target; data-* attributes carry the introspection counters,
