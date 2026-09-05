@@ -6,11 +6,15 @@
   expanded frame + canvas pair, ALL interactive presentation toggles —
   per-phase, per-layer, via, pole-pitch, band-width and pole-region
   visibility, the pole-region phase picker, and the one-section hint — and
-  the measure-ruler toolbar (a component of its own, extracted in kata
-  426r — ./CoilPreviewMeasureToolbar.svelte, bound to the shared
-  CoilPreviewMeasure instance). Zoom/reset controls live BELOW the canvas
-  (identical to the inline card), and the mover slider joins the strip it
-  moves via the shared MotionStore.
+  the measure-ruler toolbar. Those two UI clusters are components of their
+  own (extracted in kata 426r — each renders exactly once, here):
+    - ./CoilPreviewVisibilityPanel.svelte — the show/hide toggle row,
+      bound to the shared CoilPreviewViewState instance
+    - ./CoilPreviewMeasureToolbar.svelte — the measure-ruler toolbar,
+      bound to the shared CoilPreviewMeasure instance
+  Zoom/reset controls live BELOW the canvas (identical to the inline
+  card), and the mover slider joins the strip it moves via the shared
+  MotionStore.
 
   The schematic state itself is shared: `view` (CoilPreviewViewState),
   `gestures` (CoilPreviewGestures) and `measure` (CoilPreviewMeasure) are
@@ -51,8 +55,9 @@
   } from "../../utils/pageScrollLock";
   import CoilPreviewControls from "./CoilPreviewControls.svelte";
   import CoilPreviewMeasureToolbar from "./CoilPreviewMeasureToolbar.svelte";
+  import CoilPreviewVisibilityPanel from "./CoilPreviewVisibilityPanel.svelte";
   import MoverPositionControls from "./MoverPositionControls.svelte";
-  import { PHASE_COLORS, PREVIEW_H, PREVIEW_W } from "./coilPreviewCanvas";
+  import { PREVIEW_H, PREVIEW_W } from "./coilPreviewCanvas";
   import type { CoilPreviewViewState } from "./coilPreviewViewState.svelte";
 
   let {
@@ -202,185 +207,20 @@
         </div>
       </div>
 
-      <!-- Visibility controls only — zoom/reset live below the canvas. -->
-      <div class="flex items-center gap-3 flex-wrap">
-        <!-- Phase visibility toggles (per phase). A coloured dot + label
-             for each phase, with a checkbox to show/hide that phase's
-             traces. The label and dot dim when the phase is hidden. -->
-        {#if uniquePhases.length > 0}
-          <div
-            class="flex items-center gap-2 flex-wrap"
-            role="group"
-            aria-label="Phase visibility"
-          >
-            {#each uniquePhases as ph (ph.idx)}
-              <label
-                class="flex items-center gap-1 text-xs select-none cursor-pointer"
-                class:text-slate-500={!view.isPhaseVisible(ph.idx)}
-                class:text-slate-300={view.isPhaseVisible(ph.idx)}
-              >
-                <input
-                  type="checkbox"
-                  bind:checked={view.phaseVisibility[ph.idx]}
-                  class="accent-emerald-500"
-                  aria-label={"Show phase " + ph.name}
-                />
-                <span
-                  class="inline-block w-2.5 h-2.5 rounded-full"
-                  style="background-color: {PHASE_COLORS[
-                    ph.colorIdx % PHASE_COLORS.length
-                  ]}; opacity: {view.isPhaseVisible(ph.idx) ? 1 : 0.35}"
-                ></span>
-                <span>Phase {ph.name}</span>
-              </label>
-            {/each}
-          </div>
-        {/if}
-        <!-- Layer visibility toggles (per layer). A grey dot + label for
-             each copper layer, with a checkbox to show/hide that layer's
-             traces. Layers are overlaid at true coordinates, so toggling is
-             how you inspect a single layer in isolation. -->
-        {#if uniqueLayers.length > 0}
-          <div
-            class="flex items-center gap-2 flex-wrap"
-            role="group"
-            aria-label="Layer visibility"
-          >
-            {#each uniqueLayers as l (l.idx)}
-              <label
-                class="flex items-center gap-1 text-xs select-none cursor-pointer"
-                class:text-slate-500={!view.isLayerVisible(l.idx)}
-                class:text-slate-300={view.isLayerVisible(l.idx)}
-              >
-                <input
-                  type="checkbox"
-                  checked={view.isLayerVisible(l.idx)}
-                  onchange={() => view.toggleLayer(l.idx)}
-                  class="accent-emerald-500"
-                  aria-label={"Show layer " + l.idx}
-                />
-                <span
-                  class="inline-block w-2.5 h-2.5 rounded-full"
-                  style="background-color: #94a3b8; opacity: {view.isLayerVisible(
-                    l.idx,
-                  )
-                    ? 1
-                    : 0.35}"
-                ></span>
-                <span>Layer {l.idx}</span>
-              </label>
-            {/each}
-          </div>
-        {/if}
-        <!-- Via visibility toggle -->
-        <label
-          class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-        >
-          <input
-            type="checkbox"
-            bind:checked={view.showVias}
-            class="accent-emerald-500"
-            aria-label="Show vias"
-          />
-          <span
-            class="inline-block w-2.5 h-2.5 rounded-full"
-            style="background-color: #fbbf24; opacity: {view.showVias ? 1 : 0.35}"
-          ></span>
-          <span>Vias</span>
-        </label>
-        <!-- One-section toggle -->
-        <label
-          class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-        >
-          <input
-            type="checkbox"
-            bind:checked={view.oneSection}
-            class="accent-emerald-500"
-            aria-label="Show only one repeating section of the pattern"
-          />
-          <span>one electrical period</span>
-        </label>
-        <!-- Pole-pitch ruler toggle (only when the sidecar ships a pitch). -->
-        {#if hasPolePitchData}
-          <label
-            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              bind:checked={view.showPolePitch}
-              class="accent-emerald-500"
-              aria-label="Show pole-pitch dimension ruler"
-            />
-            <span
-              class="inline-block w-2.5 h-2.5 rounded-full"
-              style="background-color: #a5b4fc; opacity: {view.showPolePitch
-                ? 1
-                : 0.35}"
-            ></span>
-            <span>Pole pitch</span>
-          </label>
-        {/if}
-        <!-- Band-width diagnostics toggle (only visible with matched rows). -->
-        {#if hasBandWidthData}
-          <label
-            class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              bind:checked={view.showBandWidths}
-              class="accent-emerald-500"
-              aria-label="Show band-width diagnostics"
-            />
-            <span
-              class="inline-block w-2.5 h-2.5 rounded-full"
-              style="background-color: #34d399; opacity: {view.showBandWidths
-                ? 1
-                : 0.35}"
-            ></span>
-            <span>Conductor band widths</span>
-          </label>
-        {/if}
-        <!-- Pole-region zones toggle + phase picker (only when the routing
-             sidecar ships valid region data). The checkbox is independent
-             of per-phase trace visibility; the select picks which phase's
-             zones to draw. -->
-        {#if hasPoleRegionData}
-          <div
-            class="flex items-center gap-2"
-            role="group"
-            aria-label="Pole regions overlay"
-          >
-            <label
-              class="flex items-center gap-1.5 text-xs text-slate-300 select-none cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                bind:checked={view.showPoleRegions}
-                class="accent-rose-500"
-                aria-label="Show pole regions"
-              />
-              <span
-                class="inline-block w-2.5 h-2.5 rounded-full"
-                style="background: linear-gradient(90deg, #f87171 50%, #60a5fa 50%); opacity: {view.showPoleRegions
-                  ? 1
-                  : 0.35}"
-              ></span>
-              <span>Pole regions</span>
-            </label>
-            <select
-              aria-label="Pole regions phase"
-              class="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-emerald-600"
-              bind:value={view.poleRegionPhase}
-              disabled={!view.showPoleRegions}
-            >
-              <option value="">All phases</option>
-              {#each poleRegionPhases as phase (phase)}
-                <option value={phase}>{phase}</option>
-              {/each}
-            </select>
-          </div>
-        {/if}
-      </div>
+      <!-- Visibility controls only — zoom/reset live below the canvas.
+           The whole toggle row (per-phase/per-layer/via/one-section/
+           pole-pitch/band-width/pole-region + the pole-region phase
+           picker) is the extracted CoilPreviewVisibilityPanel, bound to
+           the shared CoilPreviewViewState instance. -->
+      <CoilPreviewVisibilityPanel
+        {view}
+        {uniquePhases}
+        {uniqueLayers}
+        {hasPolePitchData}
+        {hasBandWidthData}
+        {hasPoleRegionData}
+        {poleRegionPhases}
+      />
 
       <!-- Measure ruler toolbar: mode toggle, reset (shown only while
            measuring) and a live status prompt — the extracted
