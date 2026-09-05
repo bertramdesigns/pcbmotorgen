@@ -45,7 +45,12 @@ test.describe("routing pattern select (Bits UI) @interaction @desktop", () => {
     await expect(
       listbox.getByRole("option", { name: MOCK_PATTERN_LABEL }),
     ).toBeVisible();
-    await expect(listbox.locator("[role='separator']")).toHaveCount(1);
+    // The divider is the ui/Separator design-system wrapper (kata tn66):
+    // decorative, so it renders role="none" + aria-hidden instead of
+    // role="separator" — purely visual, neither focusable nor selectable.
+    await expect(
+      listbox.locator("[role='none'][data-orientation='horizontal']"),
+    ).toHaveCount(1);
     await expect(
       listbox.getByRole("option", { name: SENTINEL_LABEL }),
     ).toBeVisible();
