@@ -24,6 +24,8 @@
 //! | `export_coils_dxf`            | REAL          | Pure DXF R12 ASCII export (`pcbmotorgen-export`). |
 //! | `save_project`                | REAL          | Versioned `.pmproj` artifact, atomic write. |
 //! | `load_project`                | REAL          | Parse + migrate + validate a `.pmproj` artifact. |
+//! | `set_recent_files`            | REAL (sync)   | Mirror webview recents into the File menu (kata eap8). |
+//! | `file_exists`                 | REAL (sync)   | Stat check for recents prune-on-access (kata eap8). |
 //! | `list_routing_patterns`       | REAL          | Routing-pattern plugin catalog.          |
 //! | `register_routing_plugin`     | REAL          | Load + persist a native/Python plugin.   |
 //! | `routing_pattern_parameters`  | REAL          | User-editable pattern params.            |
@@ -34,7 +36,10 @@
 //!
 //! ## Threading
 //!
-//! All commands are `async fn`. Per the Tauri v2 docs, async commands
+//! All commands are `async fn`, except the two deliberate sync exceptions
+//! (`set_recent_files`, `file_exists`, kata eap8): the native menu must be
+//! mutated on the main thread (macOS NSMenu) and a stat call is cheaper
+//! than the async hop. Per the Tauri v2 docs, async commands
 //! already run on a separate async task (not the main thread). For the
 //! heavier computations (force sweep, coil generation) we additionally wrap
 //! the body in `tauri::async_runtime::spawn_blocking` so the work moves to
