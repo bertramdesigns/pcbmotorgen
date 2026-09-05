@@ -4,9 +4,7 @@ description: Frontend, Backend, and Tauri IPC orchestrator.
 permission:
   edit:
     "*": "deny"
-    "app/desktop/src-tauri/**/*": "allow"
-    "app/desktop/src-tauri/**": "allow"
-    "app/desktop/src/**": "allow"
+    "app/desktop/**": "allow"
     "Cargo.toml": "allow"
     "crates/**": "allow"
     "/tmp/**/*": "allow" # Temporary files for Svelte MCP server
