@@ -27,6 +27,21 @@
  * The decision (`blocksBackdropScroll`) is pure and unit-tested; the DOM
  * plumbing is a thin wrapper. Listeners are attached non-passively because
  * preventDefault() is ignored inside passive wheel/touchmove listeners.
+ *
+ * Bits UI interplay (assessed in kata 1jfa — keep, do not replace with
+ * Bits' built-in lock): every Dialog in this app (CoilPreview lightbox,
+ * PluginAuthoringGuideModal, GeneratorUploadPanel) sets
+ * `preventScroll={false}` on Dialog.Content so Bits' BodyScrollLock
+ * (node_modules/bits-ui/dist/internal/body-scroll-lock.svelte.js) stays
+ * out of the way. Bits writes overflow/padding/pointer-events on <body>
+ * only — never inline on <html> — and ships no wheel/touchmove
+ * preventDefault (its touchmove guard is iOS + documentElement-target
+ * only), so it cannot satisfy the xy31 e2e contract
+ * (e2e/modal-scroll-lock.spec.ts pins inline root+body overflow AND
+ * backdrop wheel defaultPrevented). It must also not run BESIDE this
+ * helper: Bits snapshots the <body> style attribute at lock time and
+ * restores it after a 24ms delay, so its reset re-applies this lock's own
+ * overflow:hidden after close — measured stuck lock (spec line 190).
  */
 
 /** Minimal structural view of `document` (real documents satisfy this). */

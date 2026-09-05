@@ -24,8 +24,15 @@
   live here anymore. While expanded, the page behind the lightbox is
   scroll-locked by the custom refcounted helper (document overflow lock +
   backdrop wheel/touchmove guard), which stays the source of truth — Bits'
-  built-in scroll lock is therefore disabled (`preventScroll={false}`),
-  so the page scroll lock behaves exactly as the e2e suite asserts.
+  built-in scroll lock is therefore disabled (`preventScroll={false}`).
+  Assessed in kata 1jfa — Bits' lock is not a replacement: it only writes
+  overflow/padding/pointer-events on <body> (never inline on <html>) and
+  has no wheel/touchmove preventDefault, so the e2e contract's pinned
+  invariants (inline root+body overflow lock, backdrop wheel
+  defaultPrevented) fail without this helper (4/6 spec runs red under
+  pure-Bits). It must not run alongside either: Bits' delayed body-style
+  reset re-applies a stale snapshot and leaves the page scroll-locked
+  after close.
 
   Interaction: one pointer (mouse / pen / lone touch) drags to pan; a
   two-finger pinch or a ctrl+wheel trackpad pinch zooms CONTINUOUSLY
@@ -972,6 +979,11 @@
   //      panel, so browser scroll chaining can never reach a container
   //      behind the overlay. The panel itself carries `overscroll-contain`
   //      so its own scrolling never chains past the modal.
+  //
+  // Bits' own lock must stay OFF (`preventScroll={false}` below): enabled
+  // alongside this helper it double-writes <body> style, and its 24ms
+  // delayed reset restores a snapshot taken after this lock had already
+  // written — the page stays overflow:hidden after close (kata 1jfa).
   $effect(() => {
     if (!expanded) return;
     const backdrop = backdropRef;
