@@ -25,10 +25,14 @@ export function designPanel(page: Page) {
   return page.locator("#panel-design");
 }
 
-/** The first card of the left column (TravelDiagram). */
+/**
+ * The first card of the left column (TravelDiagram). The reflection column
+ * is a Bits UI ScrollArea since kata 2npg: the card sits inside the
+ * viewport's content wrapper.
+ */
 export function leftColumnFirstCard(page: Page) {
   return page.locator(
-    `${ASIDE} > :first-child`,
+    `${ASIDE} [data-scroll-area-content] > :first-child`,
   );
 }
 

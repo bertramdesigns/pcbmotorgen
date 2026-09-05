@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ConfigStore } from "../../../stores/config.svelte";
   import NumberField from "../../ui/NumberField.svelte";
+  import Separator from "../../ui/Separator.svelte";
 
   let { config }: { config: ConfigStore } = $props();
 </script>
@@ -12,7 +13,9 @@
     </span>
   </summary>
 
-  <div class="border-t border-slate-700 px-3 pb-3 pt-2.5">
+  <Separator />
+
+  <div class="px-3 pb-3 pt-2.5">
     <div class="grid gap-x-3 gap-y-2 sm:grid-cols-2">
       <label class="min-w-0">
         <span class="flex items-center justify-between gap-2">

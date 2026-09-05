@@ -1,5 +1,6 @@
 <script lang="ts">
   import { config } from "./lib/stores/config.svelte";
+  import { BitsConfig, Tabs } from "bits-ui";
 import {
   evaluateForceSweep,
   generateCoils,
@@ -28,6 +29,7 @@ import {
   import TabNav from "./lib/components/layout/TabNav.svelte";
   import TitleBar from "./lib/components/layout/TitleBar.svelte";
   import StatusBanner from "./lib/components/ui/StatusBanner.svelte";
+  import ScrollArea from "./lib/components/ui/ScrollArea.svelte";
   import TravelDiagram from "./lib/components/design/TravelDiagram.svelte";
   import CoilPreview from "./lib/components/design/CoilPreview.svelte";
   import DesignDimensions from "./lib/components/design/DesignDimensions.svelte";
@@ -354,160 +356,158 @@ import {
 <main
   class="flex min-h-screen flex-col bg-slate-900 text-slate-100 lg:h-screen lg:overflow-hidden"
 >
-  <header class="shrink-0 bg-slate-900">
-    <TitleBar {projects} {loading} />
-    <TabNav
-      tabs={TABS}
-      {activeTab}
-      statusFor={tabStatus}
-      onSelect={selectTab}
-    />
-  </header>
-
-  {#if projects.error || projects.notice}
-    <div class="px-4 pt-3">
-      {#if projects.error}
-        <StatusBanner level="error">
-          <div class="flex items-start justify-between gap-3">
-            <p>{projects.error}</p>
-            <button
-              type="button"
-              class="shrink-0 underline underline-offset-2 hover:brightness-125"
-              onclick={() => projects.clearMessages()}>Dismiss</button
-            >
-          </div>
-        </StatusBanner>
-      {:else if projects.notice}
-        <StatusBanner level="info">
-          <div class="flex items-start justify-between gap-3">
-            <p>{projects.notice}</p>
-            <button
-              type="button"
-              class="shrink-0 underline underline-offset-2 hover:brightness-125"
-              onclick={() => projects.clearMessages()}>Dismiss</button
-            >
-          </div>
-        </StatusBanner>
-      {/if}
-    </div>
-  {/if}
-
-  {#if projects.loadIssues}
-    <div class="px-4 pt-3">
-      <StatusBanner
-        level={projects.loadIssues.errors.length > 0 ? "error" : "warning"}
-      >
-        <div>
-          <p class="font-medium">
-            The restored design has
-            {projects.loadIssues.errors.length} error(s) and
-            {projects.loadIssues.warnings.length} warning(s):
-          </p>
-          <ul class="mt-1 list-disc pl-5">
-            {#each projects.loadIssues.errors as message (message)}
-              <li>{message}</li>
-            {/each}
-            {#each projects.loadIssues.warnings as message (message)}
-              <li>{message}</li>
-            {/each}
-          </ul>
-        </div>
-      </StatusBanner>
-    </div>
-  {/if}
-
-  <!-- The reflection stays mounted beside every workflow panel. On desktop
-       only the settings/content column scrolls; on small screens the columns
-       stack so the reflection remains available above the active panel. -->
-  <div
-    class="grid min-h-0 flex-1 items-start gap-4 px-4 pb-4 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch lg:pb-0 lg:pr-0"
-  >
-    <!-- The desktop layout locks the page height: both columns stretch to the
-         row (viewport minus header/footer) and scroll independently inside
-         themselves, so the footer is always visible and the page never
-         scrolls. Below lg the columns stack and the page scrolls normally. -->
-    <aside
-      class="relative min-w-0 min-h-0 lg:overflow-y-auto lg:pt-4 lg:pb-4 lg:pr-2"
-      aria-label="Persistent design reflection"
+  <!-- BitsConfig centralizes the portal target for every Bits portal
+       (dialogs, selects, tooltips) in one place. -->
+  <BitsConfig defaultPortalTo="body" defaultLocale="en-US">
+    <!-- Tabs.Root renders its own wrapper element, so the main column's
+         flex layout (grow + shrink floor) lives on it. -->
+    <Tabs.Root
+      value={activeTab}
+      onValueChange={(v) => selectTab(v as TabId)}
+      class="flex min-h-0 flex-1 flex-col"
     >
-      <TravelDiagram {config} {motion} {measuredTrace} />
-      <!-- Traces view lives here in the Design tab so layout and geometry can
-           be inspected side by side; the Simulation tab keeps its own copy. -->
-      <div class="mt-3 space-y-3">
-        <CoilPreview {config} {coils} {motion} />
-        <DesignDimensions
-          {config}
-          measuredTraceLengthMm={measuredTrace?.traceLengthMm ?? null}
-          routingDimensions={coils?.routing_dimensions ?? null}
-        />
-      </div>
-    </aside>
+      <header class="shrink-0 bg-slate-900">
+        <TitleBar {projects} {loading} />
+        <TabNav tabs={TABS} statusFor={tabStatus} />
+      </header>
 
-    <div class="min-w-0 min-h-0">
-      <!-- All three panels stay mounted so component-local controls retain
-           their state. Hidden Simulation content is still lifecycle-gated:
-           its IPC effects only run while this tab is active. Each panel fills
-           the column and scrolls internally; the page height is locked so the
-           footer always stays visible. -->
+      {#if projects.error || projects.notice}
+        <div class="px-4 pt-3">
+          {#if projects.error}
+            <StatusBanner level="error">
+              <div class="flex items-start justify-between gap-3">
+                <p>{projects.error}</p>
+                <button
+                  type="button"
+                  class="shrink-0 underline underline-offset-2 hover:brightness-125"
+                  onclick={() => projects.clearMessages()}>Dismiss</button
+                >
+              </div>
+            </StatusBanner>
+          {:else if projects.notice}
+            <StatusBanner level="info">
+              <div class="flex items-start justify-between gap-3">
+                <p>{projects.notice}</p>
+                <button
+                  type="button"
+                  class="shrink-0 underline underline-offset-2 hover:brightness-125"
+                  onclick={() => projects.clearMessages()}>Dismiss</button
+                >
+              </div>
+            </StatusBanner>
+          {/if}
+        </div>
+      {/if}
+
+      {#if projects.loadIssues}
+        <div class="px-4 pt-3">
+          <StatusBanner
+            level={projects.loadIssues.errors.length > 0 ? "error" : "warning"}
+          >
+            <div>
+              <p class="font-medium">
+                The restored design has
+                {projects.loadIssues.errors.length} error(s) and
+                {projects.loadIssues.warnings.length} warning(s):
+              </p>
+              <ul class="mt-1 list-disc pl-5">
+                {#each projects.loadIssues.errors as message (message)}
+                  <li>{message}</li>
+                {/each}
+                {#each projects.loadIssues.warnings as message (message)}
+                  <li>{message}</li>
+                {/each}
+              </ul>
+            </div>
+          </StatusBanner>
+        </div>
+      {/if}
+
+      <!-- The reflection stays mounted beside every workflow panel. On desktop
+           only the settings/content column scrolls; on small screens the columns
+           stack so the reflection remains available above the active panel. -->
       <div
-        id="panel-design"
-        role="tabpanel"
-        aria-labelledby="tab-design"
-        tabindex="0"
-        hidden={activeTab !== "design"}
-        aria-hidden={activeTab !== "design"}
-        class="h-full p-4 lg:pr-0"
+        class="grid min-h-0 flex-1 items-start gap-4 px-4 pb-4 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch lg:pb-0 lg:pr-0"
       >
-        <DesignTab {config} />
+        <!-- The desktop layout locks the page height: both columns stretch to the
+             row (viewport minus header/footer) and scroll independently inside
+             themselves, so the footer is always visible and the page never
+             scrolls. Below lg the columns stack and the page scrolls normally. -->
+        <aside
+          class="relative min-w-0 min-h-0 lg:pt-4 lg:pb-4 lg:pr-2"
+          aria-label="Persistent design reflection"
+        >
+          <ScrollArea class="h-full">
+            <TravelDiagram {config} {motion} {measuredTrace} />
+            <!-- Traces view lives here in the Design tab so layout and geometry can
+                 be inspected side by side; the Simulation tab keeps its own copy. -->
+            <div class="mt-3 space-y-3">
+              <CoilPreview {config} {coils} {motion} />
+              <DesignDimensions
+                {config}
+                measuredTraceLengthMm={measuredTrace?.traceLengthMm ?? null}
+                routingDimensions={coils?.routing_dimensions ?? null}
+              />
+            </div>
+          </ScrollArea>
+        </aside>
+
+        <div class="min-w-0 min-h-0">
+          <!-- All three panels stay mounted so component-local controls retain
+               their state — Bits Tabs.Content never unmounts inactive panels, it
+               toggles the hidden attribute instead. Hidden Simulation content is
+               still lifecycle-gated: its IPC effects only run while this tab is
+               active. Each panel fills the column and scrolls internally; the
+               page height is locked so the footer always stays visible. -->
+          <Tabs.Content
+            value="design"
+            id="panel-design"
+            class="h-full p-4 lg:pr-0"
+          >
+            <DesignTab {config} />
+          </Tabs.Content>
+
+          <Tabs.Content
+            value="simulate"
+            id="panel-simulate"
+            class="h-full overflow-y-auto p-4 lg:pr-0"
+          >
+            <SimulateTab
+              {config}
+              active={activeTab === "simulate"}
+              {sweep}
+              {friction}
+              {power}
+              {height}
+              {stackup}
+              {error}
+            />
+          </Tabs.Content>
+
+          <Tabs.Content
+            value="export"
+            id="panel-export"
+            class="h-full overflow-y-auto p-4 lg:pr-0"
+          >
+            <ExportTab
+              {config}
+              drcViolations={drc.violations}
+              drcLoading={drc.loading}
+              drcError={drc.error}
+              {drcReady}
+              drcLayoutKey={drc.currentLayoutKey}
+              onCheckDrc={() => drc.request()}
+            />
+          </Tabs.Content>
+        </div>
       </div>
 
-      <div
-        id="panel-simulate"
-        role="tabpanel"
-        aria-labelledby="tab-simulate"
-        tabindex="0"
-        hidden={activeTab !== "simulate"}
-        aria-hidden={activeTab !== "simulate"}
-        class="h-full overflow-y-auto p-4 lg:pr-0"
+      <footer
+        class="shrink-0 border-t border-slate-800 px-6 py-3 text-xs text-slate-500"
       >
-        <SimulateTab
-          {config}
-          active={activeTab === "simulate"}
-          {sweep}
-          {friction}
-          {power}
-          {height}
-          {stackup}
-          {error}
-        />
-      </div>
-
-      <div
-        id="panel-export"
-        role="tabpanel"
-        aria-labelledby="tab-export"
-        tabindex="0"
-        hidden={activeTab !== "export"}
-        aria-hidden={activeTab !== "export"}
-        class="h-full overflow-y-auto p-4 lg:pr-0"
-      >
-        <ExportTab
-          {config}
-          drcViolations={drc.violations}
-          drcLoading={drc.loading}
-          drcError={drc.error}
-          {drcReady}
-          drcLayoutKey={drc.currentLayoutKey}
-          onCheckDrc={() => drc.request()}
-        />
-      </div>
-    </div>
-  </div>
-
-  <footer
-    class="shrink-0 border-t border-slate-800 px-6 py-3 text-xs text-slate-500"
-  >
-    Linear mode only · radial/axial-flux disabled (TODO). Physics via Tauri IPC
-    with mock fallback.
-  </footer>
+        Linear mode only · radial/axial-flux disabled (TODO). Physics via Tauri IPC
+        with mock fallback.
+      </footer>
+    </Tabs.Root>
+  </BitsConfig>
 </main>

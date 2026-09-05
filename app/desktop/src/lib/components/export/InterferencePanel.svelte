@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InterferenceViolation } from "../../types";
+  import ScrollArea from "../ui/ScrollArea.svelte";
 
   let {
     violations,
@@ -85,26 +86,28 @@
       {violations.length} violation{violations.length === 1 ? "" : "s"} detected
       {violations.length > shown.length ? ` · showing first ${shown.length}` : ""}
     </div>
-    <ul class="max-h-64 overflow-y-auto space-y-2 pr-1" aria-label="DRC violations">
-      {#each shown as violation (violationKey(violation))}
-        <li
-          class="rounded-md bg-slate-800/60 border border-amber-500/40 px-3 py-2 text-xs"
-          title={violation.message}
-        >
-          <div class="flex items-center justify-between gap-2 text-amber-200">
-            <span class="font-mono">
-              L{violation.layer} &middot; {violation.net_a} ↔ {violation.net_b}
-            </span>
-            <span class="font-mono whitespace-nowrap">{violation.gap_mm.toFixed(2)} mm</span>
-          </div>
-          <div class="mt-1 text-slate-300">
-            <span class="uppercase text-[10px] tracking-wider text-amber-400/80">
-              {violation.kind}
-            </span>
-            <span class="text-slate-400"> &middot; {violation.message}</span>
-          </div>
-        </li>
-      {/each}
-    </ul>
+    <ScrollArea class="max-h-64" viewportClass="pr-1">
+      <ul class="space-y-2 pr-1" aria-label="DRC violations">
+        {#each shown as violation (violationKey(violation))}
+          <li
+            class="rounded-md bg-slate-800/60 border border-amber-500/40 px-3 py-2 text-xs"
+            title={violation.message}
+          >
+            <div class="flex items-center justify-between gap-2 text-amber-200">
+              <span class="font-mono">
+                L{violation.layer} &middot; {violation.net_a} ↔ {violation.net_b}
+              </span>
+              <span class="font-mono whitespace-nowrap">{violation.gap_mm.toFixed(2)} mm</span>
+            </div>
+            <div class="mt-1 text-slate-300">
+              <span class="uppercase text-[10px] tracking-wider text-amber-400/80">
+                {violation.kind}
+              </span>
+              <span class="text-slate-400"> &middot; {violation.message}</span>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </ScrollArea>
   {/if}
 </div>
